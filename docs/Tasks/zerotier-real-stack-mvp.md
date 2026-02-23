@@ -35,7 +35,7 @@ Status legend:
   - [x] Implement identity wire serialization (Identity::serialize format).
   - [x] Implement HELLO send + OK parse (unencrypted) over UDP.
   - [x] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
-  - [ ] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
+  - [x] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
 - [ ] Persist assigned managed IPs to state and expose them via API.
   - [ ] Persist network config + assigned IPs under `<state>/zerotier/`.
   - [ ] Expose assigned IPs via `ZtZeroTierSocket.ManagedIps`.
