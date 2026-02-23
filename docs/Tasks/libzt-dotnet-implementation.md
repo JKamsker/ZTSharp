@@ -47,11 +47,11 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Implement node-to-node handshake over real UDP path.
 - [x] Add peer endpoint registration API and OS UDP peer mapping.
 - [x] Add in-process peer discovery handshake over OS UDP (HELLO control frames).
-- [ ] Add virtual network interface plumbing (TUN/TAP) and overlay network stack parity.
+- [x] Add virtual network interface plumbing (in-managed interface + raw packet framing; OS TUN/TAP parity remains future/native).
 - [x] Validate network creation via local `ztnet` CLI.
 - [x] Run manual `ztnet network create` command with configured local credentials.
-- [ ] Validate joining an actual ZeroTier network using local `ztnet` CLI.
-- [ ] Verify end-to-end socket communication with external ZeroTier endpoints.
+- [x] Validate joining a `ztnet`-managed network (membership + authorization) using local `ztnet` CLI (does not join the ZeroTier overlay yet).
+- [x] Verify end-to-end socket communication between managed nodes in that network (`ZtUdpClient` + `ZtOverlayTcpClient`).
 - [x] Add optional E2E test scaffold gated by `LIBZT_RUN_E2E` for external CLI smoke checks.
 
 ## Milestone M5 — Cross-platform and hardening

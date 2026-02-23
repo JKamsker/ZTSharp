@@ -122,12 +122,56 @@ public class ExternalZtNetTests
             await udp2.SendAsync(pong);
             var datagramPong = await receivePong.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             Assert.True(datagramPong.Payload.Span.SequenceEqual(pong));
+
+            await using var listener = new ZtOverlayTcpListener(node2, networkId, 12002);
+            var acceptTask = listener.AcceptTcpClientAsync().AsTask();
+            await using var tcpClient = new ZtOverlayTcpClient(node1, networkId, 12001);
+            await tcpClient.ConnectAsync(node2Identity.NodeId.Value, 12002);
+            await using var serverConnection = await acceptTask.WaitAsync(TimeSpan.FromSeconds(3));
+
+            var clientStream = tcpClient.GetStream();
+            var serverStream = serverConnection.GetStream();
+
+            await clientStream.WriteAsync(ping);
+            var serverBuffer = new byte[ping.Length];
+            var serverRead = await ReadExactAsync(serverStream, serverBuffer, ping.Length, CancellationToken.None);
+            Assert.Equal(ping.Length, serverRead);
+            Assert.True(serverBuffer.AsSpan().SequenceEqual(ping));
+
+            await serverStream.WriteAsync(pong);
+            var clientBuffer = new byte[pong.Length];
+            var clientRead = await ReadExactAsync(clientStream, clientBuffer, pong.Length, CancellationToken.None);
+            Assert.Equal(pong.Length, clientRead);
+            Assert.True(clientBuffer.AsSpan().SequenceEqual(pong));
         }
         finally
         {
             var deleteResult = await RunZtNetCommandAsync($"--yes --quiet network delete {networkIdText}");
             Assert.Equal(0, deleteResult.ExitCode);
         }
+    }
+
+    private static async Task<int> ReadExactAsync(
+        Stream stream,
+        byte[] buffer,
+        int length,
+        CancellationToken cancellationToken)
+    {
+        var readTotal = 0;
+        while (readTotal < length)
+        {
+            var read = await stream.ReadAsync(
+                buffer.AsMemory(readTotal, length - readTotal),
+                cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return readTotal;
+            }
+
+            readTotal += read;
+        }
+
+        return readTotal;
     }
 
     private static string? ParseNetworkId(string output)

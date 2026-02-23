@@ -6,7 +6,8 @@ The repo includes an external smoke test that:
 2. Starts 2 managed nodes (`ZtNode`, `OsUdp` transport)
 3. Adds/authorizes those node ids as network members via `ztnet`
 4. Performs a ping/pong using `ZtUdpClient`
-5. Deletes the network
+5. Performs a ping/pong using `ZtOverlayTcpClient` / `ZtOverlayTcpListener`
+6. Deletes the network
 
 Important: This does **not** currently validate joining the ZeroTier overlay or communicating with external ZeroTier endpoints. The managed nodes do not implement the upstream ZeroTier protocol stack yet; application traffic is exchanged directly over the library's `OsUdp` transport.
 
