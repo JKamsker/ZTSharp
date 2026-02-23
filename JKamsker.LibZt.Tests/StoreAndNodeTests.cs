@@ -173,8 +173,6 @@ public class StoreAndNodeTests
 
         Assert.Equal([1, 2, 3, 4], datagram.Payload);
 
-        await node2Udp.DisposeAsync();
-        await node1Udp.DisposeAsync();
         await node2.LeaveNetworkAsync(networkId);
         await node1.LeaveNetworkAsync(networkId);
         await node1.StopAsync();
@@ -202,7 +200,7 @@ public class StoreAndNodeTests
         var read = await serverStream.ReadAsync(buffer.AsMemory(0, request.Length));
         Assert.Equal(request.Length, read);
 
-        await stream.WriteAsync(buffer, 0, read);
+        await serverStream.WriteAsync(buffer.AsMemory(0, read));
         var response = new byte[request.Length];
         var responseRead = await stream.ReadAsync(response.AsMemory(0, request.Length));
         Assert.Equal(request.Length, responseRead);
