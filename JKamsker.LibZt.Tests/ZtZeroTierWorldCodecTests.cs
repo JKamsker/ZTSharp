@@ -1,0 +1,71 @@
+using JKamsker.LibZt.ZeroTier;
+using JKamsker.LibZt.ZeroTier.Internal;
+using JKamsker.LibZt.ZeroTier.Protocol;
+
+namespace JKamsker.LibZt.Tests;
+
+public sealed class ZtZeroTierWorldCodecTests
+{
+    [Fact]
+    public void CanDecodeEmbeddedDefaultPlanet()
+    {
+        var world = ZtZeroTierWorldCodec.Decode(ZtZeroTierDefaultPlanet.World);
+
+        Assert.Equal(ZtZeroTierWorldType.Planet, world.Type);
+        Assert.Equal(149604618UL, world.Id);
+        Assert.InRange(world.Roots.Count, 1, 4);
+
+        foreach (var root in world.Roots)
+        {
+            Assert.NotEqual(0UL, root.Identity.NodeId.Value);
+            Assert.Equal(ZtZeroTierIdentity.PublicKeyLength, root.Identity.PublicKey.Length);
+            Assert.NotEmpty(root.StableEndpoints);
+
+            foreach (var endpoint in root.StableEndpoints)
+            {
+                Assert.Equal(9993, endpoint.Port);
+                Assert.False(endpoint.Address.IsIPv4MappedToIPv6);
+                Assert.False(endpoint.Address.Equals(System.Net.IPAddress.Any));
+                Assert.False(endpoint.Address.Equals(System.Net.IPAddress.IPv6Any));
+            }
+        }
+    }
+
+    [Fact]
+    public void CanLoadPlanetFromEmbeddedDefaultAndFile()
+    {
+        var options = new ZtZeroTierSocketOptions
+        {
+            StateRootPath = "unused",
+            NetworkId = 1,
+            PlanetSource = ZtZeroTierPlanetSource.EmbeddedDefault
+        };
+
+        var embedded = ZtZeroTierPlanetLoader.Load(options, CancellationToken.None);
+        Assert.Equal(ZtZeroTierWorldType.Planet, embedded.Type);
+        Assert.Equal(149604618UL, embedded.Id);
+
+        var planetPath = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllBytes(planetPath, ZtZeroTierDefaultPlanet.World.ToArray());
+
+            var fileOptions = new ZtZeroTierSocketOptions
+            {
+                StateRootPath = "unused",
+                NetworkId = 1,
+                PlanetSource = ZtZeroTierPlanetSource.FilePath,
+                PlanetFilePath = planetPath
+            };
+
+            var fromFile = ZtZeroTierPlanetLoader.Load(fileOptions, CancellationToken.None);
+            Assert.Equal(ZtZeroTierWorldType.Planet, fromFile.Type);
+            Assert.Equal(149604618UL, fromFile.Id);
+        }
+        finally
+        {
+            File.Delete(planetPath);
+        }
+    }
+}
+

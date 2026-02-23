@@ -27,10 +27,10 @@ Status legend:
 - [x] Add unit tests for codec roundtrips.
 
 ## Milestone Z4 — Network join (controller-based NWID)
-- [ ] Implement bootstrap from planet/roots (configurable planet source).
+- [x] Implement bootstrap from planet/roots (configurable planet source).
   - [x] Embed default planet bytes (no network fetch).
   - [x] Implement `World` (planet) binary decode (roots + stable endpoints).
-  - [ ] Add unit tests for planet decode (roots present, endpoints valid).
+  - [x] Add unit tests for planet decode (roots present, endpoints valid).
 - [ ] Implement secure session establishment and controller config fetch.
   - [ ] Implement identity wire serialization (Identity::serialize format).
   - [ ] Implement HELLO send + OK parse (unencrypted) over UDP.
