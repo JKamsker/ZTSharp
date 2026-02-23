@@ -35,11 +35,13 @@ internal static class ZtZeroTierHelloClient
     private const int HelloOkIndexRevision = HelloOkIndexMinorVersion + 1;
 
     public static async Task<ZtZeroTierHelloOk> HelloRootsAsync(
+        ZtZeroTierUdpTransport udp,
         ZtZeroTierIdentity localIdentity,
         ZtZeroTierWorld planet,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(localIdentity);
         ArgumentNullException.ThrowIfNull(planet);
         if (timeout <= TimeSpan.Zero)
@@ -60,117 +62,136 @@ internal static class ZtZeroTierHelloClient
             rootKeys[root.Identity.NodeId] = key;
         }
 
+        var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var pending = new Dictionary<ulong, ZtNodeId>(capacity: planet.Roots.Count);
+
+        foreach (var root in planet.Roots)
+        {
+            if (!rootKeys.TryGetValue(root.Identity.NodeId, out var key))
+            {
+                continue;
+            }
+
+            foreach (var endpoint in root.StableEndpoints)
+            {
+                var packet = BuildHelloPacket(
+                    localIdentity,
+                    destination: root.Identity.NodeId,
+                    physicalDestination: endpoint,
+                    planet,
+                    helloTimestamp,
+                    key,
+                    out var packetId);
+
+                pending[packetId] = root.Identity.NodeId;
+                await udp.SendAsync(endpoint, packet, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+
+        while (true)
+        {
+            ZtZeroTierUdpDatagram datagram;
+            try
+            {
+                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
+            }
+
+            var packetBytes = datagram.Payload.ToArray();
+            if (!ZtZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
+            {
+                continue;
+            }
+
+            if (!rootKeys.TryGetValue(packet.Header.Source, out var key))
+            {
+                continue;
+            }
+
+            if (!ZtZeroTierPacketCrypto.Dearmor(packetBytes, key))
+            {
+                continue;
+            }
+
+            if ((packetBytes[27] & ZtZeroTierPacketHeader.VerbFlagCompressed) != 0)
+            {
+                if (!ZtZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                {
+                    continue;
+                }
+
+                packetBytes = uncompressed;
+            }
+
+            var verb = (ZtZeroTierVerb)(packetBytes[27] & 0x1F);
+            if (verb != ZtZeroTierVerb.Ok)
+            {
+                continue;
+            }
+
+            if (packetBytes.Length < HelloOkIndexRevision + 2)
+            {
+                continue;
+            }
+
+            var inReVerb = (ZtZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
+            if (inReVerb != ZtZeroTierVerb.Hello)
+            {
+                continue;
+            }
+
+            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
+            if (!pending.TryGetValue(inRePacketId, out var rootNodeId))
+            {
+                continue;
+            }
+
+            var timestampEcho = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(HelloOkIndexTimestamp, 8));
+            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
+            var remoteMajor = packetBytes[HelloOkIndexMajorVersion];
+            var remoteMinor = packetBytes[HelloOkIndexMinorVersion];
+            var remoteRevision = BinaryPrimitives.ReadUInt16BigEndian(packetBytes.AsSpan(HelloOkIndexRevision, 2));
+
+            var ptr = HelloOkIndexRevision + 2;
+            IPEndPoint? surface = null;
+            if (ptr < packetBytes.Length)
+            {
+                if (ZtZeroTierInetAddressCodec.TryDeserialize(packetBytes.AsSpan(ptr), out var parsed, out var consumed))
+                {
+                    surface = parsed;
+                    ptr += consumed;
+                }
+            }
+
+            return new ZtZeroTierHelloOk(
+                RootNodeId: rootNodeId,
+                RootEndpoint: datagram.RemoteEndPoint,
+                HelloPacketId: inRePacketId,
+                HelloTimestampEcho: timestampEcho,
+                RemoteProtocolVersion: remoteProto,
+                RemoteMajorVersion: remoteMajor,
+                RemoteMinorVersion: remoteMinor,
+                RemoteRevision: remoteRevision,
+                ExternalSurfaceAddress: surface);
+        }
+    }
+
+    public static async Task<ZtZeroTierHelloOk> HelloRootsAsync(
+        ZtZeroTierIdentity localIdentity,
+        ZtZeroTierWorld planet,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
         try
         {
-            var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var pending = new Dictionary<ulong, ZtNodeId>(capacity: planet.Roots.Count);
-
-            foreach (var root in planet.Roots)
-            {
-                if (!rootKeys.TryGetValue(root.Identity.NodeId, out var key))
-                {
-                    continue;
-                }
-
-                foreach (var endpoint in root.StableEndpoints)
-                {
-                    var packet = BuildHelloPacket(
-                        localIdentity,
-                        destination: root.Identity.NodeId,
-                        physicalDestination: endpoint,
-                        planet,
-                        helloTimestamp,
-                        key,
-                        out var packetId);
-
-                    pending[packetId] = root.Identity.NodeId;
-                    await udp.SendAsync(endpoint, packet, cancellationToken).ConfigureAwait(false);
-                }
-            }
-
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(timeout);
-
-            while (true)
-            {
-                ZtZeroTierUdpDatagram datagram;
-                try
-                {
-                    datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
-                }
-
-                var packetBytes = datagram.Payload.ToArray();
-                if (!ZtZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
-                {
-                    continue;
-                }
-
-                if (!rootKeys.TryGetValue(packet.Header.Source, out var key))
-                {
-                    continue;
-                }
-
-                if (!ZtZeroTierPacketCrypto.Dearmor(packetBytes, key))
-                {
-                    continue;
-                }
-
-                var verb = (ZtZeroTierVerb)(packetBytes[27] & 0x1F);
-                if (verb != ZtZeroTierVerb.Ok)
-                {
-                    continue;
-                }
-
-                if (packetBytes.Length < HelloOkIndexRevision + 2)
-                {
-                    continue;
-                }
-
-                var inReVerb = (ZtZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-                if (inReVerb != ZtZeroTierVerb.Hello)
-                {
-                    continue;
-                }
-
-                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-                if (!pending.TryGetValue(inRePacketId, out var rootNodeId))
-                {
-                    continue;
-                }
-
-                var timestampEcho = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(HelloOkIndexTimestamp, 8));
-                var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
-                var remoteMajor = packetBytes[HelloOkIndexMajorVersion];
-                var remoteMinor = packetBytes[HelloOkIndexMinorVersion];
-                var remoteRevision = BinaryPrimitives.ReadUInt16BigEndian(packetBytes.AsSpan(HelloOkIndexRevision, 2));
-
-                var ptr = HelloOkIndexRevision + 2;
-                IPEndPoint? surface = null;
-                if (ptr < packetBytes.Length)
-                {
-                    if (ZtZeroTierInetAddressCodec.TryDeserialize(packetBytes.AsSpan(ptr), out var parsed, out var consumed))
-                    {
-                        surface = parsed;
-                        ptr += consumed;
-                    }
-                }
-
-                return new ZtZeroTierHelloOk(
-                    RootNodeId: rootNodeId,
-                    RootEndpoint: datagram.RemoteEndPoint,
-                    HelloPacketId: inRePacketId,
-                    HelloTimestampEcho: timestampEcho,
-                    RemoteProtocolVersion: remoteProto,
-                    RemoteMajorVersion: remoteMajor,
-                    RemoteMinorVersion: remoteMinor,
-                    RemoteRevision: remoteRevision,
-                    ExternalSurfaceAddress: surface);
-            }
+            return await HelloRootsAsync(udp, localIdentity, planet, timeout, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
