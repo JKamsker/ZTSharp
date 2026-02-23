@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace JKamsker.LibZt;
@@ -26,4 +27,10 @@ public sealed record class ZtNodeOptions
     public bool EnableIpv6 { get; init; } = true;
 
     public bool EnablePeerDiscovery { get; init; } = true;
+
+    /// <summary>
+    /// Optional advertised endpoint for the underlying transport (OS UDP).
+    /// Use this when peers need to reach this node from another process/machine.
+    /// </summary>
+    public IPEndPoint? AdvertisedTransportEndpoint { get; init; }
 }

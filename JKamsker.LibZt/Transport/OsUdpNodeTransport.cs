@@ -258,14 +258,44 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public ValueTask AddPeerAsync(ulong networkId, ulong nodeId, IPEndPoint endpoint)
+    public async ValueTask AddPeerAsync(ulong networkId, ulong nodeId, IPEndPoint endpoint)
     {
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
         ArgumentNullException.ThrowIfNull(endpoint);
 
+        var remoteEndpoint = NormalizeEndpointForRemoteDelivery(endpoint);
         var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        peers[nodeId] = NormalizeEndpointForRemoteDelivery(endpoint);
-        return ValueTask.CompletedTask;
+        peers[nodeId] = remoteEndpoint;
+
+        if (!_enablePeerDiscovery)
+        {
+            return;
+        }
+
+        if (!_localNodeIds.TryGetValue(networkId, out var localNodeId) || localNodeId == 0 || localNodeId == nodeId)
+        {
+            return;
+        }
+
+        try
+        {
+            await SendDiscoveryFrameAsync(
+                    networkId,
+                    localNodeId,
+                    remoteEndpoint,
+                    ControlFrameType.PeerHello,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (SocketException)
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -346,6 +376,14 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 }
 
                 continue;
+            }
+
+            if (_enablePeerDiscovery &&
+                sourceNodeId != 0 &&
+                _localNodeIds.TryGetValue(networkId, out var localNodeIdForDiscovery) &&
+                localNodeIdForDiscovery != sourceNodeId)
+            {
+                RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
             }
 
             if (!_networkSubscribers.TryGetValue(networkId, out var subscribers))

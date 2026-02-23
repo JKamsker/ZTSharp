@@ -30,11 +30,18 @@ Run the sample that creates a network and performs a ping/pong between two manag
 dotnet run -c Release --project samples/JKamsker.LibZt.Samples.ZtNetE2E/JKamsker.LibZt.Samples.ZtNetE2E.csproj
 ```
 
+Run the tunnel CLI (ngrok-like overlay port forwarder):
+
+```powershell
+dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- --help
+```
+
 ## Docs
 
 - `docs/USAGE.md` – public API usage guide
 - `docs/PERSISTENCE.md` – state store keys + planet/roots compatibility notes
 - `docs/E2E.md` – running the `ztnet` smoke test and sample
+- `docs/TUNNEL_DEMO.md` – local tunnel demo (reverse proxy + overlay `HttpClient`)
 - `docs/BENCHMARKS.md` – running BenchmarkDotNet benchmarks
 - `docs/AOT.md` – AOT/trimming notes
 - `docs/COMPATIBILITY.md` – tracked gaps vs upstream `libzt`

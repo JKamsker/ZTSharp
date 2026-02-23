@@ -66,9 +66,7 @@ public sealed class ZtNode : IAsyncDisposable
 
     public string StateRootPath => _options.StateRootPath;
 
-    public IPEndPoint? LocalTransportEndpoint => _transport is OsUdpNodeTransport udpTransport
-        ? udpTransport.LocalEndpoint
-        : null;
+    public IPEndPoint? LocalTransportEndpoint => GetLocalTransportEndpoint();
 
     public ZtNodeId NodeId => _nodeId;
 
@@ -480,7 +478,25 @@ public sealed class ZtNode : IAsyncDisposable
     }
 
     private IPEndPoint? GetLocalTransportEndpoint()
-        => _transport is OsUdpNodeTransport udpTransport ? udpTransport.LocalEndpoint : null;
+    {
+        if (_transport is not OsUdpNodeTransport udpTransport)
+        {
+            return null;
+        }
+
+        var advertised = _options.AdvertisedTransportEndpoint;
+        if (advertised is null)
+        {
+            return udpTransport.LocalEndpoint;
+        }
+
+        if (advertised.Port != 0)
+        {
+            return advertised;
+        }
+
+        return new IPEndPoint(advertised.Address, udpTransport.LocalEndpoint.Port);
+    }
 
     private Task OnFrameReceivedAsync(ulong sourceNodeId, ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
     {
