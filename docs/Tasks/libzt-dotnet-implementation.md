@@ -8,23 +8,23 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 
 ## Milestone M0 — Repository scaffolding and API surface
 - [x] Record full implementation strategy and task plan in versioned docs.
-- [ ] Create repository solution and projects (`JKamsker.LibZt`, tests).
-- [ ] Add root API namespace and public types (`ZtNode`, `ZtNodeOptions`, events, logging contracts).
-- [ ] Add pluggable store interfaces and file/memory implementations.
-- [ ] Add dependency constraints and package references (`.NET 10`, optional crypto and logging libraries).
-- [ ] Add CI/lint/test project layout with baseline test fixtures.
+- [x] Create repository solution and projects (`JKamsker.LibZt`, tests).
+- [x] Add root API namespace and public types (`ZtNode`, `ZtNodeOptions`, events, logging contracts).
+- [x] Add pluggable store interfaces and file/memory implementations.
+- [x] Add dependency constraints and package references (`.NET 10`, optional crypto and logging libraries).
+- [x] Add CI/lint/test project layout with baseline test fixtures.
 
 ## Milestone M1 — Core foundation
-- [ ] Implement deterministic identity/model types (Node ID generation and persistence).
-- [ ] Implement state serialization/deserialization for identity/peers/networks roots files.
-- [ ] Add node lifecycle state machine (`Stopped`, `Starting`, `Running`, `Stopping`, `Failed`).
+- [x] Implement deterministic identity/model types (Node ID generation and persistence).
+- [x] Implement state serialization/deserialization for identity/peers/networks roots files.
+- [x] Add node lifecycle state machine (`Stopped`, `Starting`, `Running`, `Stopping`, `Failed`).
 - [ ] Implement in-memory event loop and scheduling primitives.
-- [ ] Add tests for state store round-trip and identity determinism.
+- [x] Add tests for state store round-trip and identity determinism.
 
 ## Milestone M2 — Networking core without OS PHY
 - [ ] Implement in-memory transport bus for deterministic integration tests.
 - [ ] Add node-to-node control plane messaging with mock frame exchange.
-- [ ] Add `Join`, `Leave`, `GetNetworks`, and event dispatch plumbing.
+- [x] Add `Join`, `Leave`, `GetNetworks`, and event dispatch plumbing.
 - [ ] Implement minimal transport-independent forwarding behavior.
 - [ ] Add offline integration tests for join/leave and network membership transitions.
 
