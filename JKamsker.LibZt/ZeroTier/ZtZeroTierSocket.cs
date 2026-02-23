@@ -1,6 +1,7 @@
 using System.Net;
 using JKamsker.LibZt.ZeroTier.Http;
 using JKamsker.LibZt.ZeroTier.Internal;
+using JKamsker.LibZt.ZeroTier.Protocol;
 
 namespace JKamsker.LibZt.ZeroTier;
 
@@ -9,13 +10,15 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
     private readonly ZtZeroTierSocketOptions _options;
     private readonly string _statePath;
     private readonly ZtZeroTierIdentity _identity;
+    private readonly ZtZeroTierWorld _planet;
     private bool _disposed;
 
-    private ZtZeroTierSocket(ZtZeroTierSocketOptions options, string statePath, ZtZeroTierIdentity identity)
+    private ZtZeroTierSocket(ZtZeroTierSocketOptions options, string statePath, ZtZeroTierIdentity identity, ZtZeroTierWorld planet)
     {
         _options = options;
         _statePath = statePath;
         _identity = identity;
+        _planet = planet;
         NodeId = identity.NodeId;
     }
 
@@ -66,7 +69,9 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             throw new InvalidOperationException($"Invalid identity at '{identityPath}'. Delete it to regenerate.");
         }
 
-        return Task.FromResult(new ZtZeroTierSocket(options, statePath, identity));
+        var planet = ZtZeroTierPlanetLoader.Load(options, cancellationToken);
+
+        return Task.FromResult(new ZtZeroTierSocket(options, statePath, identity, planet));
     }
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
