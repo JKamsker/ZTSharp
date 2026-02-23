@@ -63,8 +63,8 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add `AOT` compatibility pass where feasible.
 
 ## Ongoing
-- [ ] Reconcile licensing constraints from dependent modules (BSD-like sections and change dates).
-- [ ] Track any protocol-level compatibility gaps against upstream `libzt`.
+- [x] Reconcile licensing constraints from dependent modules (BSD-like sections and change dates).
+- [x] Track any protocol-level compatibility gaps against upstream `libzt`.
 
 ## Milestone M6 — Memory-first API modernization
 - [x] Replace public `byte[]` payload/identity return surfaces with `ReadOnlyMemory<byte>` or `ReadOnlySpan<byte>` where practical.
