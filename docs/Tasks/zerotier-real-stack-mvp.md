@@ -28,10 +28,23 @@ Status legend:
 
 ## Milestone Z4 — Network join (controller-based NWID)
 - [ ] Implement bootstrap from planet/roots (configurable planet source).
+  - [ ] Embed default planet bytes (no network fetch).
+  - [ ] Implement `World` (planet) binary decode (roots + stable endpoints).
+  - [ ] Add unit tests for planet decode (roots present, endpoints valid).
 - [ ] Implement secure session establishment and controller config fetch.
+  - [ ] Implement identity wire serialization (Identity::serialize format).
+  - [ ] Implement HELLO send + OK parse (unencrypted) over UDP.
+  - [ ] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
+  - [ ] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
 - [ ] Persist assigned managed IPs to state and expose them via API.
+  - [ ] Persist network config + assigned IPs under `<state>/zerotier/`.
+  - [ ] Expose assigned IPs via `ZtZeroTierSocket.ManagedIps`.
 
 ## Milestone Z5 — Outbound TCP + HttpClient “just works”
 - [ ] Implement minimal user-space IPv4 + ARP + TCP active-open (client only).
+  - [ ] Add minimal IPv4 stack (routing + ICMP optional).
+  - [ ] Add TCP active-open (client) with streams.
 - [ ] Wire `ZtZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
+  - [ ] Resolve ZeroTier managed IPs to overlay peers using network config/ARP.
+  - [ ] Implement `ConnectTcpAsync` to return a stream backed by user-space TCP.
 - [ ] Add opt-in E2E test (`LIBZT_RUN_ZEROTIER_E2E`) with env-configured NWID + URL.
