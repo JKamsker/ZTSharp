@@ -7,7 +7,7 @@ Status legend:
 - `[x]` Completed (implemented + validated + committed)
 
 ## Milestone Z0 — Repo/task scaffolding
-- [ ] Add initial task breakdown (this file).
+- [x] Add initial task breakdown (this file).
 
 ## Milestone Z1 — Public API + CLI wiring (scaffolding, no networking yet)
 - [ ] Add `JKamsker.LibZt.ZeroTier` public API stubs (`ZtZeroTierSocketOptions`, `ZtZeroTierSocket`).
@@ -35,4 +35,3 @@ Status legend:
 - [ ] Implement minimal user-space IPv4 + ARP + TCP active-open (client only).
 - [ ] Wire `ZtZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
 - [ ] Add opt-in E2E test (`LIBZT_RUN_ZEROTIER_E2E`) with env-configured NWID + URL.
-
