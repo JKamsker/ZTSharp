@@ -7,6 +7,10 @@ namespace JKamsker.LibZt;
 /// </summary>
 public sealed class MemoryZtStateStore : IZtStateStore
 {
+    private static readonly string[] _planetAliases = ["planet", "roots"];
+    private static readonly string _planetAlias = _planetAliases[0];
+    private static readonly string _rootsAlias = _planetAliases[1];
+
     private readonly ConcurrentDictionary<string, byte[]> _storage = new(StringComparer.Ordinal);
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -55,6 +59,24 @@ public sealed class MemoryZtStateStore : IZtStateStore
             }
         }
 
+        if (normalizedPrefix.Length == 0)
+        {
+            var hasRootsAlias = false;
+            for (var i = 0; i < keys.Count; i++)
+            {
+                if (string.Equals(keys[i], _rootsAlias, StringComparison.Ordinal))
+                {
+                    hasRootsAlias = true;
+                    break;
+                }
+            }
+
+            if (_storage.ContainsKey(_planetAlias) && !hasRootsAlias)
+            {
+                keys.Add(_rootsAlias);
+            }
+        }
+
         return Task.FromResult<IReadOnlyList<string>>(keys);
     }
 
@@ -79,6 +101,12 @@ public sealed class MemoryZtStateStore : IZtStateStore
             throw new ArgumentException($"Invalid key path: {key}", nameof(key));
         }
 
-        return string.Join('/', parts);
+        normalized = string.Join('/', parts);
+        if (_planetAliases.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            normalized = _planetAlias;
+        }
+
+        return normalized;
     }
 }

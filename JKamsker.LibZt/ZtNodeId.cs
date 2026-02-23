@@ -3,10 +3,12 @@ using System.Globalization;
 namespace JKamsker.LibZt;
 
 /// <summary>
-/// Represents a 64-bit ZeroTier node identifier.
+/// Represents a 40-bit ZeroTier node identifier (10 hex digits).
 /// </summary>
 public readonly record struct ZtNodeId(ulong Value)
 {
+    public const ulong MaxValue = 0xFFFFFFFFFFUL;
+
     public static ZtNodeId FromHex(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
@@ -17,8 +19,13 @@ public readonly record struct ZtNodeId(ulong Value)
         }
 
         var parsed = ulong.Parse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        if (parsed > MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), $"Node id must fit in 40 bits (<= 0x{MaxValue:x10}).");
+        }
+
         return new ZtNodeId(parsed);
     }
 
-    public override string ToString() => $"0x{Value:x16}";
+    public override string ToString() => $"0x{Value:x10}";
 }

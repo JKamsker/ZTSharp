@@ -5,7 +5,7 @@ using System.Threading.Channels;
 namespace JKamsker.LibZt.Sockets;
 
 /// <summary>
-/// Managed UDP-like client backed by the in-memory node transport.
+/// Managed UDP-like client backed by the node transport.
 /// </summary>
 public sealed class ZtUdpClient : IAsyncDisposable
 {
@@ -37,7 +37,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
         _incoming = Channel.CreateUnbounded<ZtUdpDatagram>();
         _ownsConnection = ownsConnection;
 
-        _node.FrameReceived += OnFrameReceived;
+        _node.RawFrameReceived += OnFrameReceived;
     }
 
     public bool IsDisposed => _disposed;
@@ -83,7 +83,10 @@ public sealed class ZtUdpClient : IAsyncDisposable
 
         cancellationToken.ThrowIfCancellationRequested();
         var frameLength = 6 + datagram.Length;
-        var frame = ArrayPool<byte>.Shared.Rent(frameLength);
+        var usesPool = _node.LocalTransportEndpoint is not null;
+        var frame = usesPool
+            ? ArrayPool<byte>.Shared.Rent(frameLength)
+            : new byte[frameLength];
         try
         {
             BuildFrame(_localPort, remotePort, datagram.Span, frame.AsSpan(0, frameLength));
@@ -92,7 +95,10 @@ public sealed class ZtUdpClient : IAsyncDisposable
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(frame);
+            if (usesPool)
+            {
+                ArrayPool<byte>.Shared.Return(frame);
+            }
         }
     }
 
@@ -119,7 +125,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
             _disposed = true;
             if (_ownsConnection)
             {
-                _node.FrameReceived -= OnFrameReceived;
+                _node.RawFrameReceived -= OnFrameReceived;
             }
 
             _incoming.Writer.TryComplete();
@@ -131,7 +137,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
         }
     }
 
-    private void OnFrameReceived(object? sender, ZtNetworkFrame frame)
+    private void OnFrameReceived(in ZtRawFrame frame)
     {
         if (_disposed || frame.NetworkId != _networkId || frame.Payload.Length < 6)
         {

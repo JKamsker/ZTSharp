@@ -2,6 +2,9 @@
 /obj
 **/bin/
 **/obj/
+BenchmarkDotNet.Artifacts/
+TestResults/
+**/TestResults/
 *.user
 *.cache
 *.tmp

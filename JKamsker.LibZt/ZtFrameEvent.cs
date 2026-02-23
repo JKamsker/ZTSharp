@@ -1,7 +1,7 @@
 namespace JKamsker.LibZt;
 
 /// <summary>
-/// Event published when a virtual frame is delivered between nodes in the managed in-memory transport.
+/// Event published when a frame is delivered between nodes via the selected transport.
 /// </summary>
 [global::System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1710:IdentifiersShouldHaveCorrectSuffix", Justification = "Public event payload type name is part of API contract.")]
 public sealed class ZtNetworkFrame : EventArgs

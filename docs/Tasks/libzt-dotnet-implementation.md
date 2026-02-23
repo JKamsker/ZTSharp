@@ -12,34 +12,42 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add root API namespace and public types (`ZtNode`, `ZtNodeOptions`, events, logging contracts).
 - [x] Add pluggable store interfaces and file/memory implementations.
 - [x] Add dependency constraints and package references (`.NET 10`, optional crypto and logging libraries).
-- [x] Add CI/lint/test project layout with baseline test fixtures.
+- [x] Add test project layout with baseline test fixtures.
+- [ ] Add CI pipeline to run `dotnet test -c Release`.
+- [ ] Add formatting/linting config and wire into CI.
 
 ## Milestone M1 — Core foundation
 - [x] Implement deterministic identity/model types (Node ID generation and persistence).
-- [x] Implement state serialization/deserialization for identity/peers/networks roots files.
-- [x] Add node lifecycle state machine (`Stopped`, `Starting`, `Running`, `Stopping`, `Failed`).
-- [x] Implement in-memory event loop and scheduling primitives.
+- [x] Implement state serialization/deserialization for identity and joined networks.
+- [x] Add `planet` / `roots` state store alias handling.
+- [ ] Add persisted peer directory/state (if required for future discovery/routing/controller semantics).
+- [x] Add node lifecycle state machine (`Created`, `Starting`, `Running`, `Stopping`, `Stopped`, `Faulted`).
+- [x] Implement event stream and lifecycle/network event emission.
+- [ ] Implement in-memory event loop and scheduling primitives (timers, work queue) for future protocol state machines.
 - [x] Add tests for state store round-trip and identity determinism.
 
 ## Milestone M2 — Networking core without OS PHY
 - [x] Implement in-memory transport bus for deterministic integration tests.
-- [x] Add node-to-node control plane messaging with mock frame exchange.
+- [x] Add node-to-node frame exchange with mock transport.
 - [x] Add `Join`, `Leave`, `GetNetworks`, and event dispatch plumbing.
 - [x] Implement minimal transport-independent forwarding behavior.
 - [x] Add offline integration tests for join/leave and network membership transitions.
 
 ## Milestone M3 — Managed user-space stack MVP
-	- [x] Implement basic UDP path over managed stack.
-	- [x] Implement managed TCP stream/listener primitives using async socket-like abstractions.
-	- [x] Add IPv4 and IPv6 endpoint/address model support.
+	- [x] Implement UDP-like datagrams over node transport (`ZtUdpClient`).
+	- [ ] Implement overlay TCP stream/listener primitives over node transport.
+	- [x] Provide OS TCP wrapper APIs for local tests (`ZtTcpClient`, `ZtTcpListener`).
+	- [ ] Add IPv4/IPv6 overlay endpoint/address model support (virtual NIC / lwIP parity).
+	- [x] Add IPv4/IPv6 support in `OsUdp` transport.
 	- [x] Add `ZtUdpClient`, `ZtTcpClient`, `ZtTcpListener` public APIs.
-	- [x] Add offline echo tests for both TCP and UDP traffic flows.
+	- [x] Add offline echo tests for UDP frames and OS TCP loopback.
 
 ## Milestone M4 — Real interop via `ztnet` validation network
 - [x] Add OS UDP transport adapter and packet framing.
 - [x] Implement node-to-node handshake over real UDP path.
 - [x] Add peer endpoint registration API and OS UDP peer mapping.
-- [x] Add peer discovery + virtual interface plumbing.
+- [x] Add in-process peer discovery handshake over OS UDP (HELLO control frames).
+- [ ] Add virtual network interface plumbing (TUN/TAP) and overlay network stack parity.
 - [x] Validate network creation via local `ztnet` CLI.
 - [x] Run manual `ztnet network create` command with configured local credentials.
 - [ ] Validate joining an actual ZeroTier network using local `ztnet` CLI.
@@ -48,10 +56,10 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 
 ## Milestone M5 — Cross-platform and hardening
 - [ ] Add Windows transport first, then Linux/macOS adapters.
-- [ ] Add persistence migration/compatibility notes for `planet`/`roots` storage.
+- [x] Add persistence migration/compatibility notes for `planet`/`roots` storage.
 - [ ] Add resilience and cancellation semantics.
-- [ ] Add performance/memory benchmarks for core loops.
-- [ ] Add docs, samples, and API usage guide.
+- [x] Add performance/memory benchmarks for core loops.
+- [x] Add docs, samples, and API usage guide.
 - [ ] Add `AOT` compatibility pass where feasible.
 
 ## Ongoing
@@ -62,5 +70,5 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Replace public `byte[]` payload/identity return surfaces with `ReadOnlyMemory<byte>` or `ReadOnlySpan<byte>` where practical.
 - [x] Remove frame copy on OS-UDP forwarding path (`ToArray`-based handoff).
 - [x] Audit and remove remaining `byte[]`-based framing/list-materialization allocations in internal transport and store hot paths.
-- [ ] Add allocation benchmarks for hot packet and dispatch paths.
+- [x] Add allocation benchmarks for hot packet and dispatch paths.
 - [x] Replace manual `new byte[...]` in transport hot paths with `ArrayPool`/`Span` strategy where safe and measurable.

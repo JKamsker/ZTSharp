@@ -11,6 +11,8 @@ namespace JKamsker.LibZt.Transport;
 /// </summary>
 internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 {
+    private const int WindowsSioUdpConnReset = unchecked((int)0x9800000C);
+
     private sealed record Subscriber(
         ulong NodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
@@ -22,9 +24,13 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
     }
 
     private static readonly ConcurrentDictionary<ulong, ConcurrentDictionary<ulong, IPEndPoint>> _networkDirectory = new();
-    private const int ControlFrameNodeOffset = 1;
+    private const int ControlMagicLength = 4;
+    private const int ControlFrameTypeOffset = ControlMagicLength;
+    private const int ControlFrameNodeOffset = ControlMagicLength + 1;
     private const int ControlFrameNodeLength = sizeof(ulong);
-    private const int ControlFrameLength = 1 + ControlFrameNodeLength;
+    private const int ControlFrameLength = ControlMagicLength + 1 + ControlFrameNodeLength;
+
+    private static ReadOnlySpan<byte> ControlMagic => "ZTC1"u8;
 
     private readonly UdpClient _udp;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -45,6 +51,29 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         else
         {
             _udp.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                _udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, [0], null);
+            }
+            catch (SocketException)
+            {
+            }
+            catch (PlatformNotSupportedException)
+            {
+            }
+            catch (NotSupportedException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
@@ -91,7 +120,6 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             localPeers[peer.Key] = peer.Value;
         }
 
-        var helloTasks = new List<Task>(discoveredPeers.Count);
         foreach (var peer in discoveredPeers)
         {
             if (peer.Key == nodeId)
@@ -99,17 +127,12 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 continue;
             }
 
-            helloTasks.Add(SendDiscoveryFrameAsync(
+            await SendDiscoveryFrameAsync(
                 networkId,
                 nodeId,
                 peer.Value,
                 ControlFrameType.PeerHello,
-                cancellationToken));
-        }
-
-        if (helloTasks.Count > 0)
-        {
-            await Task.WhenAll(helloTasks).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
         }
 
         return registrationId;
@@ -156,7 +179,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         }
     }
 
-    public Task SendFrameAsync(
+    public async Task SendFrameAsync(
         ulong networkId,
         ulong sourceNodeId,
         ReadOnlyMemory<byte> payload,
@@ -165,7 +188,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (!_networkPeers.TryGetValue(networkId, out var peers))
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var frameBuffer = ArrayPool<byte>.Shared.Rent(NodeFrameCodec.GetEncodedLength(payload.Length));
@@ -182,8 +205,6 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             }
 
             var frame = frameBuffer.AsMemory(0, frameLength);
-            Task? firstTask = null;
-            List<Task>? sendTasks = null;
             foreach (var peer in peers)
             {
                 if (peer.Key == sourceNodeId)
@@ -191,33 +212,10 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                     continue;
                 }
 
-                var sendTask = _udp.SendAsync(frame, peer.Value, cancellationToken).AsTask();
-                if (firstTask is null)
-                {
-                    firstTask = sendTask;
-                    continue;
-                }
-
-                sendTasks ??= new List<Task>(2);
-                if (sendTasks.Count == 0)
-                {
-                    sendTasks.Add(firstTask);
-                }
-
-                sendTasks.Add(sendTask);
+                await _udp
+                    .SendAsync(frame, peer.Value, cancellationToken)
+                    .ConfigureAwait(false);
             }
-
-            if (sendTasks is not null)
-            {
-                return Task.WhenAll(sendTasks);
-            }
-
-            if (firstTask is not null)
-            {
-                return firstTask;
-            }
-
-            return Task.CompletedTask;
         }
         finally
         {
@@ -279,11 +277,19 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             UdpReceiveResult result;
             try
             {
-            result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
+                result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.ConnectionReset)
+            {
+                continue;
             }
 
             if (!NodeFrameCodec.TryDecode(result.Buffer.AsMemory(), out var networkId, out var sourceNodeId, out var payload))
@@ -318,33 +324,11 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 continue;
             }
 
-            Task? firstCallback = null;
-            List<Task>? callbacks = null;
             foreach (var callback in subscribers.Values)
             {
-                var callbackTask = callback.OnFrameReceived(sourceNodeId, networkId, payload, token);
-                if (firstCallback is null)
-                {
-                    firstCallback = callbackTask;
-                    continue;
-                }
-
-                callbacks ??= new List<Task>(2);
-                if (callbacks.Count == 0)
-                {
-                    callbacks.Add(firstCallback);
-                }
-
-                callbacks.Add(callbackTask);
-            }
-
-            if (callbacks is not null)
-            {
-                await Task.WhenAll(callbacks).ConfigureAwait(false);
-            }
-            else if (firstCallback is not null)
-            {
-                await firstCallback.ConfigureAwait(false);
+                await callback
+                    .OnFrameReceived(sourceNodeId, networkId, payload, token)
+                    .ConfigureAwait(false);
             }
         }
     }
@@ -369,7 +353,6 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 
             await _udp
                 .SendAsync(frame.AsMemory(0, frameLength), endpoint, cancellationToken)
-                .AsTask()
                 .ConfigureAwait(false);
         }
         finally
@@ -380,7 +363,8 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 
     private static void WriteControlPayload(ControlFrameType frameType, ulong nodeId, Span<byte> payload)
     {
-        payload[0] = (byte)frameType;
+        ControlMagic.CopyTo(payload);
+        payload[ControlFrameTypeOffset] = (byte)frameType;
         BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(ControlFrameNodeOffset), nodeId);
     }
 
@@ -396,13 +380,18 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             return false;
         }
 
-        frameType = (ControlFrameType)payload[0];
+        if (!payload.Slice(0, ControlMagicLength).SequenceEqual(ControlMagic))
+        {
+            return false;
+        }
+
+        frameType = (ControlFrameType)payload[ControlFrameTypeOffset];
         if (frameType != ControlFrameType.PeerHello && frameType != ControlFrameType.PeerHelloResponse)
         {
             return false;
         }
 
-        nodeId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(ControlFrameNodeOffset));
+        nodeId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(ControlFrameNodeOffset, ControlFrameNodeLength));
         return true;
     }
 
