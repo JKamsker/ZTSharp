@@ -8,6 +8,7 @@
 - `identity.public` – 32 bytes public material
 - `planet` / `roots` – controller/roots payload placeholder (compat alias)
 - `networks.d/<NETWORK_ID>.conf` – joined network marker/config (JSON payload)
+- `peers.d/<NETWORK_ID>/<PEER_NODE_ID>.peer` – OS UDP peer endpoint (binary)
 
 ## `planet` / `roots` compatibility
 
@@ -24,4 +25,3 @@ If you have existing state folders:
 
 - Keep your current files as-is (`planet` or `roots`); the file store normalizes to `planet` internally.
 - Network membership is discovered by scanning `networks.d/*.conf` on startup.
-

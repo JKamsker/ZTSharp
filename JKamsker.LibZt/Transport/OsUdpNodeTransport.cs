@@ -39,9 +39,11 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
     private readonly ConcurrentDictionary<ulong, ulong> _localNodeIds = new();
     private readonly CancellationTokenSource _receiverCts = new();
     private readonly Task _receiverLoop;
+    private readonly bool _enablePeerDiscovery;
 
-    public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true)
+    public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true, bool enablePeerDiscovery = true)
     {
+        _enablePeerDiscovery = enablePeerDiscovery;
         _udp = CreateSocket(localPort, enableIpv6);
 
         if (OperatingSystem.IsWindows())
@@ -127,6 +129,11 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             networkId,
             _ => new ConcurrentDictionary<Guid, Subscriber>());
         subscribers[registrationId] = new Subscriber(nodeId, onFrameReceived);
+
+        if (!_enablePeerDiscovery)
+        {
+            return registrationId;
+        }
 
         var discoveredPeers = _networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
         discoveredPeers[nodeId] = advertisedEndpoint;
@@ -321,7 +328,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 
             if (TryParseControlPayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
             {
-                if (discoveredNodeId != 0)
+                if (_enablePeerDiscovery && discoveredNodeId != 0)
                 {
                     RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
                     if (_localNodeIds.TryGetValue(networkId, out var localNodeId) && localNodeId != discoveredNodeId)

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Net;
 using System.Threading.Channels;
@@ -20,6 +21,7 @@ public sealed class ZtNode : IAsyncDisposable
     private const string PlanetKey = "planet";
     private const string NetworksDirectory = "networks.d";
     private const string NetworksDirectoryPrefix = $"{NetworksDirectory}/";
+    private const string PeersDirectory = "peers.d";
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly IZtStateStore _store;
@@ -47,7 +49,7 @@ public sealed class ZtNode : IAsyncDisposable
         _store = options.StateStore ?? new FileZtStateStore(options.StateRootPath);
         _logger = (options.LoggerFactory ?? global::Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance).CreateLogger<ZtNode>();
         _transport = options.TransportMode == ZtTransportMode.OsUdp
-            ? new OsUdpNodeTransport(options.UdpListenPort ?? 0, options.EnableIpv6)
+            ? new OsUdpNodeTransport(options.UdpListenPort ?? 0, options.EnableIpv6, options.EnablePeerDiscovery)
             : SharedTransport;
         _ownsTransport = options.TransportMode == ZtTransportMode.OsUdp;
         _state = ZtNodeState.Created;
@@ -165,6 +167,7 @@ public sealed class ZtNode : IAsyncDisposable
             localEndpoint,
             cancellationToken).ConfigureAwait(false);
         _networkRegistrations[networkId] = registration;
+        await RecoverPeersAsync(networkId, cancellationToken).ConfigureAwait(false);
 
         RaiseEvent(ZtEventCode.NetworkJoined, DateTimeOffset.UtcNow, networkId);
     }
@@ -225,6 +228,7 @@ public sealed class ZtNode : IAsyncDisposable
 
         cancellationToken.ThrowIfCancellationRequested();
         await udpTransport.AddPeerAsync(networkId, peerNodeId, endpoint).ConfigureAwait(false);
+        await PersistPeerAsync(networkId, peerNodeId, endpoint, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ZtIdentity> GetIdentityAsync(CancellationToken cancellationToken = default)
@@ -318,6 +322,66 @@ public sealed class ZtNode : IAsyncDisposable
                 localEndpoint,
                 cancellationToken).ConfigureAwait(false);
             _networkRegistrations[network] = registration;
+            await RecoverPeersAsync(network, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RecoverPeersAsync(ulong networkId, CancellationToken cancellationToken)
+    {
+        if (_transport is not OsUdpNodeTransport udpTransport)
+        {
+            return;
+        }
+
+        var prefix = BuildPeersNetworkPrefix(networkId);
+        var keys = await _store.ListAsync(prefix, cancellationToken).ConfigureAwait(false);
+        foreach (var key in keys)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryParsePeerKey(prefix, key, out var peerNodeId))
+            {
+                continue;
+            }
+
+            var payload = await _store.ReadAsync(key, cancellationToken).ConfigureAwait(false);
+            if (!payload.HasValue || payload.Value.Length == 0)
+            {
+                continue;
+            }
+
+            if (!PeerEndpointCodec.TryDecode(payload.Value.Span, out var endpoint))
+            {
+                continue;
+            }
+
+            await udpTransport.AddPeerAsync(networkId, peerNodeId, endpoint).ConfigureAwait(false);
+        }
+    }
+
+    private async Task PersistPeerAsync(
+        ulong networkId,
+        ulong peerNodeId,
+        IPEndPoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = BuildPeerFileKey(networkId, peerNodeId);
+
+        Span<byte> stackBuffer = stackalloc byte[PeerEndpointCodec.MaxEncodedLength];
+        if (!PeerEndpointCodec.TryEncode(endpoint, stackBuffer, out var bytesWritten))
+        {
+            throw new InvalidOperationException("Failed to encode peer endpoint.");
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(bytesWritten);
+        try
+        {
+            stackBuffer.Slice(0, bytesWritten).CopyTo(buffer);
+            await _store.WriteAsync(key, buffer.AsMemory(0, bytesWritten), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -353,6 +417,33 @@ public sealed class ZtNode : IAsyncDisposable
     }
 
     private static string BuildNetworkFileKey(ulong networkId) => $"{NetworksDirectory}/{networkId}.conf";
+
+    private static string BuildPeerFileKey(ulong networkId, ulong peerNodeId) => $"{PeersDirectory}/{networkId}/{peerNodeId}.peer";
+
+    private static string BuildPeersNetworkPrefix(ulong networkId) => $"{PeersDirectory}/{networkId}";
+
+    private static bool TryParsePeerKey(ReadOnlySpan<char> prefix, string key, out ulong peerNodeId)
+    {
+        peerNodeId = 0;
+        if (!key.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var suffix = key.AsSpan(prefix.Length).TrimStart('/');
+        if (!suffix.EndsWith(".peer", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        suffix = suffix[..^5];
+        if (suffix.Length == 0 || suffix.Contains('/'))
+        {
+            return false;
+        }
+
+        return ulong.TryParse(suffix, out peerNodeId);
+    }
 
     private async Task EnsureRunningAsync(CancellationToken cancellationToken)
     {

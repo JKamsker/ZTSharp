@@ -20,7 +20,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Implement deterministic identity/model types (Node ID generation and persistence).
 - [x] Implement state serialization/deserialization for identity and joined networks.
 - [x] Add `planet` / `roots` state store alias handling.
-- [ ] Add persisted peer directory/state (if required for future discovery/routing/controller semantics).
+- [x] Add persisted peer directory/state (if required for future discovery/routing/controller semantics).
 - [x] Add node lifecycle state machine (`Created`, `Starting`, `Running`, `Stopping`, `Stopped`, `Faulted`).
 - [x] Implement event stream and lifecycle/network event emission.
 - [ ] Implement in-memory event loop and scheduling primitives (timers, work queue) for future protocol state machines.

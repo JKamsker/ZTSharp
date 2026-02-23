@@ -24,4 +24,6 @@ public sealed record class ZtNodeOptions
     public int TickIntervalMilliseconds { get; init; } = 50;
 
     public bool EnableIpv6 { get; init; } = true;
+
+    public bool EnablePeerDiscovery { get; init; } = true;
 }
