@@ -23,7 +23,7 @@ Status legend:
 
 ## Milestone Z3 — UDP transport + packet framing
 - [x] Implement a UDP transport loop (send/recv, cancellation, timeouts, logging).
-- [ ] Implement packet encode/decode scaffolding (enough to start parsing control packets).
+- [x] Implement packet encode/decode scaffolding (enough to start parsing control packets).
 - [ ] Add unit tests for codec roundtrips.
 
 ## Milestone Z4 — Network join (controller-based NWID)
