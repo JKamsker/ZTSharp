@@ -22,7 +22,7 @@ Status legend:
 - [x] Add tests with fixed vectors (derived from upstream docs) for node id derivation.
 
 ## Milestone Z3 — UDP transport + packet framing
-- [ ] Implement a UDP transport loop (send/recv, cancellation, timeouts, logging).
+- [x] Implement a UDP transport loop (send/recv, cancellation, timeouts, logging).
 - [ ] Implement packet encode/decode scaffolding (enough to start parsing control packets).
 - [ ] Add unit tests for codec roundtrips.
 
