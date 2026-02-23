@@ -15,6 +15,10 @@ public sealed record class ZtNodeOptions
 
     public ILoggerFactory? LoggerFactory { get; init; }
 
+    public ZtTransportMode TransportMode { get; init; } = ZtTransportMode.InMemory;
+
+    public int? UdpListenPort { get; init; }
+
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(20);
 
     public int TickIntervalMilliseconds { get; init; } = 50;

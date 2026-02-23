@@ -20,6 +20,8 @@ public sealed class ZtNode : IAsyncDisposable
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly IZtStateStore _store;
     private static readonly InMemoryNodeTransport SharedTransport = new();
+    private readonly IZtNodeTransport _transport;
+    private readonly bool _ownsTransport;
     private readonly ILogger _logger;
     private readonly ZtNodeOptions _options;
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
@@ -39,6 +41,10 @@ public sealed class ZtNode : IAsyncDisposable
         _options = options;
         _store = options.StateStore ?? new FileZtStateStore(options.StateRootPath);
         _logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<ZtNode>();
+        _transport = options.TransportMode == ZtTransportMode.OsUdp
+            ? new OsUdpNodeTransport(options.UdpListenPort ?? 0)
+            : SharedTransport;
+        _ownsTransport = options.TransportMode == ZtTransportMode.OsUdp;
         _state = ZtNodeState.Created;
         _nodeId = default;
     }
@@ -135,7 +141,7 @@ public sealed class ZtNode : IAsyncDisposable
 
         await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
         _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
-        var registration = await SharedTransport.JoinNetworkAsync(
+        var registration = await _transport.JoinNetworkAsync(
             networkId,
             _nodeId.Value,
             OnFrameReceivedAsync,
@@ -151,7 +157,7 @@ public sealed class ZtNode : IAsyncDisposable
         var key = BuildNetworkFileKey(networkId);
         if (_networkRegistrations.TryRemove(networkId, out var registration))
         {
-            await SharedTransport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
+            await _transport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
         }
 
         var removed = _joinedNetworks.TryRemove(networkId, out _);
@@ -170,7 +176,7 @@ public sealed class ZtNode : IAsyncDisposable
             throw new InvalidOperationException($"Node is not a member of network {networkId}.");
         }
 
-        await SharedTransport.SendFrameAsync(networkId, _nodeId.Value, payload, cancellationToken).ConfigureAwait(false);
+        await _transport.SendFrameAsync(networkId, _nodeId.Value, payload, cancellationToken).ConfigureAwait(false);
         RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameSent, DateTimeOffset.UtcNow, networkId, Message = "Frame sent"));
     }
 
@@ -202,10 +208,15 @@ public sealed class ZtNode : IAsyncDisposable
         _nodeCts.Cancel();
         await StopAsync().ConfigureAwait(false);
         await LeaveAllNetworksAsync().ConfigureAwait(false);
-            _stateLock.Dispose();
-            _events.Writer.TryComplete();
-            _nodeCts.Dispose();
+        if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
+        {
+            await asyncTransport.DisposeAsync().ConfigureAwait(false);
         }
+
+        _stateLock.Dispose();
+        _events.Writer.TryComplete();
+        _nodeCts.Dispose();
+    }
 
     private async Task<ZtIdentity> EnsureIdentityAsync(CancellationToken cancellationToken)
     {
@@ -258,7 +269,7 @@ public sealed class ZtNode : IAsyncDisposable
 
         foreach (var network in _joinedNetworks.Keys)
         {
-            var registration = await SharedTransport.JoinNetworkAsync(
+            var registration = await _transport.JoinNetworkAsync(
                 network,
                 _nodeId.Value,
                 OnFrameReceivedAsync,
@@ -318,7 +329,7 @@ public sealed class ZtNode : IAsyncDisposable
     {
         foreach (var kv in _networkRegistrations.ToArray())
         {
-            await SharedTransport.LeaveNetworkAsync(kv.Key, kv.Value).ConfigureAwait(false);
+            await _transport.LeaveNetworkAsync(kv.Key, kv.Value).ConfigureAwait(false);
         }
 
         _networkRegistrations.Clear();
