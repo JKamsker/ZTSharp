@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,7 @@ public sealed class ZtNode : IAsyncDisposable
     private readonly ZtNodeOptions _options;
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
     private readonly ConcurrentDictionary<ulong, Guid> _networkRegistrations = new();
+    private readonly Channel<ZtEvent> _events = Channel.CreateUnbounded<ZtEvent>();
     private readonly CancellationTokenSource _nodeCts = new();
 
     private ZtNodeState _state;
@@ -178,6 +180,11 @@ public sealed class ZtNode : IAsyncDisposable
         return Task.FromResult<IReadOnlyCollection<ulong>>(_joinedNetworks.Keys.ToArray());
     }
 
+    public IAsyncEnumerable<ZtEvent> GetEventStream(CancellationToken cancellationToken = default)
+    {
+        return _events.Reader.ReadAllAsync(cancellationToken);
+    }
+
     public async Task<ZtIdentity> GetIdentityAsync(CancellationToken cancellationToken = default)
     {
         await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
@@ -195,9 +202,10 @@ public sealed class ZtNode : IAsyncDisposable
         _nodeCts.Cancel();
         await StopAsync().ConfigureAwait(false);
         await LeaveAllNetworksAsync().ConfigureAwait(false);
-        _stateLock.Dispose();
-        _nodeCts.Dispose();
-    }
+            _stateLock.Dispose();
+            _events.Writer.TryComplete();
+            _nodeCts.Dispose();
+        }
 
     private async Task<ZtIdentity> EnsureIdentityAsync(CancellationToken cancellationToken)
     {
@@ -320,6 +328,7 @@ public sealed class ZtNode : IAsyncDisposable
     private void RaiseEvent(ZtEvent e)
     {
         EventRaised?.Invoke(this, e);
+        _events.Writer.TryWrite(e);
     }
 }
 

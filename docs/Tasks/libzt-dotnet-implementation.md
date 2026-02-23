@@ -18,7 +18,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Implement deterministic identity/model types (Node ID generation and persistence).
 - [x] Implement state serialization/deserialization for identity/peers/networks roots files.
 - [x] Add node lifecycle state machine (`Stopped`, `Starting`, `Running`, `Stopping`, `Failed`).
-- [ ] Implement in-memory event loop and scheduling primitives.
+- [x] Implement in-memory event loop and scheduling primitives.
 - [x] Add tests for state store round-trip and identity determinism.
 
 ## Milestone M2 — Networking core without OS PHY
