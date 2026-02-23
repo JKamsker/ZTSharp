@@ -19,6 +19,7 @@ public sealed class ZtNode : IAsyncDisposable
     private const string IdentityPublicKey = "identity.public";
     private const string PlanetKey = "planet";
     private const string NetworksDirectory = "networks.d";
+    private const string NetworksDirectoryPrefix = $"{NetworksDirectory}/";
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly IZtStateStore _store;
@@ -276,12 +277,12 @@ public sealed class ZtNode : IAsyncDisposable
         foreach (var key in keys)
         {
             var relative = key;
-            if (!relative.StartsWith($"{NetworksDirectory}/", StringComparison.Ordinal))
+            if (!relative.StartsWith(NetworksDirectoryPrefix, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var suffix = relative.AsSpan($"{NetworksDirectory}/".Length);
+            var suffix = relative.AsSpan(NetworksDirectoryPrefix.Length);
             if (!suffix.EndsWith(".conf", StringComparison.Ordinal))
             {
                 continue;

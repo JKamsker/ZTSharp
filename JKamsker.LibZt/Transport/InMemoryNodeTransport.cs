@@ -78,7 +78,8 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport, IDisposable
             return;
         }
 
-        var frameTasks = new List<Task>();
+        Task? firstTask = null;
+        List<Task>? frameTasks = null;
         foreach (var subscriber in subscribers)
         {
             if (subscriber.Value.NodeId == sourceNodeId)
@@ -87,10 +88,31 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport, IDisposable
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            frameTasks.Add(subscriber.Value.OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken));
+            var callbackTask = subscriber.Value.OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken);
+            if (firstTask is null)
+            {
+                firstTask = callbackTask;
+                continue;
+            }
+
+            frameTasks ??= new List<Task>(1 + subscribers.Count);
+            if (frameTasks.Count == 0)
+            {
+                frameTasks.Add(firstTask);
+            }
+            frameTasks.Add(callbackTask);
         }
 
-        await Task.WhenAll(frameTasks).ConfigureAwait(false);
+        if (frameTasks is not null)
+        {
+            await Task.WhenAll(frameTasks).ConfigureAwait(false);
+            return;
+        }
+
+        if (firstTask is not null)
+        {
+            await firstTask.ConfigureAwait(false);
+        }
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)

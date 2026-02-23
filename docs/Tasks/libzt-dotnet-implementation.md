@@ -60,4 +60,6 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 ## Milestone M6 — Memory-first API modernization
 - [x] Replace public `byte[]` payload/identity return surfaces with `ReadOnlyMemory<byte>` or `ReadOnlySpan<byte>` where practical.
 - [x] Remove frame copy on OS-UDP forwarding path (`ToArray`-based handoff).
-- [ ] Audit remaining `byte[]`-based framing APIs and migrate remaining internal helpers.
+- [x] Audit and remove remaining `byte[]`-based framing/list-materialization allocations in internal transport and store hot paths.
+- [ ] Add allocation benchmarks for hot packet and dispatch paths.
+- [ ] Replace manual `new byte[...]` in hot paths with `ArrayPool`/`Span` strategy where safe and measurable.

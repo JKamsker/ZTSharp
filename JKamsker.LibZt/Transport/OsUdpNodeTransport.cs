@@ -97,8 +97,9 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             return Task.CompletedTask;
         }
 
-        var frame = NodeFrameCodec.Encode(networkId, sourceNodeId, payload.Span);
-        var sendTasks = new List<Task>();
+        Task? firstTask = null;
+        List<Task>? sendTasks = null;
+        ReadOnlyMemory<byte> frame = default;
         foreach (var peer in peers)
         {
             if (peer.Key == sourceNodeId)
@@ -106,10 +107,33 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 continue;
             }
 
-            sendTasks.Add(_udp.SendAsync(frame, peer.Value, cancellationToken).AsTask());
+            if (frame.IsEmpty)
+            {
+                frame = NodeFrameCodec.Encode(networkId, sourceNodeId, payload.Span);
+            }
+
+            var sendTask = _udp.SendAsync(frame, peer.Value, cancellationToken).AsTask();
+            if (firstTask is null)
+            {
+                firstTask = sendTask;
+                continue;
+            }
+
+            sendTasks ??= new List<Task>(2);
+            if (sendTasks.Count == 0)
+            {
+                sendTasks.Add(firstTask);
+            }
+
+            sendTasks.Add(sendTask);
         }
 
-        return Task.WhenAll(sendTasks);
+        if (sendTasks is not null)
+        {
+            return Task.WhenAll(sendTasks);
+        }
+
+        return firstTask ?? Task.CompletedTask;
     }
 
     public Task FlushAsync(CancellationToken cancellationToken = default)
@@ -169,15 +193,33 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 continue;
             }
 
-            var callbacks = new List<Task>(subscribers.Count);
+            Task? firstCallback = null;
+            List<Task>? callbacks = null;
             foreach (var callback in subscribers.Values)
             {
-                callbacks.Add(callback.OnFrameReceived(sourceNodeId, networkId, payload, token));
+                var callbackTask = callback.OnFrameReceived(sourceNodeId, networkId, payload, token);
+                if (firstCallback is null)
+                {
+                    firstCallback = callbackTask;
+                    continue;
+                }
+
+                callbacks ??= new List<Task>(2);
+                if (callbacks.Count == 0)
+                {
+                    callbacks.Add(firstCallback);
+                }
+
+                callbacks.Add(callbackTask);
             }
 
-            if (callbacks.Count > 0)
+            if (callbacks is not null)
             {
                 await Task.WhenAll(callbacks).ConfigureAwait(false);
+            }
+            else if (firstCallback is not null)
+            {
+                await firstCallback.ConfigureAwait(false);
             }
         }
     }

@@ -7,6 +7,8 @@ namespace JKamsker.LibZt;
 public sealed class FileZtStateStore : IZtStateStore
 {
     private static readonly string[] _planetAliases = ["planet", "roots"];
+    private static readonly string _planetAlias = _planetAliases[0];
+    private static readonly string _rootsAlias = _planetAliases[1];
     private readonly string _rootPath;
 
     public FileZtStateStore(string rootPath)
@@ -78,24 +80,36 @@ public sealed class FileZtStateStore : IZtStateStore
             return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         }
 
-        var entries = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
-            .Select(path => Path.GetRelativePath(_rootPath, path).Replace('\\', '/'))
-            .ToArray();
+        var entries = new List<string>();
+        foreach (var path in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        {
+            entries.Add(Path.GetRelativePath(_rootPath, path).Replace('\\', '/'));
+        }
 
         if (virtualPrefix.Length == 0)
         {
-            var aliases = new List<string>(entries);
-            if (File.Exists(Path.Combine(_rootPath, "planet")) && !entries.Contains("roots", StringComparer.Ordinal))
+            var hasRootsAlias = false;
+            for (var i = 0; i < entries.Count; i++)
             {
-                aliases.Add("roots");
+                if (string.Equals(entries[i], _rootsAlias, StringComparison.Ordinal))
+                {
+                    hasRootsAlias = true;
+                    break;
+                }
             }
 
-            if (File.Exists(Path.Combine(_rootPath, "roots")))
+            if (File.Exists(Path.Combine(_rootPath, _planetAlias)) && !hasRootsAlias)
             {
-                aliases.Add("roots");
+                entries.Add(_rootsAlias);
+                hasRootsAlias = true;
             }
 
-            return Task.FromResult<IReadOnlyList<string>>(aliases.Distinct(StringComparer.Ordinal).ToArray());
+            if (File.Exists(Path.Combine(_rootPath, _rootsAlias)) && !hasRootsAlias)
+            {
+                entries.Add(_rootsAlias);
+            }
+
+            return Task.FromResult<IReadOnlyList<string>>(entries);
         }
 
         return Task.FromResult<IReadOnlyList<string>>(entries);

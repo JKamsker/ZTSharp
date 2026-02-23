@@ -46,9 +46,15 @@ public sealed class MemoryZtStateStore : IZtStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedPrefix = NormalizePrefix(prefix);
-        var keys = _storage.Keys
-            .Where(key => key.StartsWith(normalizedPrefix, StringComparison.Ordinal))
-            .ToArray();
+        var keys = new List<string>();
+        foreach (var key in _storage.Keys)
+        {
+            if (key.StartsWith(normalizedPrefix, StringComparison.Ordinal))
+            {
+                keys.Add(key);
+            }
+        }
+
         return Task.FromResult<IReadOnlyList<string>>(keys);
     }
 

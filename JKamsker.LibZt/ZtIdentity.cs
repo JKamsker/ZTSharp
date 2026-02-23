@@ -19,13 +19,7 @@ internal static class ZtIdentitySerializer
     {
         var payload = new byte[1 + sizeof(ulong) + SecretLength + PublicLength];
         payload[0] = 1;
-        var nodeIdBytes = BitConverter.GetBytes(identity.NodeId.Value);
-        if (!BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(nodeIdBytes);
-        }
-
-        nodeIdBytes.CopyTo(payload, 1);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(1), identity.NodeId.Value);
         identity.SecretKey.Span.Slice(0, SecretLength).CopyTo(payload.AsSpan(1 + sizeof(ulong), SecretLength));
         identity.PublicKey.Span.Slice(0, PublicLength).CopyTo(payload.AsSpan(1 + sizeof(ulong) + SecretLength, PublicLength));
         return payload;
