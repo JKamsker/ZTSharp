@@ -60,7 +60,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add resilience and cancellation semantics.
 - [x] Add performance/memory benchmarks for core loops.
 - [x] Add docs, samples, and API usage guide.
-- [ ] Add `AOT` compatibility pass where feasible.
+- [x] Add `AOT` compatibility pass where feasible.
 
 ## Ongoing
 - [ ] Reconcile licensing constraints from dependent modules (BSD-like sections and change dates).
