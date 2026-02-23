@@ -14,6 +14,8 @@ public enum ZtEventCode
     NetworkJoinRequested,
     NetworkJoined,
     NetworkLeft,
+    NetworkFrameReceived,
+    NetworkFrameSent,
     IdentityInitialized,
     StateFlushed
 }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using JKamsker.LibZt.Transport;
 
 namespace JKamsker.LibZt;
 
@@ -17,9 +18,11 @@ public sealed class ZtNode : IAsyncDisposable
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
     private readonly IZtStateStore _store;
+    private static readonly InMemoryNodeTransport SharedTransport = new();
     private readonly ILogger _logger;
     private readonly ZtNodeOptions _options;
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
+    private readonly ConcurrentDictionary<ulong, Guid> _networkRegistrations = new();
     private readonly CancellationTokenSource _nodeCts = new();
 
     private ZtNodeState _state;
@@ -39,6 +42,7 @@ public sealed class ZtNode : IAsyncDisposable
     }
 
     public event EventHandler<ZtEvent>? EventRaised;
+    public event EventHandler<ZtNetworkFrame>? FrameReceived;
 
     public IZtStateStore Store => _store;
 
@@ -129,6 +133,12 @@ public sealed class ZtNode : IAsyncDisposable
 
         await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
         _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
+        var registration = await SharedTransport.JoinNetworkAsync(
+            networkId,
+            _nodeId.Value,
+            OnFrameReceivedAsync,
+            cancellationToken).ConfigureAwait(false);
+        _networkRegistrations[networkId] = registration;
 
         RaiseEvent(new ZtEvent(ZtEventCode.NetworkJoined, DateTimeOffset.UtcNow, networkId));
     }
@@ -137,12 +147,29 @@ public sealed class ZtNode : IAsyncDisposable
     {
         await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
         var key = BuildNetworkFileKey(networkId);
+        if (_networkRegistrations.TryRemove(networkId, out var registration))
+        {
+            await SharedTransport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
+        }
+
         var removed = _joinedNetworks.TryRemove(networkId, out _);
         if (removed)
         {
             await _store.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
             RaiseEvent(new ZtEvent(ZtEventCode.NetworkLeft, DateTimeOffset.UtcNow, networkId));
         }
+    }
+
+    public async Task SendFrameAsync(ulong networkId, byte[] payload, CancellationToken cancellationToken = default)
+    {
+        await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
+        if (!_joinedNetworks.ContainsKey(networkId))
+        {
+            throw new InvalidOperationException($"Node is not a member of network {networkId}.");
+        }
+
+        await SharedTransport.SendFrameAsync(networkId, _nodeId.Value, payload, cancellationToken).ConfigureAwait(false);
+        RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameSent, DateTimeOffset.UtcNow, networkId, Message = "Frame sent"));
     }
 
     public Task<IReadOnlyCollection<ulong>> GetNetworksAsync(CancellationToken cancellationToken = default)
@@ -167,6 +194,7 @@ public sealed class ZtNode : IAsyncDisposable
         _disposed = true;
         _nodeCts.Cancel();
         await StopAsync().ConfigureAwait(false);
+        await LeaveAllNetworksAsync().ConfigureAwait(false);
         _stateLock.Dispose();
         _nodeCts.Dispose();
     }
@@ -219,6 +247,24 @@ public sealed class ZtNode : IAsyncDisposable
                 _joinedNetworks.TryAdd(networkId, new NetworkInfo(networkId, DateTimeOffset.UtcNow));
             }
         }
+
+        foreach (var network in _joinedNetworks.Keys)
+        {
+            var registration = await SharedTransport.JoinNetworkAsync(
+                network,
+                _nodeId.Value,
+                OnFrameReceivedAsync,
+                cancellationToken).ConfigureAwait(false);
+            _networkRegistrations[network] = registration;
+        }
+    }
+
+    private Task OnFrameReceivedAsync(ulong sourceNodeId, ulong networkId, byte[] payload, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        FrameReceived?.Invoke(this, new ZtNetworkFrame(networkId, sourceNodeId, payload, DateTimeOffset.UtcNow));
+        RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameReceived, DateTimeOffset.UtcNow, networkId, Message = "Frame received"));
+        return Task.CompletedTask;
     }
 
     private static ulong ComputeNodeIdFromSecret(byte[] secret)
@@ -258,6 +304,17 @@ public sealed class ZtNode : IAsyncDisposable
         {
             throw new ObjectDisposedException(nameof(ZtNode));
         }
+    }
+
+    private async Task LeaveAllNetworksAsync()
+    {
+        foreach (var kv in _networkRegistrations.ToArray())
+        {
+            await SharedTransport.LeaveNetworkAsync(kv.Key, kv.Value).ConfigureAwait(false);
+        }
+
+        _networkRegistrations.Clear();
+        _joinedNetworks.Clear();
     }
 
     private void RaiseEvent(ZtEvent e)

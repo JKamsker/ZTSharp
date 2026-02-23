@@ -22,11 +22,11 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add tests for state store round-trip and identity determinism.
 
 ## Milestone M2 — Networking core without OS PHY
-- [ ] Implement in-memory transport bus for deterministic integration tests.
-- [ ] Add node-to-node control plane messaging with mock frame exchange.
+- [x] Implement in-memory transport bus for deterministic integration tests.
+- [x] Add node-to-node control plane messaging with mock frame exchange.
 - [x] Add `Join`, `Leave`, `GetNetworks`, and event dispatch plumbing.
-- [ ] Implement minimal transport-independent forwarding behavior.
-- [ ] Add offline integration tests for join/leave and network membership transitions.
+- [x] Implement minimal transport-independent forwarding behavior.
+- [x] Add offline integration tests for join/leave and network membership transitions.
 
 ## Milestone M3 — Managed user-space stack MVP
 - [ ] Implement basic UDP path over managed stack.

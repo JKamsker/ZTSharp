@@ -95,4 +95,44 @@ public class StoreAndNodeTests
             Assert.Equal(firstId, secondId);
         }
     }
+
+    [Fact]
+    public async Task InMemoryTransport_DeliversFramesBetweenNodes()
+    {
+        var n1Store = new MemoryZtStateStore();
+        var n2Store = new MemoryZtStateStore();
+        var networkId = 424242UL;
+        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var node1 = new ZtNode(new ZtNodeOptions
+        {
+            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateStore = n1Store
+        });
+        await using var node2 = new ZtNode(new ZtNodeOptions
+        {
+            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateStore = n2Store
+        });
+
+        node2.FrameReceived += (_, frame) =>
+        {
+            tcs.TrySetResult(frame.Payload);
+        };
+
+        await node1.StartAsync();
+        await node2.StartAsync();
+        await node1.JoinNetworkAsync(networkId);
+        await node2.JoinNetworkAsync(networkId);
+
+        await node1.SendFrameAsync(networkId, [1, 2, 3, 4, 5]);
+        var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal([1, 2, 3, 4, 5], payload);
+
+        await node1.LeaveNetworkAsync(networkId);
+        await node2.LeaveNetworkAsync(networkId);
+        await node1.StopAsync();
+        await node2.StopAsync();
+    }
 }
