@@ -38,6 +38,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 ## Milestone M4 — Real interop via `ztnet` validation network
 - [x] Add OS UDP transport adapter and packet framing.
 - [ ] Implement node-to-node handshake over real UDP path.
+- [x] Add peer endpoint registration API and OS UDP peer mapping.
 - [ ] Add peer discovery + virtual interface plumbing.
 - [x] Validate network creation via local `ztnet` CLI.
 - [ ] Validate joining an actual ZeroTier network using local `ztnet` CLI.

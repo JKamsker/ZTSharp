@@ -140,6 +140,62 @@ public class StoreAndNodeTests
     }
 
     [Fact]
+    public async Task OsUdpTransport_DeliversFramesBetweenNodes()
+    {
+        var n1Store = new MemoryZtStateStore();
+        var n2Store = new MemoryZtStateStore();
+        var networkId = 98765UL;
+        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var node1 = new ZtNode(new ZtNodeOptions
+        {
+            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateStore = n1Store,
+            TransportMode = ZtTransportMode.OsUdp
+        });
+        await using var node2 = new ZtNode(new ZtNodeOptions
+        {
+            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateStore = n2Store,
+            TransportMode = ZtTransportMode.OsUdp
+        });
+
+        node2.FrameReceived += (_, frame) =>
+        {
+            if (frame.NetworkId == networkId)
+            {
+                tcs.TrySetResult(frame.Payload);
+            }
+        };
+
+        await node1.StartAsync();
+        await node2.StartAsync();
+        await node1.JoinNetworkAsync(networkId);
+        await node2.JoinNetworkAsync(networkId);
+
+        var node1Id = (await node1.GetIdentityAsync()).NodeId;
+        var node2Id = (await node2.GetIdentityAsync()).NodeId;
+
+        var node1Endpoint = node1.LocalTransportEndpoint;
+        var node2Endpoint = node2.LocalTransportEndpoint;
+        Assert.NotNull(node1Endpoint);
+        Assert.NotNull(node2Endpoint);
+
+        await node1.AddPeerAsync(networkId, node2Id.Value, node2Endpoint);
+        await node2.AddPeerAsync(networkId, node1Id.Value, node1Endpoint);
+
+        await node1.SendFrameAsync(networkId, [10, 20, 30]);
+        var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal([10, 20, 30], payload);
+
+        await node1.LeaveNetworkAsync(networkId);
+        await node2.LeaveNetworkAsync(networkId);
+        await node1.StopAsync();
+        await node2.StopAsync();
+    }
+
+    [Fact]
     public async Task InMemoryUdpClient_EchoesDatagram()
     {
         var n1Store = new MemoryZtStateStore();
