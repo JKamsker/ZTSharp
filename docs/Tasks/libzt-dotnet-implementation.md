@@ -13,8 +13,8 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add pluggable store interfaces and file/memory implementations.
 - [x] Add dependency constraints and package references (`.NET 10`, optional crypto and logging libraries).
 - [x] Add test project layout with baseline test fixtures.
-- [ ] Add CI pipeline to run `dotnet test -c Release`.
-- [ ] Add formatting/linting config and wire into CI.
+- [x] Add CI pipeline to run `dotnet test -c Release`.
+- [x] Add formatting/linting config and wire into CI.
 
 ## Milestone M1 — Core foundation
 - [x] Implement deterministic identity/model types (Node ID generation and persistence).
@@ -55,7 +55,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add optional E2E test scaffold gated by `LIBZT_RUN_E2E` for external CLI smoke checks.
 
 ## Milestone M5 — Cross-platform and hardening
-- [ ] Add Windows transport first, then Linux/macOS adapters.
+- [x] Add OS UDP transport with cross-platform support (Windows/Linux/macOS via `UdpClient`, IPv4 fallback when IPv6 is unavailable).
 - [x] Add persistence migration/compatibility notes for `planet`/`roots` storage.
 - [ ] Add resilience and cancellation semantics.
 - [x] Add performance/memory benchmarks for core loops.

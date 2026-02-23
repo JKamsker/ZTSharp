@@ -115,12 +115,12 @@ public class ExternalZtNetTests
 
             var receivePing = udp2.ReceiveAsync();
             await udp1.SendAsync(ping);
-            var datagramPing = await receivePing.WaitAsync(TimeSpan.FromSeconds(3));
+            var datagramPing = await receivePing.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             Assert.True(datagramPing.Payload.Span.SequenceEqual(ping));
 
             var receivePong = udp1.ReceiveAsync();
             await udp2.SendAsync(pong);
-            var datagramPong = await receivePong.WaitAsync(TimeSpan.FromSeconds(3));
+            var datagramPong = await receivePong.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             Assert.True(datagramPong.Payload.Span.SequenceEqual(pong));
         }
         finally

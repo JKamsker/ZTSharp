@@ -44,7 +44,7 @@ public sealed class OsUdpPeerDiscoveryTests
 
         var receivePing = udp2.ReceiveAsync();
         await udp1.SendAsync(ping);
-        var datagramPing = await receivePing.WaitAsync(TimeSpan.FromSeconds(3));
+        var datagramPing = await receivePing.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
 
         Assert.True(datagramPing.Payload.Span.SequenceEqual(ping));
     }

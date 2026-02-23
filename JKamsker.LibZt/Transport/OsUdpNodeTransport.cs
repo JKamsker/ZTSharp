@@ -42,16 +42,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 
     public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true)
     {
-        _udp = new UdpClient(enableIpv6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork);
-        if (enableIpv6)
-        {
-            _udp.Client.DualMode = true;
-            _udp.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
-        }
-        else
-        {
-            _udp.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-        }
+        _udp = CreateSocket(localPort, enableIpv6);
 
         if (OperatingSystem.IsWindows())
         {
@@ -77,6 +68,37 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         }
 
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
+    }
+
+    private static UdpClient CreateSocket(int localPort, bool enableIpv6)
+    {
+        if (!enableIpv6)
+        {
+            var udp4 = new UdpClient(AddressFamily.InterNetwork);
+            udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+            return udp4;
+        }
+
+        try
+        {
+            var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
+            udp6.Client.DualMode = true;
+            udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
+            return udp6;
+        }
+        catch (SocketException)
+        {
+        }
+        catch (PlatformNotSupportedException)
+        {
+        }
+        catch (NotSupportedException)
+        {
+        }
+
+        var udpFallback = new UdpClient(AddressFamily.InterNetwork);
+        udpFallback.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+        return udpFallback;
     }
 
     public IPEndPoint LocalEndpoint

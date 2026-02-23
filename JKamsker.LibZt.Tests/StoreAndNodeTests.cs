@@ -344,7 +344,7 @@ public class StoreAndNodeTests
 
         await node2Udp.ConnectAsync((await node1.GetIdentityAsync()).NodeId.Value, 10001);
 
-        var receive = node1Udp.ReceiveAsync();
+        var receive = node1Udp.ReceiveAsync().AsTask();
         await node2Udp.SendAsync(new byte[] { 1, 2, 3, 4 });
         var datagram = await receive.WaitAsync(TimeSpan.FromSeconds(1));
 
@@ -398,7 +398,7 @@ public class StoreAndNodeTests
         await node2Udp.ConnectAsync(node1Id, 11001);
 
         var payload = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-        var receive = node1Udp.ReceiveAsync();
+        var receive = node1Udp.ReceiveAsync().AsTask();
         await node2Udp.SendAsync(payload);
         var datagram = await receive.WaitAsync(TimeSpan.FromSeconds(2));
 

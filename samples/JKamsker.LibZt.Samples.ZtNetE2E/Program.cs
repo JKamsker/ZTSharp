@@ -92,13 +92,13 @@ try
     Console.WriteLine("Sending ping...");
     var receivePing = udp2.ReceiveAsync();
     await udp1.SendAsync(ping);
-    var datagramPing = await receivePing.WaitAsync(TimeSpan.FromSeconds(5));
+    var datagramPing = await receivePing.AsTask().WaitAsync(TimeSpan.FromSeconds(5));
     Console.WriteLine($"Received: {Encoding.UTF8.GetString(datagramPing.Payload.Span)}");
 
     Console.WriteLine("Sending pong...");
     var receivePong = udp1.ReceiveAsync();
     await udp2.SendAsync(pong);
-    var datagramPong = await receivePong.WaitAsync(TimeSpan.FromSeconds(5));
+    var datagramPong = await receivePong.AsTask().WaitAsync(TimeSpan.FromSeconds(5));
     Console.WriteLine($"Received: {Encoding.UTF8.GetString(datagramPong.Payload.Span)}");
 
     Console.WriteLine("E2E OK");

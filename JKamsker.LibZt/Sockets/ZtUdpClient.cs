@@ -102,10 +102,8 @@ public sealed class ZtUdpClient : IAsyncDisposable
         }
     }
 
-    public async Task<ZtUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
-    {
-        return await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-    }
+    public ValueTask<ZtUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
+        => _incoming.Reader.ReadAsync(cancellationToken);
 
     public void Close()
     {
