@@ -153,10 +153,12 @@ public sealed class ZtNode : IAsyncDisposable
 
         await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
         _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
+        var localEndpoint = GetLocalTransportEndpoint();
         var registration = await _transport.JoinNetworkAsync(
             networkId,
             _nodeId.Value,
             OnFrameReceivedAsync,
+            localEndpoint,
             cancellationToken).ConfigureAwait(false);
         _networkRegistrations[networkId] = registration;
 
@@ -297,14 +299,19 @@ public sealed class ZtNode : IAsyncDisposable
 
         foreach (var network in _joinedNetworks.Keys)
         {
+            var localEndpoint = GetLocalTransportEndpoint();
             var registration = await _transport.JoinNetworkAsync(
                 network,
                 _nodeId.Value,
                 OnFrameReceivedAsync,
+                localEndpoint,
                 cancellationToken).ConfigureAwait(false);
             _networkRegistrations[network] = registration;
         }
     }
+
+    private IPEndPoint? GetLocalTransportEndpoint()
+        => _transport is OsUdpNodeTransport udpTransport ? udpTransport.LocalEndpoint : null;
 
     private Task OnFrameReceivedAsync(ulong sourceNodeId, ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
     {

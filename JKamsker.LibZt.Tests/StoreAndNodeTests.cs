@@ -196,6 +196,52 @@ public class StoreAndNodeTests
     }
 
     [Fact]
+    public async Task OsUdpTransport_AutoDiscoversPeersWithoutManualAdd()
+    {
+        var n1Store = new MemoryZtStateStore();
+        var n2Store = new MemoryZtStateStore();
+        var networkId = 54321UL;
+        var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using var node1 = new ZtNode(new ZtNodeOptions
+        {
+            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateStore = n1Store,
+            TransportMode = ZtTransportMode.OsUdp
+        });
+        await using var node2 = new ZtNode(new ZtNodeOptions
+        {
+            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateStore = n2Store,
+            TransportMode = ZtTransportMode.OsUdp
+        });
+
+        node2.FrameReceived += (_, frame) =>
+        {
+            if (frame.NetworkId == networkId)
+            {
+                tcs.TrySetResult(frame.Payload);
+            }
+        };
+
+        await node1.StartAsync();
+        await node2.StartAsync();
+        await node1.JoinNetworkAsync(networkId);
+        await node2.JoinNetworkAsync(networkId);
+
+        await Task.Delay(100);
+        await node1.SendFrameAsync(networkId, new byte[] { 9, 9, 9 });
+        var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(payload.Span.SequenceEqual(new byte[] { 9, 9, 9 }));
+
+        await node1.LeaveNetworkAsync(networkId);
+        await node2.LeaveNetworkAsync(networkId);
+        await node1.StopAsync();
+        await node2.StopAsync();
+    }
+
+    [Fact]
     public async Task InMemoryUdpClient_EchoesDatagram()
     {
         var n1Store = new MemoryZtStateStore();

@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace JKamsker.LibZt.Transport;
 
 /// <summary>
@@ -9,6 +11,7 @@ internal interface IZtNodeTransport
         ulong networkId,
         ulong nodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
+        IPEndPoint? localEndpoint = null,
         CancellationToken cancellationToken = default);
 
     Task LeaveNetworkAsync(ulong networkId, Guid registrationId, CancellationToken cancellationToken = default);

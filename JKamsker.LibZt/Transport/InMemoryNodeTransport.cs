@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 
 namespace JKamsker.LibZt.Transport;
 
@@ -18,6 +19,7 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport, IDisposable
         ulong networkId,
         ulong nodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
+        IPEndPoint? localEndpoint = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);

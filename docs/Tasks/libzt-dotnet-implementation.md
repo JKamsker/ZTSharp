@@ -37,13 +37,14 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 
 ## Milestone M4 — Real interop via `ztnet` validation network
 - [x] Add OS UDP transport adapter and packet framing.
-- [ ] Implement node-to-node handshake over real UDP path.
+- [x] Implement node-to-node handshake over real UDP path.
 - [x] Add peer endpoint registration API and OS UDP peer mapping.
-- [ ] Add peer discovery + virtual interface plumbing.
+- [x] Add peer discovery + virtual interface plumbing.
 - [x] Validate network creation via local `ztnet` CLI.
 - [x] Run manual `ztnet network create` command with configured local credentials.
 - [ ] Validate joining an actual ZeroTier network using local `ztnet` CLI.
 - [ ] Verify end-to-end socket communication with external ZeroTier endpoints.
+- [x] Add optional E2E test scaffold gated by `LIBZT_RUN_E2E` for external CLI smoke checks.
 
 ## Milestone M5 — Cross-platform and hardening
 - [ ] Add Windows transport first, then Linux/macOS adapters.
@@ -62,4 +63,4 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Remove frame copy on OS-UDP forwarding path (`ToArray`-based handoff).
 - [x] Audit and remove remaining `byte[]`-based framing/list-materialization allocations in internal transport and store hot paths.
 - [ ] Add allocation benchmarks for hot packet and dispatch paths.
-- [ ] Replace manual `new byte[...]` in hot paths with `ArrayPool`/`Span` strategy where safe and measurable.
+- [x] Replace manual `new byte[...]` in transport hot paths with `ArrayPool`/`Span` strategy where safe and measurable.

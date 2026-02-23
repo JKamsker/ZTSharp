@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Buffers;
 using System.Threading.Channels;
 
 namespace JKamsker.LibZt.Sockets;
@@ -69,15 +70,30 @@ public sealed class ZtUdpClient : IAsyncDisposable
         return datagram.Length;
     }
 
-    public Task SendToAsync(ReadOnlyMemory<byte> datagram, ulong remoteNodeId, int remotePort, CancellationToken cancellationToken = default)
+    public async Task<int> SendToAsync(
+        ReadOnlyMemory<byte> datagram,
+        ulong remoteNodeId,
+        int remotePort,
+        CancellationToken cancellationToken = default)
     {
         if (remotePort is < 1 or > ushort.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(remotePort));
         }
+
         cancellationToken.ThrowIfCancellationRequested();
-        var frame = BuildFrame(_localPort, remotePort, datagram.Span);
-        return _node.SendFrameAsync(_networkId, frame, cancellationToken);
+        var frameLength = 6 + datagram.Length;
+        var frame = ArrayPool<byte>.Shared.Rent(frameLength);
+        try
+        {
+            BuildFrame(_localPort, remotePort, datagram.Span, frame.AsSpan(0, frameLength));
+            await _node.SendFrameAsync(_networkId, frame.AsMemory(0, frameLength), cancellationToken).ConfigureAwait(false);
+            return datagram.Length;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(frame);
+        }
     }
 
     public async Task<ZtUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
@@ -164,14 +180,16 @@ public sealed class ZtUdpClient : IAsyncDisposable
         return true;
     }
 
-    private static ReadOnlyMemory<byte> BuildFrame(int sourcePort, int destinationPort, ReadOnlySpan<byte> payload)
+    private static void BuildFrame(
+        int sourcePort,
+        int destinationPort,
+        ReadOnlySpan<byte> payload,
+        Span<byte> destination)
     {
-        var buffer = new byte[6 + payload.Length];
-        buffer[0] = UdpFrameVersion;
-        buffer[1] = UdpFrameType;
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(2, 2), (ushort)sourcePort);
-        BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(4, 2), (ushort)destinationPort);
-        payload.CopyTo(buffer.AsSpan(6));
-        return buffer;
+        destination[0] = UdpFrameVersion;
+        destination[1] = UdpFrameType;
+        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), (ushort)sourcePort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), (ushort)destinationPort);
+        payload.CopyTo(destination.Slice(6));
     }
 }
