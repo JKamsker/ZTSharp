@@ -29,11 +29,11 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add offline integration tests for join/leave and network membership transitions.
 
 ## Milestone M3 — Managed user-space stack MVP
-- [ ] Implement basic UDP path over managed stack.
+	- [x] Implement basic UDP path over managed stack.
 	- [x] Implement managed TCP stream/listener primitives using async socket-like abstractions.
 - [ ] Add IPv4 and IPv6 endpoint/address model support.
 	- [x] Add `ZtUdpClient`, `ZtTcpClient`, `ZtTcpListener` public APIs.
-- [ ] Add offline echo tests for both TCP and UDP traffic flows.
+	- [ ] Add offline echo tests for both TCP and UDP traffic flows.
 
 ## Milestone M4 — Real interop via `ztnet` validation network
 - [ ] Add OS UDP transport adapter and packet framing.
