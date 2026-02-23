@@ -37,7 +37,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 	- [x] Implement UDP-like datagrams over node transport (`ZtUdpClient`).
 	- [x] Implement overlay TCP stream/listener primitives over node transport.
 	- [x] Provide OS TCP wrapper APIs for local tests (`ZtTcpClient`, `ZtTcpListener`).
-	- [ ] Add IPv4/IPv6 overlay endpoint/address model support (virtual NIC / lwIP parity).
+	- [x] Add IPv4/IPv6 overlay endpoint/address model support (virtual NIC / lwIP parity).
 	- [x] Add IPv4/IPv6 support in `OsUdp` transport.
 	- [x] Add `ZtUdpClient`, `ZtTcpClient`, `ZtTcpListener` public APIs.
 	- [x] Add offline echo tests for UDP frames and OS TCP loopback.

@@ -8,6 +8,7 @@
 - `identity.public` – 32 bytes public material
 - `planet` / `roots` – controller/roots payload placeholder (compat alias)
 - `networks.d/<NETWORK_ID>.conf` – joined network marker/config (JSON payload)
+- `networks.d/<NETWORK_ID>.addr` – overlay address assignment (binary)
 - `peers.d/<NETWORK_ID>/<PEER_NODE_ID>.peer` – OS UDP peer endpoint (binary)
 
 ## `planet` / `roots` compatibility

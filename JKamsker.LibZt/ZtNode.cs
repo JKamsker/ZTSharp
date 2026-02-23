@@ -21,6 +21,7 @@ public sealed class ZtNode : IAsyncDisposable
     private const string PlanetKey = "planet";
     private const string NetworksDirectory = "networks.d";
     private const string NetworksDirectoryPrefix = $"{NetworksDirectory}/";
+    private const string NetworkAddressesSuffix = ".addr";
     private const string PeersDirectory = "peers.d";
 
     private readonly SemaphoreSlim _stateLock = new(1, 1);
@@ -244,6 +245,62 @@ public sealed class ZtNode : IAsyncDisposable
         return Task.FromResult<IReadOnlyCollection<ulong>>(_joinedNetworkIds);
     }
 
+    public async Task<IReadOnlyList<ZtNetworkAddress>> GetNetworkAddressesAsync(
+        ulong networkId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
+        if (!_joinedNetworks.ContainsKey(networkId))
+        {
+            throw new InvalidOperationException($"Node is not a member of network {networkId}.");
+        }
+
+        var key = BuildNetworkAddressesFileKey(networkId);
+        var payload = await _store.ReadAsync(key, cancellationToken).ConfigureAwait(false);
+        if (!payload.HasValue || payload.Value.Length == 0)
+        {
+            return Array.Empty<ZtNetworkAddress>();
+        }
+
+        if (!NetworkAddressCodec.TryDecode(payload.Value.Span, out var addresses))
+        {
+            throw new InvalidOperationException($"Invalid address state payload for {key}.");
+        }
+
+        return addresses;
+    }
+
+    public async Task SetNetworkAddressesAsync(
+        ulong networkId,
+        IReadOnlyList<ZtNetworkAddress> addresses,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(addresses);
+        await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
+        if (!_joinedNetworks.ContainsKey(networkId))
+        {
+            throw new InvalidOperationException($"Node is not a member of network {networkId}.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = BuildNetworkAddressesFileKey(networkId);
+        var requiredLength = NetworkAddressCodec.GetEncodedLength(addresses);
+        var buffer = ArrayPool<byte>.Shared.Rent(requiredLength);
+        try
+        {
+            if (!NetworkAddressCodec.TryEncode(addresses, buffer, out var bytesWritten))
+            {
+                throw new InvalidOperationException("Failed to encode network addresses.");
+            }
+
+            await _store.WriteAsync(key, buffer.AsMemory(0, bytesWritten), cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
     public IAsyncEnumerable<ZtEvent> GetEventStream(CancellationToken cancellationToken = default)
     {
         var channel = _events;
@@ -454,6 +511,9 @@ public sealed class ZtNode : IAsyncDisposable
     }
 
     private static string BuildNetworkFileKey(ulong networkId) => $"{NetworksDirectory}/{networkId}.conf";
+
+    private static string BuildNetworkAddressesFileKey(ulong networkId)
+        => $"{NetworksDirectory}/{networkId}{NetworkAddressesSuffix}";
 
     private static string BuildPeerFileKey(ulong networkId, ulong peerNodeId) => $"{PeersDirectory}/{networkId}/{peerNodeId}.peer";
 
