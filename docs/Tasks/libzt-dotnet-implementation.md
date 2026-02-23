@@ -35,7 +35,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 
 ## Milestone M3 — Managed user-space stack MVP
 	- [x] Implement UDP-like datagrams over node transport (`ZtUdpClient`).
-	- [ ] Implement overlay TCP stream/listener primitives over node transport.
+	- [x] Implement overlay TCP stream/listener primitives over node transport.
 	- [x] Provide OS TCP wrapper APIs for local tests (`ZtTcpClient`, `ZtTcpListener`).
 	- [ ] Add IPv4/IPv6 overlay endpoint/address model support (virtual NIC / lwIP parity).
 	- [x] Add IPv4/IPv6 support in `OsUdp` transport.
