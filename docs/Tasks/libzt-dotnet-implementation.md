@@ -36,7 +36,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 	- [x] Add offline echo tests for both TCP and UDP traffic flows.
 
 ## Milestone M4 — Real interop via `ztnet` validation network
-- [ ] Add OS UDP transport adapter and packet framing.
+- [x] Add OS UDP transport adapter and packet framing.
 - [ ] Implement node-to-node handshake over real UDP path.
 - [ ] Add peer discovery + virtual interface plumbing.
 - [x] Validate network creation via local `ztnet` CLI.
