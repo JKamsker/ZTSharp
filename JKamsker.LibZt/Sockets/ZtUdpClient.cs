@@ -24,6 +24,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
 
     public ZtUdpClient(ZtNode node, ulong networkId, int localPort, bool ownsConnection = true)
     {
+        ArgumentNullException.ThrowIfNull(node);
         if (localPort is < 1 or > ushort.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(localPort));
@@ -110,6 +111,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
+            _disposeLock.Dispose();
         }
     }
 
@@ -120,7 +122,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
             return;
         }
 
-        if (!_tryParseUdpFrame(frame.Payload.AsSpan(), out var sourcePort, out var destinationPort, out var payloadOffset, out var payloadLength))
+        if (!_tryParseUdpFrame(frame.Payload.Span, out var sourcePort, out var destinationPort, out var payloadOffset, out var payloadLength))
         {
             return;
         }
@@ -134,7 +136,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
         _incoming.Writer.TryWrite(new ZtUdpDatagram(
             frame.SourceNodeId,
             sourcePort,
-            frame.Payload.AsMemory(payloadOffset, payloadLength),
+            frame.Payload.Slice(payloadOffset, payloadLength),
             DateTimeOffset.UtcNow));
     }
 
@@ -162,14 +164,14 @@ public sealed class ZtUdpClient : IAsyncDisposable
         return true;
     }
 
-    private static byte[] BuildFrame(int sourcePort, int destinationPort, ReadOnlySpan<byte> payload)
+    private static ReadOnlyMemory<byte> BuildFrame(int sourcePort, int destinationPort, ReadOnlySpan<byte> payload)
     {
         var buffer = new byte[6 + payload.Length];
         buffer[0] = UdpFrameVersion;
         buffer[1] = UdpFrameType;
         BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(2, 2), (ushort)sourcePort);
         BinaryPrimitives.WriteUInt16BigEndian(buffer.AsSpan(4, 2), (ushort)destinationPort);
-        payload.CopyTo(buffer, 6);
+        payload.CopyTo(buffer.AsSpan(6));
         return buffer;
     }
 }

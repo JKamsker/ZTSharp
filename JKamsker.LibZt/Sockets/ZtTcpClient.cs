@@ -24,11 +24,15 @@ public sealed class ZtTcpClient : IAsyncDisposable
 
     public NetworkStream GetStream() => _client.GetStream();
 
-    public Task ConnectAsync(IPAddress address, int port, CancellationToken cancellationToken = default)
-        => _client.ConnectAsync(address, port, cancellationToken);
+    public async Task ConnectAsync(IPAddress address, int port, CancellationToken cancellationToken = default)
+    {
+        await _client.ConnectAsync(address, port, cancellationToken).ConfigureAwait(false);
+    }
 
-    public Task ConnectAsync(string hostname, int port, CancellationToken cancellationToken = default)
-        => _client.ConnectAsync(hostname, port, cancellationToken);
+    public async Task ConnectAsync(string hostname, int port, CancellationToken cancellationToken = default)
+    {
+        await _client.ConnectAsync(hostname, port, cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<int> SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {

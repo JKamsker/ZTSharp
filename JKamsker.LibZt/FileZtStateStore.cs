@@ -23,20 +23,20 @@ public sealed class FileZtStateStore : IZtStateStore
         return Task.FromResult(File.Exists(path));
     }
 
-    public Task<byte[]?> ReadAsync(string key, CancellationToken cancellationToken = default)
+    public async Task<ReadOnlyMemory<byte>?> ReadAsync(string key, CancellationToken cancellationToken = default)
     {
         var path = GetPhysicalPath(key);
         if (!File.Exists(path))
         {
-            return Task.FromResult<byte[]?>(null);
+            return null;
         }
 
-        return Task.FromResult<byte[]?>(File.ReadAllBytes(path));
+        var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        return bytes;
     }
 
-    public async Task WriteAsync(string key, byte[] value, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(string key, ReadOnlyMemory<byte> value, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(value);
         cancellationToken.ThrowIfCancellationRequested();
 
         var path = GetPhysicalPath(key);
@@ -82,7 +82,7 @@ public sealed class FileZtStateStore : IZtStateStore
             .Select(path => Path.GetRelativePath(_rootPath, path).Replace('\\', '/'))
             .ToArray();
 
-        if (virtualPrefix == string.Empty)
+        if (virtualPrefix.Length == 0)
         {
             var aliases = new List<string>(entries);
             if (File.Exists(Path.Combine(_rootPath, "planet")) && !entries.Contains("roots", StringComparer.Ordinal))

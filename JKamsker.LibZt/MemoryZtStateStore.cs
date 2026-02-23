@@ -15,17 +15,24 @@ public sealed class MemoryZtStateStore : IZtStateStore
         return Task.FromResult(_storage.ContainsKey(NormalizeKey(key)));
     }
 
-    public Task<byte[]?> ReadAsync(string key, CancellationToken cancellationToken = default)
+    public Task<ReadOnlyMemory<byte>?> ReadAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         _storage.TryGetValue(NormalizeKey(key), out var value);
-        return Task.FromResult<byte[]?>(value);
+        if (value is null)
+        {
+            return Task.FromResult<ReadOnlyMemory<byte>?>(null);
+        }
+
+        return Task.FromResult<ReadOnlyMemory<byte>?>(value);
     }
 
-    public Task WriteAsync(string key, byte[] value, CancellationToken cancellationToken = default)
+    public Task WriteAsync(string key, ReadOnlyMemory<byte> value, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _storage[NormalizeKey(key)] = value.ToArray();
+        var copy = new byte[value.Length];
+        value.CopyTo(copy);
+        _storage[NormalizeKey(key)] = copy;
         return Task.CompletedTask;
     }
 

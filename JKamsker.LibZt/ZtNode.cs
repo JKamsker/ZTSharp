@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections;
 using System.Buffers.Binary;
 using System.Net;
 using System.Threading.Channels;
@@ -28,6 +29,7 @@ public sealed class ZtNode : IAsyncDisposable
     private readonly ZtNodeOptions _options;
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
     private readonly ConcurrentDictionary<ulong, Guid> _networkRegistrations = new();
+    private readonly NetworkIdReadOnlyCollection _joinedNetworkIds;
     private readonly Channel<ZtEvent> _events = Channel.CreateUnbounded<ZtEvent>();
     private readonly CancellationTokenSource _nodeCts = new();
 
@@ -42,13 +44,14 @@ public sealed class ZtNode : IAsyncDisposable
 
         _options = options;
         _store = options.StateStore ?? new FileZtStateStore(options.StateRootPath);
-        _logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<ZtNode>();
+        _logger = (options.LoggerFactory ?? global::Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance).CreateLogger<ZtNode>();
         _transport = options.TransportMode == ZtTransportMode.OsUdp
             ? new OsUdpNodeTransport(options.UdpListenPort ?? 0, options.EnableIpv6)
             : SharedTransport;
         _ownsTransport = options.TransportMode == ZtTransportMode.OsUdp;
         _state = ZtNodeState.Created;
         _nodeId = default;
+        _joinedNetworkIds = new NetworkIdReadOnlyCollection(_joinedNetworks);
     }
 
     public event EventHandler<ZtEvent>? EventRaised;
@@ -91,7 +94,7 @@ public sealed class ZtNode : IAsyncDisposable
             _nodeId = identity.NodeId;
             await RecoverNetworksAsync(cancellationToken).ConfigureAwait(false);
             _state = ZtNodeState.Running;
-            RaiseEvent(new ZtEvent(ZtEventCode.NodeStarted, DateTimeOffset.UtcNow, Message = $"Node {_nodeId} started"));
+            RaiseEvent(new ZtEvent(ZtEventCode.NodeStarted, DateTimeOffset.UtcNow, null, $"Node {_nodeId} started"));
         }
         catch (OperationCanceledException)
         {
@@ -101,8 +104,10 @@ public sealed class ZtNode : IAsyncDisposable
         catch (Exception ex)
         {
             _state = ZtNodeState.Faulted;
+#pragma warning disable CA1848
             _logger.LogError(ex, "Failed to start node");
-            RaiseEvent(new ZtEvent(ZtEventCode.NodeFaulted, DateTimeOffset.UtcNow, Error: ex, Message = ex.Message));
+#pragma warning restore CA1848
+            RaiseEvent(new ZtEvent(ZtEventCode.NodeFaulted, DateTimeOffset.UtcNow, null, ex.Message, ex));
             throw;
         }
         finally
@@ -183,13 +188,13 @@ public sealed class ZtNode : IAsyncDisposable
         }
 
         await _transport.SendFrameAsync(networkId, _nodeId.Value, payload, cancellationToken).ConfigureAwait(false);
-        RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameSent, DateTimeOffset.UtcNow, networkId, Message = "Frame sent"));
+        RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameSent, DateTimeOffset.UtcNow, networkId, "Frame sent"));
     }
 
     public Task<IReadOnlyCollection<ulong>> GetNetworksAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyCollection<ulong>>(_joinedNetworks.Keys.ToArray());
+        return Task.FromResult<IReadOnlyCollection<ulong>>(_joinedNetworkIds);
     }
 
     public IAsyncEnumerable<ZtEvent> GetEventStream(CancellationToken cancellationToken = default)
@@ -221,10 +226,10 @@ public sealed class ZtNode : IAsyncDisposable
             return;
         }
 
-        _disposed = true;
-        _nodeCts.Cancel();
+        await _nodeCts.CancelAsync().ConfigureAwait(false);
         await StopAsync().ConfigureAwait(false);
         await LeaveAllNetworksAsync().ConfigureAwait(false);
+        _disposed = true;
         if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
         {
             await asyncTransport.DisposeAsync().ConfigureAwait(false);
@@ -240,23 +245,27 @@ public sealed class ZtNode : IAsyncDisposable
         var secret = await _store.ReadAsync(IdentitySecretKey, cancellationToken).ConfigureAwait(false);
         var publicKey = await _store.ReadAsync(IdentityPublicKey, cancellationToken).ConfigureAwait(false);
 
-        if (secret is { Length: 32 } && publicKey is { Length: 32 })
+        if (secret.HasValue && secret.Value.Length == 32 && publicKey.HasValue && publicKey.Value.Length == 32)
         {
-            return new ZtIdentity(new ZtNodeId(ComputeNodeIdFromSecret(secret)), DateTimeOffset.UtcNow, publicKey, secret);
+            return new ZtIdentity(
+                new ZtNodeId(ComputeNodeIdFromSecret(secret.Value.Span)),
+                DateTimeOffset.UtcNow,
+                publicKey.Value,
+                secret.Value);
         }
 
         var createdSecret = RandomNumberGenerator.GetBytes(32);
         var createdPublicFull = SHA512.HashData(createdSecret.AsSpan(0, 32));
-        var createdPublic = createdPublicFull.AsSpan(0, 32).ToArray();
+        var createdPublic = createdPublicFull.AsMemory(0, 32);
         var identity = new ZtIdentity(
-            new ZtNodeId(ComputeNodeIdFromSecret(createdSecret)),
+            new ZtNodeId(ComputeNodeIdFromSecret(createdSecret.AsSpan())),
             DateTimeOffset.UtcNow,
             createdPublic,
-            createdSecret);
+            createdSecret.AsMemory(0, 32));
 
         await _store.WriteAsync(IdentitySecretKey, identity.SecretKey, cancellationToken).ConfigureAwait(false);
         await _store.WriteAsync(IdentityPublicKey, identity.PublicKey, cancellationToken).ConfigureAwait(false);
-        await _store.WriteAsync(PlanetKey, Array.Empty<byte>(), cancellationToken).ConfigureAwait(false);
+        await _store.WriteAsync(PlanetKey, ReadOnlyMemory<byte>.Empty, cancellationToken).ConfigureAwait(false);
         RaiseEvent(new ZtEvent(ZtEventCode.IdentityInitialized, DateTimeOffset.UtcNow));
         return identity;
     }
@@ -304,15 +313,15 @@ public sealed class ZtNode : IAsyncDisposable
             new ZtNetworkFrame(
                 networkId,
                 sourceNodeId,
-                payload.ToArray(),
+                payload,
                 DateTimeOffset.UtcNow));
-        RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameReceived, DateTimeOffset.UtcNow, networkId, Message = "Frame received"));
+        RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameReceived, DateTimeOffset.UtcNow, networkId, "Frame received"));
         return Task.CompletedTask;
     }
 
-    private static ulong ComputeNodeIdFromSecret(byte[] secret)
+    private static ulong ComputeNodeIdFromSecret(ReadOnlySpan<byte> secret)
     {
-        var hash = SHA256.HashData(secret.AsSpan(0, 32));
+        var hash = SHA256.HashData(secret.Slice(0, 32));
         return BinaryPrimitives.ReadUInt64LittleEndian(hash);
     }
 
@@ -337,15 +346,12 @@ public sealed class ZtNode : IAsyncDisposable
 
     private void EnsureNotDisposed()
     {
-        if (_disposed)
-        {
-            throw new ObjectDisposedException(nameof(ZtNode));
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     private async Task LeaveAllNetworksAsync()
     {
-        foreach (var kv in _networkRegistrations.ToArray())
+        foreach (var kv in _networkRegistrations)
         {
             await _transport.LeaveNetworkAsync(kv.Key, kv.Value).ConfigureAwait(false);
         }
@@ -359,6 +365,22 @@ public sealed class ZtNode : IAsyncDisposable
         EventRaised?.Invoke(this, e);
         _events.Writer.TryWrite(e);
     }
+}
+
+internal sealed class NetworkIdReadOnlyCollection : IReadOnlyCollection<ulong>
+{
+    private readonly ConcurrentDictionary<ulong, NetworkInfo> _source;
+
+    public NetworkIdReadOnlyCollection(ConcurrentDictionary<ulong, NetworkInfo> source)
+    {
+        _source = source;
+    }
+
+    public int Count => _source.Count;
+
+    public IEnumerator<ulong> GetEnumerator() => _source.Keys.GetEnumerator();
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 public sealed record NetworkInfo(ulong NetworkId, DateTimeOffset JoinedAt);

@@ -5,7 +5,7 @@ namespace JKamsker.LibZt.Transport;
 /// <summary>
 /// In-process transport used as M2 offline implementation backbone.
 /// </summary>
-internal sealed class InMemoryNodeTransport : IZtNodeTransport
+internal sealed class InMemoryNodeTransport : IZtNodeTransport, IDisposable
 {
     private sealed record Subscriber(
         ulong NodeId,
@@ -97,5 +97,10 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _lock.Dispose();
     }
 }

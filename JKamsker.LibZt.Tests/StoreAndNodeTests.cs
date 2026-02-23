@@ -15,12 +15,12 @@ public class StoreAndNodeTests
         try
         {
             var store = new FileZtStateStore(path);
-            await store.WriteAsync("roots", [1, 2, 3, 4]);
+            await store.WriteAsync("roots", new byte[] { 1, 2, 3, 4 });
             var readViaPlanet = await store.ReadAsync("planet");
             var listed = await store.ListAsync();
 
             Assert.NotNull(readViaPlanet);
-            Assert.Equal([1, 2, 3, 4], readViaPlanet);
+            Assert.True(readViaPlanet!.Value.Span.SequenceEqual(new byte[] { 1, 2, 3, 4 }));
             Assert.Contains("roots", listed);
         }
         finally
@@ -33,13 +33,13 @@ public class StoreAndNodeTests
     public async Task MemoryStore_Roundtrip()
     {
         var store = new MemoryZtStateStore();
-        await store.WriteAsync("foo/bar", [42, 43, 44]);
+        await store.WriteAsync("foo/bar", new byte[] { 42, 43, 44 });
         var exists = await store.ExistsAsync("foo/bar");
         var value = await store.ReadAsync("foo/bar");
         var list = await store.ListAsync("foo");
 
         Assert.True(exists);
-        Assert.Equal([42, 43, 44], value);
+        Assert.True(value!.Value.Span.SequenceEqual(new byte[] { 42, 43, 44 }));
         Assert.Contains("foo/bar", list);
 
         var deleted = await store.DeleteAsync("foo/bar");
@@ -105,7 +105,7 @@ public class StoreAndNodeTests
         var n1Store = new MemoryZtStateStore();
         var n2Store = new MemoryZtStateStore();
         var networkId = 424242UL;
-        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var node1 = new ZtNode(new ZtNodeOptions
         {
@@ -128,10 +128,10 @@ public class StoreAndNodeTests
         await node1.JoinNetworkAsync(networkId);
         await node2.JoinNetworkAsync(networkId);
 
-        await node1.SendFrameAsync(networkId, [1, 2, 3, 4, 5]);
+        await node1.SendFrameAsync(networkId, new byte[] { 1, 2, 3, 4, 5 });
         var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
-        Assert.Equal([1, 2, 3, 4, 5], payload);
+        Assert.True(payload.Span.SequenceEqual(new byte[] { 1, 2, 3, 4, 5 }));
 
         await node1.LeaveNetworkAsync(networkId);
         await node2.LeaveNetworkAsync(networkId);
@@ -145,7 +145,7 @@ public class StoreAndNodeTests
         var n1Store = new MemoryZtStateStore();
         var n2Store = new MemoryZtStateStore();
         var networkId = 98765UL;
-        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var node1 = new ZtNode(new ZtNodeOptions
         {
@@ -184,10 +184,10 @@ public class StoreAndNodeTests
         await node1.AddPeerAsync(networkId, node2Id.Value, node2Endpoint);
         await node2.AddPeerAsync(networkId, node1Id.Value, node1Endpoint);
 
-        await node1.SendFrameAsync(networkId, [10, 20, 30]);
+        await node1.SendFrameAsync(networkId, new byte[] { 10, 20, 30 });
         var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
-        Assert.Equal([10, 20, 30], payload);
+        Assert.True(payload.Span.SequenceEqual(new byte[] { 10, 20, 30 }));
 
         await node1.LeaveNetworkAsync(networkId);
         await node2.LeaveNetworkAsync(networkId);
@@ -224,10 +224,10 @@ public class StoreAndNodeTests
         await node2Udp.ConnectAsync((await node1.GetIdentityAsync()).NodeId.Value, 10001);
 
         var receive = node1Udp.ReceiveAsync();
-        await node2Udp.SendAsync([1, 2, 3, 4]);
+        await node2Udp.SendAsync(new byte[] { 1, 2, 3, 4 });
         var datagram = await receive.WaitAsync(TimeSpan.FromSeconds(1));
 
-        Assert.Equal([1, 2, 3, 4], datagram.Payload.ToArray());
+        Assert.True(datagram.Payload.Span.SequenceEqual(new byte[] { 1, 2, 3, 4 }));
 
         await node2.LeaveNetworkAsync(networkId);
         await node1.LeaveNetworkAsync(networkId);

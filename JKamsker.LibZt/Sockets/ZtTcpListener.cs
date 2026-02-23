@@ -42,5 +42,6 @@ public sealed class ZtTcpListener : IAsyncDisposable
     {
         await Task.Yield();
         _listener.Stop();
+        _listener.Dispose();
     }
 }

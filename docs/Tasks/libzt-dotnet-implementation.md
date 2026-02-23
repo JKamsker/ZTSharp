@@ -41,6 +41,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add peer endpoint registration API and OS UDP peer mapping.
 - [ ] Add peer discovery + virtual interface plumbing.
 - [x] Validate network creation via local `ztnet` CLI.
+- [x] Run manual `ztnet network create` command with configured local credentials.
 - [ ] Validate joining an actual ZeroTier network using local `ztnet` CLI.
 - [ ] Verify end-to-end socket communication with external ZeroTier endpoints.
 
@@ -55,3 +56,8 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 ## Ongoing
 - [ ] Reconcile licensing constraints from dependent modules (BSD-like sections and change dates).
 - [ ] Track any protocol-level compatibility gaps against upstream `libzt`.
+
+## Milestone M6 — Memory-first API modernization
+- [x] Replace public `byte[]` payload/identity return surfaces with `ReadOnlyMemory<byte>` or `ReadOnlySpan<byte>` where practical.
+- [x] Remove frame copy on OS-UDP forwarding path (`ToArray`-based handoff).
+- [ ] Audit remaining `byte[]`-based framing APIs and migrate remaining internal helpers.

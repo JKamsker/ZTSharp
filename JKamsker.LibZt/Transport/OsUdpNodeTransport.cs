@@ -37,7 +37,12 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
     }
 
     public IPEndPoint LocalEndpoint
-        => (IPEndPoint)_udp.Client.LocalEndPoint!;
+    {
+        get
+        {
+            return NormalizeEndpointForLocalDelivery((IPEndPoint)_udp.Client.LocalEndPoint!);
+        }
+    }
 
     public Task<Guid> JoinNetworkAsync(
         ulong networkId,
@@ -101,7 +106,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 continue;
             }
 
-            sendTasks.Add(_udp.SendAsync(frame, frame.Length, peer.Value));
+            sendTasks.Add(_udp.SendAsync(frame, peer.Value, cancellationToken).AsTask());
         }
 
         return Task.WhenAll(sendTasks);
@@ -119,13 +124,13 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(endpoint);
 
         var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        peers[nodeId] = endpoint;
+        peers[nodeId] = NormalizeEndpointForRemoteDelivery(endpoint);
         return ValueTask.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()
     {
-        _receiverCts.Cancel();
+        await _receiverCts.CancelAsync().ConfigureAwait(false);
         try
         {
             await _receiverLoop.ConfigureAwait(false);
@@ -136,6 +141,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 
         _udp.Dispose();
         _receiverCts.Dispose();
+        _gate.Dispose();
     }
 
     private async Task ProcessReceiveLoopAsync()
@@ -146,7 +152,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             UdpReceiveResult result;
             try
             {
-                result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
+            result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -174,5 +180,35 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 await Task.WhenAll(callbacks).ConfigureAwait(false);
             }
         }
+    }
+
+    private static IPEndPoint NormalizeEndpointForLocalDelivery(IPEndPoint endpoint)
+    {
+        if (endpoint.Address.Equals(IPAddress.Any))
+        {
+            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
+        }
+
+        if (endpoint.Address.Equals(IPAddress.IPv6Any))
+        {
+            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
+        }
+
+        return endpoint;
+    }
+
+    private static IPEndPoint NormalizeEndpointForRemoteDelivery(IPEndPoint endpoint)
+    {
+        if (endpoint.Address.Equals(IPAddress.Any))
+        {
+            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
+        }
+
+        if (endpoint.Address.Equals(IPAddress.IPv6Any))
+        {
+            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
+        }
+
+        return endpoint;
     }
 }

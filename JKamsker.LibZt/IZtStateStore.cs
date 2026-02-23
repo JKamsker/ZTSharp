@@ -12,10 +12,10 @@ public interface IZtStateStore
     Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Reads raw bytes for a logical key or returns null if missing.</summary>
-    Task<byte[]?> ReadAsync(string key, CancellationToken cancellationToken = default);
+    Task<ReadOnlyMemory<byte>?> ReadAsync(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Writes raw bytes for a logical key.</summary>
-    Task WriteAsync(string key, byte[] value, CancellationToken cancellationToken = default);
+    Task WriteAsync(string key, ReadOnlyMemory<byte> value, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a logical key and returns true when something was deleted.</summary>
     Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default);
