@@ -57,7 +57,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public async Task<int> SendAsync(byte[] datagram, CancellationToken cancellationToken = default)
+    public async Task<int> SendAsync(ReadOnlyMemory<byte> datagram, CancellationToken cancellationToken = default)
     {
         if (_connectedNode == 0 || _connectedPort == 0)
         {
@@ -68,19 +68,14 @@ public sealed class ZtUdpClient : IAsyncDisposable
         return datagram.Length;
     }
 
-    public Task SendToAsync(byte[] datagram, ulong remoteNodeId, int remotePort, CancellationToken cancellationToken = default)
+    public Task SendToAsync(ReadOnlyMemory<byte> datagram, ulong remoteNodeId, int remotePort, CancellationToken cancellationToken = default)
     {
-        if (datagram is null)
-        {
-            throw new ArgumentNullException(nameof(datagram));
-        }
-
         if (remotePort is < 1 or > ushort.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(remotePort));
         }
         cancellationToken.ThrowIfCancellationRequested();
-        var frame = BuildFrame(_localPort, remotePort, datagram);
+        var frame = BuildFrame(_localPort, remotePort, datagram.Span);
         return _node.SendFrameAsync(_networkId, frame, cancellationToken);
     }
 
@@ -125,7 +120,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
             return;
         }
 
-        if (!_tryParseUdpFrame(frame.Payload.AsSpan(), out var sourcePort, out var destinationPort, out var payload))
+        if (!_tryParseUdpFrame(frame.Payload.AsSpan(), out var sourcePort, out var destinationPort, out var payloadOffset, out var payloadLength))
         {
             return;
         }
@@ -139,15 +134,21 @@ public sealed class ZtUdpClient : IAsyncDisposable
         _incoming.Writer.TryWrite(new ZtUdpDatagram(
             frame.SourceNodeId,
             sourcePort,
-            payload.ToArray(),
+            frame.Payload.AsMemory(payloadOffset, payloadLength),
             DateTimeOffset.UtcNow));
     }
 
-    private static bool _tryParseUdpFrame(ReadOnlySpan<byte> payload, out int sourcePort, out int destinationPort, out ReadOnlySpan<byte> data)
+    private static bool _tryParseUdpFrame(
+        ReadOnlySpan<byte> payload,
+        out int sourcePort,
+        out int destinationPort,
+        out int dataOffset,
+        out int dataLength)
     {
         sourcePort = 0;
         destinationPort = 0;
-        data = ReadOnlySpan<byte>.Empty;
+        dataOffset = 0;
+        dataLength = 0;
 
         if (payload.Length < 6 || payload[0] != UdpFrameVersion || payload[1] != UdpFrameType)
         {
@@ -156,11 +157,12 @@ public sealed class ZtUdpClient : IAsyncDisposable
 
         sourcePort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
         destinationPort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
-        data = payload[6..];
+        dataOffset = 6;
+        dataLength = payload.Length - 6;
         return true;
     }
 
-    private static byte[] BuildFrame(int sourcePort, int destinationPort, byte[] payload)
+    private static byte[] BuildFrame(int sourcePort, int destinationPort, ReadOnlySpan<byte> payload)
     {
         var buffer = new byte[6 + payload.Length];
         buffer[0] = UdpFrameVersion;

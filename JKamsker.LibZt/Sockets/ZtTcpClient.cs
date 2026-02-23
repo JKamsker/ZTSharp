@@ -30,9 +30,9 @@ public sealed class ZtTcpClient : IAsyncDisposable
     public Task ConnectAsync(string hostname, int port, CancellationToken cancellationToken = default)
         => _client.ConnectAsync(hostname, port, cancellationToken);
 
-    public async Task<int> SendAsync(byte[] buffer, CancellationToken cancellationToken = default)
+    public async Task<int> SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        await GetStream().WriteAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+        await GetStream().WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
         return buffer.Length;
     }
 

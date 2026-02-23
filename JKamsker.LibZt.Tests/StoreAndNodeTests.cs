@@ -171,7 +171,7 @@ public class StoreAndNodeTests
         await node2Udp.SendAsync([1, 2, 3, 4]);
         var datagram = await receive.WaitAsync(TimeSpan.FromSeconds(1));
 
-        Assert.Equal([1, 2, 3, 4], datagram.Payload);
+        Assert.Equal([1, 2, 3, 4], datagram.Payload.ToArray());
 
         await node2.LeaveNetworkAsync(networkId);
         await node1.LeaveNetworkAsync(networkId);

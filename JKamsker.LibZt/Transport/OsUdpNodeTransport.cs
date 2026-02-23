@@ -5,13 +5,13 @@ using System.Net.Sockets;
 namespace JKamsker.LibZt.Transport;
 
 /// <summary>
-/// OS UDP transport adapter scaffold for future external endpoint integration.
+/// OS UDP transport adapter for external endpoint integration.
 /// </summary>
 internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
 {
     private sealed record Subscriber(
         ulong NodeId,
-        Func<ulong, ulong, byte[], CancellationToken, Task> OnFrameReceived);
+        Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
 
     private readonly UdpClient _udp;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -20,9 +20,19 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
     private readonly CancellationTokenSource _receiverCts = new();
     private readonly Task _receiverLoop;
 
-    public OsUdpNodeTransport(int localPort = 0)
+    public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true)
     {
-        _udp = new UdpClient(localPort);
+        _udp = new UdpClient(enableIpv6 ? AddressFamily.InterNetworkV6 : AddressFamily.InterNetwork);
+        if (enableIpv6)
+        {
+            _udp.Client.DualMode = true;
+            _udp.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
+        }
+        else
+        {
+            _udp.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+        }
+
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
 
@@ -32,7 +42,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
     public Task<Guid> JoinNetworkAsync(
         ulong networkId,
         ulong nodeId,
-        Func<ulong, ulong, byte[], CancellationToken, Task> onFrameReceived,
+        Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
@@ -70,7 +80,11 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
         }
     }
 
-    public Task SendFrameAsync(ulong networkId, ulong sourceNodeId, byte[] payload, CancellationToken cancellationToken = default)
+    public Task SendFrameAsync(
+        ulong networkId,
+        ulong sourceNodeId,
+        ReadOnlyMemory<byte> payload,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!_networkPeers.TryGetValue(networkId, out var peers))
@@ -78,9 +92,9 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
             return Task.CompletedTask;
         }
 
-        var frame = NodeFrameCodec.Encode(networkId, sourceNodeId, payload);
+        var frame = NodeFrameCodec.Encode(networkId, sourceNodeId, payload.Span);
         var sendTasks = new List<Task>();
-        foreach (var peer in peers.ToArray())
+        foreach (var peer in peers)
         {
             if (peer.Key == sourceNodeId)
             {
@@ -102,10 +116,7 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
     public ValueTask AddPeerAsync(ulong networkId, ulong nodeId, IPEndPoint endpoint)
     {
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
-        if (endpoint == null)
-        {
-            throw new ArgumentNullException(nameof(endpoint));
-        }
+        ArgumentNullException.ThrowIfNull(endpoint);
 
         var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
         peers[nodeId] = endpoint;
@@ -152,11 +163,15 @@ internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
                 continue;
             }
 
-            var callbacks = subscribers.ToArray();
-            foreach (var callback in callbacks)
+            var callbacks = new List<Task>(subscribers.Count);
+            foreach (var callback in subscribers.Values)
             {
-                var subscription = callback.Value;
-                _ = subscription.OnFrameReceived(sourceNodeId, networkId, payload.ToArray(), token);
+                callbacks.Add(callback.OnFrameReceived(sourceNodeId, networkId, payload, token));
+            }
+
+            if (callbacks.Count > 0)
+            {
+                await Task.WhenAll(callbacks).ConfigureAwait(false);
             }
         }
     }

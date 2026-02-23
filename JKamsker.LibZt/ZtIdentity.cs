@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 namespace JKamsker.LibZt;
 
 /// <summary>
@@ -37,13 +38,7 @@ internal static class ZtIdentitySerializer
             return null;
         }
 
-        var nodeIdBytes = data.AsSpan(1, sizeof(ulong)).ToArray();
-        if (!BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(nodeIdBytes);
-        }
-
-        var nodeId = BitConverter.ToUInt64(nodeIdBytes, 0);
+        var nodeId = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(1, sizeof(ulong)));
         var secret = data.AsSpan(1 + sizeof(ulong), SecretLength).ToArray();
         var publicKey = data.AsSpan(1 + sizeof(ulong) + SecretLength, PublicLength).ToArray();
 

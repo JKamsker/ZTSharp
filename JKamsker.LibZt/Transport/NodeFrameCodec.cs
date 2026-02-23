@@ -6,7 +6,7 @@ internal static class NodeFrameCodec
 {
     private const byte FrameVersion = 1;
 
-    public static byte[] Encode(ulong networkId, ulong sourceNodeId, byte[] payload)
+    public static byte[] Encode(ulong networkId, ulong sourceNodeId, ReadOnlySpan<byte> payload)
     {
         var data = new byte[1 + sizeof(ulong) * 2 + payload.Length];
         data[0] = FrameVersion;
@@ -32,7 +32,7 @@ internal static class NodeFrameCodec
 
         networkId = BinaryPrimitives.ReadUInt64LittleEndian(frame.Slice(1, sizeof(ulong)));
         sourceNodeId = BinaryPrimitives.ReadUInt64LittleEndian(frame.Slice(1 + sizeof(ulong), sizeof(ulong)));
-        payload = frame[(1 + sizeof(ulong) * 2)..].ToArray();
+        payload = frame[(1 + sizeof(ulong) * 2)..];
         return true;
     }
 }

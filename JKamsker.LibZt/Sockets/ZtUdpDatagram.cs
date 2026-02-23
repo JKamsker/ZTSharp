@@ -6,5 +6,5 @@ namespace JKamsker.LibZt.Sockets;
 public sealed record class ZtUdpDatagram(
     ulong SourceNodeId,
     int SourcePort,
-    byte[] Payload,
+    ReadOnlyMemory<byte> Payload,
     DateTimeOffset TimestampUtc);

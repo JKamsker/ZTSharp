@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Buffers.Binary;
+using System.Net;
 using System.Threading.Channels;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -42,7 +44,7 @@ public sealed class ZtNode : IAsyncDisposable
         _store = options.StateStore ?? new FileZtStateStore(options.StateRootPath);
         _logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<ZtNode>();
         _transport = options.TransportMode == ZtTransportMode.OsUdp
-            ? new OsUdpNodeTransport(options.UdpListenPort ?? 0)
+            ? new OsUdpNodeTransport(options.UdpListenPort ?? 0, options.EnableIpv6)
             : SharedTransport;
         _ownsTransport = options.TransportMode == ZtTransportMode.OsUdp;
         _state = ZtNodeState.Created;
@@ -55,6 +57,10 @@ public sealed class ZtNode : IAsyncDisposable
     public IZtStateStore Store => _store;
 
     public string StateRootPath => _options.StateRootPath;
+
+    public IPEndPoint? LocalTransportEndpoint => _transport is OsUdpNodeTransport udpTransport
+        ? udpTransport.LocalEndpoint
+        : null;
 
     public ZtNodeId NodeId => _nodeId;
 
@@ -168,7 +174,7 @@ public sealed class ZtNode : IAsyncDisposable
         }
     }
 
-    public async Task SendFrameAsync(ulong networkId, byte[] payload, CancellationToken cancellationToken = default)
+    public async Task SendFrameAsync(ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
     {
         await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
         if (!_joinedNetworks.ContainsKey(networkId))
@@ -189,6 +195,17 @@ public sealed class ZtNode : IAsyncDisposable
     public IAsyncEnumerable<ZtEvent> GetEventStream(CancellationToken cancellationToken = default)
     {
         return _events.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    public async Task AddPeerAsync(ulong networkId, ulong peerNodeId, IPEndPoint endpoint, CancellationToken cancellationToken = default)
+    {
+        if (_transport is not OsUdpNodeTransport udpTransport)
+        {
+            throw new InvalidOperationException("Transport mode is not OS UDP.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await udpTransport.AddPeerAsync(networkId, peerNodeId, endpoint).ConfigureAwait(false);
     }
 
     public async Task<ZtIdentity> GetIdentityAsync(CancellationToken cancellationToken = default)
@@ -229,7 +246,8 @@ public sealed class ZtNode : IAsyncDisposable
         }
 
         var createdSecret = RandomNumberGenerator.GetBytes(32);
-        var createdPublic = SHA512.HashData(createdSecret.AsSpan(0, 32).ToArray()).AsSpan(0, 32).ToArray();
+        var createdPublicFull = SHA512.HashData(createdSecret.AsSpan(0, 32));
+        var createdPublic = createdPublicFull.AsSpan(0, 32).ToArray();
         var identity = new ZtIdentity(
             new ZtNodeId(ComputeNodeIdFromSecret(createdSecret)),
             DateTimeOffset.UtcNow,
@@ -278,10 +296,16 @@ public sealed class ZtNode : IAsyncDisposable
         }
     }
 
-    private Task OnFrameReceivedAsync(ulong sourceNodeId, ulong networkId, byte[] payload, CancellationToken cancellationToken)
+    private Task OnFrameReceivedAsync(ulong sourceNodeId, ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FrameReceived?.Invoke(this, new ZtNetworkFrame(networkId, sourceNodeId, payload, DateTimeOffset.UtcNow));
+        FrameReceived?.Invoke(
+            this,
+            new ZtNetworkFrame(
+                networkId,
+                sourceNodeId,
+                payload.ToArray(),
+                DateTimeOffset.UtcNow));
         RaiseEvent(new ZtEvent(ZtEventCode.NetworkFrameReceived, DateTimeOffset.UtcNow, networkId, Message = "Frame received"));
         return Task.CompletedTask;
     }
@@ -289,13 +313,7 @@ public sealed class ZtNode : IAsyncDisposable
     private static ulong ComputeNodeIdFromSecret(byte[] secret)
     {
         var hash = SHA256.HashData(secret.AsSpan(0, 32));
-        var bytes = hash.AsSpan(0, sizeof(ulong)).ToArray();
-        if (!BitConverter.IsLittleEndian)
-        {
-            Array.Reverse(bytes);
-        }
-
-        return BitConverter.ToUInt64(bytes, 0);
+        return BinaryPrimitives.ReadUInt64LittleEndian(hash);
     }
 
     private static string BuildNetworkFileKey(ulong networkId) => $"{NetworksDirectory}/{networkId}.conf";

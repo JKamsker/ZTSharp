@@ -9,7 +9,7 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport
 {
     private sealed record Subscriber(
         ulong NodeId,
-        Func<ulong, ulong, byte[], CancellationToken, Task> OnFrameReceived);
+        Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
 
     private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Guid, Subscriber>> _networkSubscribers = new();
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -17,7 +17,7 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport
     public async Task<Guid> JoinNetworkAsync(
         ulong networkId,
         ulong nodeId,
-        Func<ulong, ulong, byte[], CancellationToken, Task> onFrameReceived,
+        Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
@@ -67,12 +67,11 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport
     public async Task SendFrameAsync(
         ulong networkId,
         ulong sourceNodeId,
-        byte[] payload,
+        ReadOnlyMemory<byte> payload,
         CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfZero(sourceNodeId);
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentNullException.ThrowIfNull(payload);
 
         if (!_networkSubscribers.TryGetValue(networkId, out var subscribers))
         {
@@ -80,8 +79,7 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport
         }
 
         var frameTasks = new List<Task>();
-        var copy = subscribers.ToArray();
-        foreach (var subscriber in copy)
+        foreach (var subscriber in subscribers)
         {
             if (subscriber.Value.NodeId == sourceNodeId)
             {
@@ -89,7 +87,7 @@ internal sealed class InMemoryNodeTransport : IZtNodeTransport
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            frameTasks.Add(subscriber.Value.OnFrameReceived(sourceNodeId, networkId, payload.ToArray(), cancellationToken));
+            frameTasks.Add(subscriber.Value.OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken));
         }
 
         await Task.WhenAll(frameTasks).ConfigureAwait(false);

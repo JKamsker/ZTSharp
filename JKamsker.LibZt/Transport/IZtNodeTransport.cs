@@ -8,7 +8,7 @@ internal interface IZtNodeTransport
     Task<Guid> JoinNetworkAsync(
         ulong networkId,
         ulong nodeId,
-        Func<ulong, ulong, byte[], CancellationToken, Task> onFrameReceived,
+        Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
         CancellationToken cancellationToken = default);
 
     Task LeaveNetworkAsync(ulong networkId, Guid registrationId, CancellationToken cancellationToken = default);
@@ -16,7 +16,7 @@ internal interface IZtNodeTransport
     Task SendFrameAsync(
         ulong networkId,
         ulong sourceNodeId,
-        byte[] payload,
+        ReadOnlyMemory<byte> payload,
         CancellationToken cancellationToken = default);
 
     Task FlushAsync(CancellationToken cancellationToken = default);
