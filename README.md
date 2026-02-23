@@ -1,9 +1,6 @@
 # JKamsker.LibZt
 
-This repo contains two stacks:
-
-- `JKamsker.LibZt` – fully managed (.NET 10) experimentation-focused replacement *surface* for `libzt` (not protocol-compatible with ZeroTier today).
-- `JKamsker.LibZt.Libzt` – optional thin wrapper around the upstream `libzt` implementation (via `ZeroTier.Sockets`) for joining real ZeroTier networks and getting managed ZeroTier IPs (inside libzt).
+This repo contains `JKamsker.LibZt`: a fully managed (.NET 10) experimentation-focused replacement *surface* for `libzt` (not protocol-compatible with ZeroTier today).
 
 `JKamsker.LibZt` provides:
 

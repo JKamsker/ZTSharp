@@ -13,7 +13,6 @@ Library:
 
 - `Microsoft.Extensions.Logging.Abstractions` (MIT)
 - `System.Memory.Data` (MIT)
-- `ZeroTier.Sockets` (BSL-1.1; Change Date 2026-01-01 → Apache-2.0) – see NuGet package license
 
 Build-time / trimming:
 

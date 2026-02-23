@@ -2,8 +2,6 @@ using System.Globalization;
 using System.Net;
 using JKamsker.LibZt.Http;
 using JKamsker.LibZt;
-using JKamsker.LibZt.Libzt;
-using JKamsker.LibZt.Libzt.Sockets;
 using JKamsker.LibZt.Sockets;
 
 if (args.Length == 0 || args[0] is "-h" or "--help")
@@ -59,7 +57,7 @@ static void PrintHelp()
           --listen <port>             Overlay listen port (default: <localPort>)
           --to <host:port>            Forward target (default: 127.0.0.1:<localPort>)
           --state <path>              State directory (default: temp folder)
-          --stack <managed|libzt>     Node stack (default: managed)
+          --stack <managed>           Node stack (default: managed)
           --transport <osudp|inmem>   Transport mode (default: osudp)
           --udp-port <port>           OS UDP listen port (osudp only, default: 0)
           --advertise <ip[:port]>     Advertised UDP endpoint for peers (osudp only)
@@ -154,15 +152,9 @@ static async Task RunJoinAsync(string[] commandArgs)
         cts.Cancel();
     };
 
-    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
-    {
-        await RunJoinLibztAsync(statePath, networkId, once, cts.Token).ConfigureAwait(false);
-        return;
-    }
-
     if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("Invalid --stack value (expected managed|libzt).");
+        throw new InvalidOperationException("Invalid --stack value (expected managed).");
     }
 
     var node = new ZtNode(new ZtNodeOptions
@@ -201,116 +193,6 @@ static async Task RunJoinAsync(string[] commandArgs)
         }
 
         await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token).ConfigureAwait(false);
-    }
-    finally
-    {
-        await node.DisposeAsync().ConfigureAwait(false);
-    }
-}
-
-static async Task RunJoinLibztAsync(string statePath, ulong networkId, bool once, CancellationToken cancellationToken)
-{
-    var storagePath = Path.Combine(statePath, "libzt");
-
-    var node = new ZtLibztNode(new ZtLibztNodeOptions
-    {
-        StoragePath = storagePath
-    });
-
-    try
-    {
-        await node.StartAsync(cancellationToken).ConfigureAwait(false);
-        await node.JoinNetworkAsync(networkId, cancellationToken).ConfigureAwait(false);
-
-        Console.WriteLine($"State: {statePath}");
-        Console.WriteLine($"Libzt storage: {storagePath}");
-        Console.WriteLine($"NodeId: {node.NodeId}");
-        Console.WriteLine($"Primary UDP: {node.PrimaryPort}");
-
-        if (once)
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromDays(365), cancellationToken)
-                    .ConfigureAwait(false);
-                Console.WriteLine("Network transport ready.");
-
-                var addresses = node.GetNetworkAddresses(networkId);
-                foreach (var address in addresses)
-                {
-                    Console.WriteLine($"Address: {address}");
-                }
-            }
-#pragma warning disable CA1031
-            catch
-#pragma warning restore CA1031
-            {
-            }
-        }, cancellationToken);
-
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
-    }
-    finally
-    {
-        await node.DisposeAsync().ConfigureAwait(false);
-    }
-}
-
-static async Task RunExposeLibztAsync(
-    string statePath,
-    ulong networkId,
-    int listenPort,
-    (string Host, int Port) target,
-    CancellationToken cancellationToken)
-{
-    var storagePath = Path.Combine(statePath, "libzt");
-
-    var node = new ZtLibztNode(new ZtLibztNodeOptions
-    {
-        StoragePath = storagePath
-    });
-
-    try
-    {
-        await node.StartAsync(cancellationToken).ConfigureAwait(false);
-        await node.JoinNetworkAsync(networkId, cancellationToken).ConfigureAwait(false);
-
-        Console.WriteLine($"State: {statePath}");
-        Console.WriteLine($"Libzt storage: {storagePath}");
-        Console.WriteLine($"NodeId: {node.NodeId}");
-        Console.WriteLine($"Primary UDP: {node.PrimaryPort}");
-
-        await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromSeconds(60), cancellationToken)
-            .ConfigureAwait(false);
-        Console.WriteLine("Network transport ready.");
-
-        var addresses = node.GetNetworkAddresses(networkId);
-        foreach (var address in addresses)
-        {
-            var url = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
-                ? $"http://[{address}]:{listenPort}/"
-                : $"http://{address}:{listenPort}/";
-
-            Console.WriteLine($"Address: {address}");
-            Console.WriteLine($"Expose URL: {url}");
-        }
-
-        Console.WriteLine($"Expose: http://<zt-ip>:{listenPort}/ -> {target.Host}:{target.Port}");
-
-        var forwarder = new ZtLibztTcpPortForwarder(listenPort, target.Host, target.Port);
-        try
-        {
-            await forwarder.RunAsync(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            await forwarder.DisposeAsync().ConfigureAwait(false);
-        }
     }
     finally
     {
@@ -417,15 +299,9 @@ static async Task RunCallAsync(string[] commandArgs)
         throw new InvalidOperationException("Invalid --url value.");
     }
 
-    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
-    {
-        await RunCallLibztAsync(statePath, networkId, url).ConfigureAwait(false);
-        return;
-    }
-
     if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("Invalid --stack value (expected managed|libzt).");
+        throw new InvalidOperationException("Invalid --stack value (expected managed).");
     }
 
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -474,62 +350,6 @@ static async Task RunCallAsync(string[] commandArgs)
     {
         await node.DisposeAsync().ConfigureAwait(false);
     }
-}
-
-static async Task RunCallLibztAsync(string statePath, ulong networkId, Uri url)
-{
-    var storagePath = Path.Combine(statePath, "libzt");
-
-    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-    Console.CancelKeyPress += (_, e) =>
-    {
-        e.Cancel = true;
-        cts.Cancel();
-    };
-
-    var node = new ZtLibztNode(new ZtLibztNodeOptions
-    {
-        StoragePath = storagePath
-    });
-
-    try
-    {
-        await node.StartAsync(cts.Token).ConfigureAwait(false);
-        await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
-
-        Console.WriteLine($"State: {statePath}");
-        Console.WriteLine($"Libzt storage: {storagePath}");
-        Console.WriteLine($"NodeId: {node.NodeId}");
-        Console.WriteLine($"Primary UDP: {node.PrimaryPort}");
-
-        await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromSeconds(30), cts.Token)
-            .ConfigureAwait(false);
-
-        var addresses = node.GetNetworkAddresses(networkId);
-        foreach (var address in addresses)
-        {
-            Console.WriteLine($"Address: {address}");
-        }
-
-        using var httpClient = CreateLibztHttpClient();
-        var response = await httpClient.GetAsync(url, cts.Token).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-        Console.WriteLine($"HTTP {(int)response.StatusCode} {response.StatusCode}");
-        Console.WriteLine(body);
-    }
-    finally
-    {
-        await node.DisposeAsync().ConfigureAwait(false);
-    }
-}
-
-[global::System.Diagnostics.CodeAnalysis.SuppressMessage(
-    "Reliability",
-    "CA2000:Dispose objects before losing scope",
-    Justification = "Handler ownership transfers to HttpClient, which is disposed by the caller.")]
-static HttpClient CreateLibztHttpClient()
-{
-    return new HttpClient(new ZtLibztHttpMessageHandler(), disposeHandler: true);
 }
 
 [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -684,16 +504,9 @@ static async Task RunExposeAsync(string[] commandArgs)
         cts.Cancel();
     };
 
-    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
-    {
-        await RunExposeLibztAsync(statePath, networkId, overlayListenPort.Value, target.Value, cts.Token)
-            .ConfigureAwait(false);
-        return;
-    }
-
     if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("Invalid --stack value (expected managed|libzt).");
+        throw new InvalidOperationException("Invalid --stack value (expected managed).");
     }
 
     var node = new ZtNode(new ZtNodeOptions

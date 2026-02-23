@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\..\\JKamsker.LibZt\\JKamsker.LibZt.csproj" />
-    <ProjectReference Include="..\\..\\JKamsker.LibZt.Libzt\\JKamsker.LibZt.Libzt.csproj" />
   </ItemGroup>
 
 </Project>
