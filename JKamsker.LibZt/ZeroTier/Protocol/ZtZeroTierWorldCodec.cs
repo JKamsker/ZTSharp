@@ -6,11 +6,6 @@ namespace JKamsker.LibZt.ZeroTier.Protocol;
 
 internal static class ZtZeroTierWorldCodec
 {
-    private const int AddressLength = 5;
-    private const int IdentityTypeC25519 = 0;
-    private const int IdentityPublicKeyLength = 64;
-    private const int IdentityPrivateKeyLength = 64;
-
     private const int MaxRoots = 4;
     private const int MaxStableEndpointsPerRoot = 32;
 
@@ -71,28 +66,9 @@ internal static class ZtZeroTierWorldCodec
 
     private static ZtZeroTierIdentity ReadIdentity(ReadOnlySpan<byte> data, ref int offset)
     {
-        var nodeId = ReadUInt40(ReadBytes(data, ref offset, AddressLength));
-        var type = ReadByte(data, ref offset);
-        if (type != IdentityTypeC25519)
-        {
-            throw new FormatException($"Unsupported identity type: {type}.");
-        }
-
-        var publicKey = ReadBytes(data, ref offset, IdentityPublicKeyLength).ToArray();
-        var privateKeyLen = ReadByte(data, ref offset);
-
-        byte[]? privateKey = null;
-        if (privateKeyLen != 0)
-        {
-            if (privateKeyLen != IdentityPrivateKeyLength)
-            {
-                throw new FormatException($"Invalid private key length: {privateKeyLen}.");
-            }
-
-            privateKey = ReadBytes(data, ref offset, IdentityPrivateKeyLength).ToArray();
-        }
-
-        return new ZtZeroTierIdentity(new ZtNodeId(nodeId), publicKey, privateKey);
+        var identity = ZtZeroTierIdentityCodec.Deserialize(data.Slice(offset), out var consumed);
+        offset += consumed;
+        return identity;
     }
 
     private static bool TryReadInetEndpoint(ReadOnlySpan<byte> data, ref int offset, out IPEndPoint endpoint)
@@ -175,19 +151,5 @@ internal static class ZtZeroTierWorldCodec
         _ = ReadBytes(data, ref offset, length);
     }
 
-    private static ulong ReadUInt40(ReadOnlySpan<byte> data)
-    {
-        if (data.Length < AddressLength)
-        {
-            throw new ArgumentException("Address must be at least 5 bytes.", nameof(data));
-        }
 
-        return
-            ((ulong)data[0] << 32) |
-            ((ulong)data[1] << 24) |
-            ((ulong)data[2] << 16) |
-            ((ulong)data[3] << 8) |
-            data[4];
-    }
 }
-

@@ -32,7 +32,7 @@ Status legend:
   - [x] Implement `World` (planet) binary decode (roots + stable endpoints).
   - [x] Add unit tests for planet decode (roots present, endpoints valid).
 - [ ] Implement secure session establishment and controller config fetch.
-  - [ ] Implement identity wire serialization (Identity::serialize format).
+  - [x] Implement identity wire serialization (Identity::serialize format).
   - [ ] Implement HELLO send + OK parse (unencrypted) over UDP.
   - [ ] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
   - [ ] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
