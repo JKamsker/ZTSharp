@@ -140,6 +140,20 @@ public sealed class ZtNode : IAsyncDisposable
             _state = ZtNodeState.Stopped;
             RaiseEvent(ZtEventCode.NodeStopped, DateTimeOffset.UtcNow);
         }
+        catch (OperationCanceledException)
+        {
+            _state = ZtNodeState.Faulted;
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _state = ZtNodeState.Faulted;
+#pragma warning disable CA1848
+            _logger.LogError(ex, "Failed to stop node");
+#pragma warning restore CA1848
+            RaiseEvent(ZtEventCode.NodeFaulted, DateTimeOffset.UtcNow, message: ex.Message, error: ex);
+            throw;
+        }
         finally
         {
             _stateLock.Release();
@@ -151,25 +165,48 @@ public sealed class ZtNode : IAsyncDisposable
         await EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
         RaiseEvent(ZtEventCode.NetworkJoinRequested, DateTimeOffset.UtcNow, networkId);
 
-        var key = BuildNetworkFileKey(networkId);
+        Guid registration = default;
         var now = DateTimeOffset.UtcNow;
-        var payload = JsonSerializer.SerializeToUtf8Bytes(
-            new NetworkState(networkId, now, NetworkStateState.Joined),
-            ZtJsonContext.Default.NetworkState);
+        var key = BuildNetworkFileKey(networkId);
+        try
+        {
+            var localEndpoint = GetLocalTransportEndpoint();
+            registration = await _transport.JoinNetworkAsync(
+                networkId,
+                _nodeId.Value,
+                OnFrameReceivedAsync,
+                localEndpoint,
+                cancellationToken).ConfigureAwait(false);
 
-        await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
-        _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
-        var localEndpoint = GetLocalTransportEndpoint();
-        var registration = await _transport.JoinNetworkAsync(
-            networkId,
-            _nodeId.Value,
-            OnFrameReceivedAsync,
-            localEndpoint,
-            cancellationToken).ConfigureAwait(false);
-        _networkRegistrations[networkId] = registration;
-        await RecoverPeersAsync(networkId, cancellationToken).ConfigureAwait(false);
+            var payload = JsonSerializer.SerializeToUtf8Bytes(
+                new NetworkState(networkId, now, NetworkStateState.Joined),
+                ZtJsonContext.Default.NetworkState);
 
-        RaiseEvent(ZtEventCode.NetworkJoined, DateTimeOffset.UtcNow, networkId);
+            await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
+            _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
+            _networkRegistrations[networkId] = registration;
+            await RecoverPeersAsync(networkId, cancellationToken).ConfigureAwait(false);
+
+            RaiseEvent(ZtEventCode.NetworkJoined, DateTimeOffset.UtcNow, networkId);
+        }
+        catch
+        {
+            if (registration != default)
+            {
+                try
+                {
+                    await _transport.LeaveNetworkAsync(networkId, registration, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            }
+
+            throw;
+        }
     }
 
     public async Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken = default)

@@ -57,7 +57,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 ## Milestone M5 — Cross-platform and hardening
 - [x] Add OS UDP transport with cross-platform support (Windows/Linux/macOS via `UdpClient`, IPv4 fallback when IPv6 is unavailable).
 - [x] Add persistence migration/compatibility notes for `planet`/`roots` storage.
-- [ ] Add resilience and cancellation semantics.
+- [x] Add resilience and cancellation semantics.
 - [x] Add performance/memory benchmarks for core loops.
 - [x] Add docs, samples, and API usage guide.
 - [ ] Add `AOT` compatibility pass where feasible.
