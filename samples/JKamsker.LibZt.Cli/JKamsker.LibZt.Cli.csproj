@@ -8,11 +8,12 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <NoWarn>$(NoWarn);NETSDK1206</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\\..\\JKamsker.LibZt\\JKamsker.LibZt.csproj" />
+    <ProjectReference Include="..\\..\\JKamsker.LibZt.Libzt\\JKamsker.LibZt.Libzt.csproj" />
   </ItemGroup>
 
 </Project>
-

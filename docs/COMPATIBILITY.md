@@ -1,10 +1,13 @@
 # Compatibility gaps vs upstream `libzt`
 
-This project is a managed re-implementation of parts of the `libzt` *API surface* and a managed transport for deterministic testing and experiments.
+This repo contains:
 
-It is **not** a drop-in protocol-compatible replacement for ZeroTier / `libzt` today.
+- A managed re-implementation of parts of the `libzt` *API surface* (`JKamsker.LibZt`) and a managed transport for deterministic testing/experiments.
+- An optional wrapper around the upstream `libzt` implementation (`JKamsker.LibZt.Libzt`, via `ZeroTier.Sockets`) for joining real ZeroTier networks.
 
-## Not implemented (non-exhaustive)
+The managed stack is **not** a protocol-compatible replacement for ZeroTier / `libzt` today.
+
+## Managed stack gaps (non-exhaustive)
 
 - ZeroTier protocol compatibility (wire format, crypto, packet verbs, paths, NAT traversal).
 - Planet/roots processing and controller interaction.
@@ -12,7 +15,7 @@ It is **not** a drop-in protocol-compatible replacement for ZeroTier / `libzt` t
 - IP assignment, routes, multicast rules, flow rules, DNS config propagation.
 - Membership authorization enforcement (membership is not validated against controllers).
 
-## Implemented / partially implemented
+## Managed stack implemented / partially implemented
 
 - Deterministic identity persistence (`identity.secret` / `identity.public`) with a 40-bit node id.
 - Network membership tracking (`networks.d/*.conf`).
@@ -24,3 +27,10 @@ It is **not** a drop-in protocol-compatible replacement for ZeroTier / `libzt` t
 - UDP-like application datagrams over the managed transport (`ZtUdpClient`).
 - TCP-like overlay streams over the managed transport (`ZtOverlayTcpClient` / `ZtOverlayTcpListener`).
 - Internal event loop/scheduling primitives (`ZtEventLoop`) for future protocol state machines.
+
+## Upstream `libzt` stack notes
+
+When you use `JKamsker.LibZt.Libzt` (upstream `libzt` via `ZeroTier.Sockets`):
+
+- Nodes join real ZeroTier networks, show up as real members in controllers, and receive managed IP assignments (queried via `ZtLibztNode.GetNetworkAddresses`).
+- The assigned IPs exist **inside libzt** (user-space stack). This does not create/configure a TUN/TAP interface or OS routes. Use `ZeroTier.Sockets.Socket` / `ZtLibztHttpMessageHandler` for traffic.

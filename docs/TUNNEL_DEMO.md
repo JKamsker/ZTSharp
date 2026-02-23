@@ -60,3 +60,30 @@ Expected output:
 
 - `HTTP 200 OK`
 - JSON body from the demo API.
+
+## 4) Real ZeroTier variant (upstream `libzt`)
+
+If you want the tunnel nodes to show up as **real ZeroTier members** and receive managed IPs, use `--stack libzt`.
+
+In terminal B:
+
+```powershell
+dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+  expose 5005 `
+  --stack libzt `
+  --network <NWID> `
+  --listen 28080 `
+  --to 127.0.0.1:5005
+```
+
+Authorize the printed `NodeId` in your controller (e.g. via `ztnet`), then wait for it to print `Address:` / `Expose URL:`.
+
+In terminal C (separate libzt node; authorize it too if your network requires it):
+
+```powershell
+dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+  call `
+  --stack libzt `
+  --network <NWID> `
+  --url http://<EXPOSE_IP>:28080/hello
+```

@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Net;
 using JKamsker.LibZt.Http;
 using JKamsker.LibZt;
+using JKamsker.LibZt.Libzt;
+using JKamsker.LibZt.Libzt.Sockets;
 using JKamsker.LibZt.Sockets;
 
 if (args.Length == 0 || args[0] is "-h" or "--help")
@@ -10,12 +12,17 @@ if (args.Length == 0 || args[0] is "-h" or "--help")
     return;
 }
 
+var trace = bool.TryParse(Environment.GetEnvironmentVariable("LIBZT_CLI_TRACE"), out var parsedTrace) && parsedTrace;
+
 try
 {
     var command = args[0];
     var commandArgs = args.Skip(1).ToArray();
     switch (command)
     {
+        case "join":
+            await RunJoinAsync(commandArgs).ConfigureAwait(false);
+            break;
         case "expose":
             await RunExposeAsync(commandArgs).ConfigureAwait(false);
             break;
@@ -35,7 +42,7 @@ try
 catch (Exception ex)
 #pragma warning restore CA1031
 {
-    await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+    await Console.Error.WriteLineAsync(trace ? ex.ToString() : ex.Message).ConfigureAwait(false);
     Environment.ExitCode = 1;
 }
 
@@ -44,6 +51,7 @@ static void PrintHelp()
     Console.WriteLine(
         """
         Usage:
+          libzt join --network <nwid> [options]
           libzt expose <localPort> --network <nwid> [options]
           libzt call --network <nwid> --url <url> [options]
 
@@ -51,22 +59,27 @@ static void PrintHelp()
           --listen <port>             Overlay listen port (default: <localPort>)
           --to <host:port>            Forward target (default: 127.0.0.1:<localPort>)
           --state <path>              State directory (default: temp folder)
+          --stack <managed|libzt>     Node stack (default: managed)
           --transport <osudp|inmem>   Transport mode (default: osudp)
           --udp-port <port>           OS UDP listen port (osudp only, default: 0)
           --advertise <ip[:port]>     Advertised UDP endpoint for peers (osudp only)
           --peer <nodeId@ip:port>     Add an OS UDP peer (repeatable)
+          --http <overlay|os>         HTTP mode for 'call' (default: overlay)
+          --map-ip <ip=nodeId>        Map IP to node id for overlay HTTP (repeatable)
+          --once                      For 'join': initialize and exit
         """);
 }
 
-static async Task RunCallAsync(string[] commandArgs)
+static async Task RunJoinAsync(string[] commandArgs)
 {
     string? statePath = null;
     string? networkText = null;
-    string? urlText = null;
+    var stack = "managed";
     var transportMode = ZtTransportMode.OsUdp;
     var udpListenPort = 0;
     IPEndPoint? advertisedEndpoint = null;
     var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
+    var once = false;
 
     for (var i = 0; i < commandArgs.Length; i++)
     {
@@ -79,9 +92,272 @@ static async Task RunCallAsync(string[] commandArgs)
             case "--network":
                 networkText = ReadOptionValue(commandArgs, ref i, "--network");
                 break;
+            case "--stack":
+                stack = ReadOptionValue(commandArgs, ref i, "--stack");
+                break;
+            case "--transport":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--transport");
+                transportMode = value switch
+                {
+                    "osudp" => ZtTransportMode.OsUdp,
+                    "inmem" => ZtTransportMode.InMemory,
+                    _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
+                };
+                break;
+            }
+            case "--udp-port":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
+                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                    parsed is < 0 or > ushort.MaxValue)
+                {
+                    throw new InvalidOperationException("Invalid --udp-port value.");
+                }
+
+                udpListenPort = parsed;
+                break;
+            }
+            case "--advertise":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--advertise");
+                advertisedEndpoint = ParseIpEndpoint(value);
+                break;
+            }
+            case "--peer":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--peer");
+                var parsed = ParsePeer(value);
+                peers.Add(parsed);
+                break;
+            }
+            case "--once":
+                once = true;
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown option '{arg}'.");
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(networkText))
+    {
+        throw new InvalidOperationException("Missing --network <nwid>.");
+    }
+
+    statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+    var networkId = ParseNetworkId(networkText);
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunJoinLibztAsync(statePath, networkId, once, cts.Token).ConfigureAwait(false);
+        return;
+    }
+
+    if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Invalid --stack value (expected managed|libzt).");
+    }
+
+    var node = new ZtNode(new ZtNodeOptions
+    {
+        StateRootPath = statePath,
+        TransportMode = transportMode,
+        UdpListenPort = transportMode == ZtTransportMode.OsUdp ? udpListenPort : null,
+        EnablePeerDiscovery = true,
+        AdvertisedTransportEndpoint = advertisedEndpoint
+    });
+
+    try
+    {
+        await node.StartAsync(cts.Token).ConfigureAwait(false);
+        await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
+
+        if (transportMode == ZtTransportMode.OsUdp && peers.Count != 0)
+        {
+            foreach (var peer in peers)
+            {
+                await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cts.Token).ConfigureAwait(false);
+            }
+        }
+
+        var localUdp = node.LocalTransportEndpoint;
+        Console.WriteLine($"State: {statePath}");
+        Console.WriteLine($"NodeId: {node.NodeId}");
+        if (localUdp is not null)
+        {
+            Console.WriteLine($"Local UDP: {localUdp}");
+        }
+
+        if (once)
+        {
+            return;
+        }
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token).ConfigureAwait(false);
+    }
+    finally
+    {
+        await node.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunJoinLibztAsync(string statePath, ulong networkId, bool once, CancellationToken cancellationToken)
+{
+    var storagePath = Path.Combine(statePath, "libzt");
+
+    var node = new ZtLibztNode(new ZtLibztNodeOptions
+    {
+        StoragePath = storagePath
+    });
+
+    try
+    {
+        await node.StartAsync(cancellationToken).ConfigureAwait(false);
+        await node.JoinNetworkAsync(networkId, cancellationToken).ConfigureAwait(false);
+
+        Console.WriteLine($"State: {statePath}");
+        Console.WriteLine($"Libzt storage: {storagePath}");
+        Console.WriteLine($"NodeId: {node.NodeId}");
+        Console.WriteLine($"Primary UDP: {node.PrimaryPort}");
+
+        if (once)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromDays(365), cancellationToken)
+                    .ConfigureAwait(false);
+                Console.WriteLine("Network transport ready.");
+
+                var addresses = node.GetNetworkAddresses(networkId);
+                foreach (var address in addresses)
+                {
+                    Console.WriteLine($"Address: {address}");
+                }
+            }
+#pragma warning disable CA1031
+            catch
+#pragma warning restore CA1031
+            {
+            }
+        }, cancellationToken);
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+    }
+    finally
+    {
+        await node.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunExposeLibztAsync(
+    string statePath,
+    ulong networkId,
+    int listenPort,
+    (string Host, int Port) target,
+    CancellationToken cancellationToken)
+{
+    var storagePath = Path.Combine(statePath, "libzt");
+
+    var node = new ZtLibztNode(new ZtLibztNodeOptions
+    {
+        StoragePath = storagePath
+    });
+
+    try
+    {
+        await node.StartAsync(cancellationToken).ConfigureAwait(false);
+        await node.JoinNetworkAsync(networkId, cancellationToken).ConfigureAwait(false);
+
+        Console.WriteLine($"State: {statePath}");
+        Console.WriteLine($"Libzt storage: {storagePath}");
+        Console.WriteLine($"NodeId: {node.NodeId}");
+        Console.WriteLine($"Primary UDP: {node.PrimaryPort}");
+
+        await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromSeconds(60), cancellationToken)
+            .ConfigureAwait(false);
+        Console.WriteLine("Network transport ready.");
+
+        var addresses = node.GetNetworkAddresses(networkId);
+        foreach (var address in addresses)
+        {
+            var url = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+                ? $"http://[{address}]:{listenPort}/"
+                : $"http://{address}:{listenPort}/";
+
+            Console.WriteLine($"Address: {address}");
+            Console.WriteLine($"Expose URL: {url}");
+        }
+
+        Console.WriteLine($"Expose: http://<zt-ip>:{listenPort}/ -> {target.Host}:{target.Port}");
+
+        var forwarder = new ZtLibztTcpPortForwarder(listenPort, target.Host, target.Port);
+        try
+        {
+            await forwarder.RunAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await forwarder.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+    finally
+    {
+        await node.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunCallAsync(string[] commandArgs)
+{
+    string? statePath = null;
+    string? networkText = null;
+    string? urlText = null;
+    var stack = "managed";
+    var transportMode = ZtTransportMode.OsUdp;
+    var udpListenPort = 0;
+    IPEndPoint? advertisedEndpoint = null;
+    var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
+    var httpMode = "overlay";
+    var ipMappings = new List<(IPAddress Address, ulong NodeId)>();
+
+    for (var i = 0; i < commandArgs.Length; i++)
+    {
+        var arg = commandArgs[i];
+        switch (arg)
+        {
+            case "--state":
+                statePath = ReadOptionValue(commandArgs, ref i, "--state");
+                break;
+            case "--network":
+                networkText = ReadOptionValue(commandArgs, ref i, "--network");
+                break;
+            case "--stack":
+                stack = ReadOptionValue(commandArgs, ref i, "--stack");
+                break;
             case "--url":
                 urlText = ReadOptionValue(commandArgs, ref i, "--url");
                 break;
+            case "--http":
+                httpMode = ReadOptionValue(commandArgs, ref i, "--http");
+                break;
+            case "--map-ip":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--map-ip");
+                var mapping = ParseIpMapping(value);
+                ipMappings.Add(mapping);
+                break;
+            }
             case "--transport":
             {
                 var value = ReadOptionValue(commandArgs, ref i, "--transport");
@@ -141,6 +417,17 @@ static async Task RunCallAsync(string[] commandArgs)
         throw new InvalidOperationException("Invalid --url value.");
     }
 
+    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunCallLibztAsync(statePath, networkId, url).ConfigureAwait(false);
+        return;
+    }
+
+    if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Invalid --stack value (expected managed|libzt).");
+    }
+
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
     Console.CancelKeyPress += (_, e) =>
     {
@@ -177,8 +464,7 @@ static async Task RunCallAsync(string[] commandArgs)
             Console.WriteLine($"Local UDP: {localUdp}");
         }
 
-        using var handler = new ZtOverlayHttpMessageHandler(node, networkId);
-        using var httpClient = new HttpClient(handler, disposeHandler: false);
+        using var httpClient = CreateHttpClient(node, networkId, httpMode, ipMappings);
         var response = await httpClient.GetAsync(url, cts.Token).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
         Console.WriteLine($"HTTP {(int)response.StatusCode} {response.StatusCode}");
@@ -188,6 +474,100 @@ static async Task RunCallAsync(string[] commandArgs)
     {
         await node.DisposeAsync().ConfigureAwait(false);
     }
+}
+
+static async Task RunCallLibztAsync(string statePath, ulong networkId, Uri url)
+{
+    var storagePath = Path.Combine(statePath, "libzt");
+
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    var node = new ZtLibztNode(new ZtLibztNodeOptions
+    {
+        StoragePath = storagePath
+    });
+
+    try
+    {
+        await node.StartAsync(cts.Token).ConfigureAwait(false);
+        await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
+
+        Console.WriteLine($"State: {statePath}");
+        Console.WriteLine($"Libzt storage: {storagePath}");
+        Console.WriteLine($"NodeId: {node.NodeId}");
+        Console.WriteLine($"Primary UDP: {node.PrimaryPort}");
+
+        await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromSeconds(30), cts.Token)
+            .ConfigureAwait(false);
+
+        var addresses = node.GetNetworkAddresses(networkId);
+        foreach (var address in addresses)
+        {
+            Console.WriteLine($"Address: {address}");
+        }
+
+        using var httpClient = CreateLibztHttpClient();
+        var response = await httpClient.GetAsync(url, cts.Token).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+        Console.WriteLine($"HTTP {(int)response.StatusCode} {response.StatusCode}");
+        Console.WriteLine(body);
+    }
+    finally
+    {
+        await node.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+[global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Reliability",
+    "CA2000:Dispose objects before losing scope",
+    Justification = "Handler ownership transfers to HttpClient, which is disposed by the caller.")]
+static HttpClient CreateLibztHttpClient()
+{
+    return new HttpClient(new ZtLibztHttpMessageHandler(), disposeHandler: true);
+}
+
+[global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Reliability",
+    "CA2000:Dispose objects before losing scope",
+    Justification = "Handler ownership transfers to HttpClient, which is disposed by the caller.")]
+static HttpClient CreateHttpClient(
+    ZtNode node,
+    ulong networkId,
+    string httpMode,
+    IReadOnlyList<(IPAddress Address, ulong NodeId)> ipMappings)
+{
+    if (string.Equals(httpMode, "os", StringComparison.OrdinalIgnoreCase))
+    {
+        return new HttpClient(new SocketsHttpHandler { UseProxy = false });
+    }
+
+    if (!string.Equals(httpMode, "overlay", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Invalid --http value (expected overlay|os).");
+    }
+
+    ZtOverlayAddressBook? book = null;
+    if (ipMappings.Count != 0)
+    {
+        book = new ZtOverlayAddressBook();
+        foreach (var mapping in ipMappings)
+        {
+            book.Add(mapping.Address, mapping.NodeId);
+        }
+    }
+
+    var handler = new ZtOverlayHttpMessageHandler(
+        node,
+        networkId,
+        book is null ? null : new ZtOverlayHttpMessageHandlerOptions { AddressBook = book });
+
+    return new HttpClient(handler, disposeHandler: true);
 }
 
 static async Task RunExposeAsync(string[] commandArgs)
@@ -205,6 +585,7 @@ static async Task RunExposeAsync(string[] commandArgs)
 
     string? statePath = null;
     string? networkText = null;
+    var stack = "managed";
     int? overlayListenPort = null;
     (string Host, int Port)? target = null;
     var transportMode = ZtTransportMode.OsUdp;
@@ -222,6 +603,9 @@ static async Task RunExposeAsync(string[] commandArgs)
                 break;
             case "--network":
                 networkText = ReadOptionValue(commandArgs, ref i, "--network");
+                break;
+            case "--stack":
+                stack = ReadOptionValue(commandArgs, ref i, "--stack");
                 break;
             case "--listen":
             {
@@ -299,6 +683,18 @@ static async Task RunExposeAsync(string[] commandArgs)
         e.Cancel = true;
         cts.Cancel();
     };
+
+    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunExposeLibztAsync(statePath, networkId, overlayListenPort.Value, target.Value, cts.Token)
+            .ConfigureAwait(false);
+        return;
+    }
+
+    if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Invalid --stack value (expected managed|libzt).");
+    }
 
     var node = new ZtNode(new ZtNodeOptions
     {
@@ -521,4 +917,29 @@ static ulong ParseNodeId(string text)
     }
 
     return parsedDec;
+}
+
+static (IPAddress Address, ulong NodeId) ParseIpMapping(string value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        throw new InvalidOperationException("Invalid --map-ip value.");
+    }
+
+    var equals = value.IndexOf('=', StringComparison.Ordinal);
+    if (equals <= 0 || equals == value.Length - 1)
+    {
+        throw new InvalidOperationException("Invalid --map-ip value (expected ip=nodeId).");
+    }
+
+    var ipText = value.Substring(0, equals);
+    var nodeIdText = value.Substring(equals + 1);
+
+    if (!IPAddress.TryParse(ipText, out var ip))
+    {
+        throw new InvalidOperationException("Invalid --map-ip value (expected ip=nodeId).");
+    }
+
+    var nodeId = ParseNodeId(nodeIdText);
+    return (ip, nodeId);
 }

@@ -11,6 +11,8 @@ The repo includes an external smoke test that:
 
 Important: This does **not** currently validate joining the ZeroTier overlay or communicating with external ZeroTier endpoints. The managed nodes do not implement the upstream ZeroTier protocol stack yet; application traffic is exchanged directly over the library's `OsUdp` transport.
 
+If you want to validate **real** ZeroTier membership + managed IP assignment, use the CLI with `--stack libzt` (upstream `libzt` via `ZeroTier.Sockets`). See `docs/TUNNEL_DEMO.md` for a walkthrough.
+
 ## Run
 
 ```powershell

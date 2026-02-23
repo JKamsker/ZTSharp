@@ -105,3 +105,46 @@ For `OsUdp` you can optionally pre-register peers explicitly:
 ```csharp
 await node.AddPeerAsync(networkId, peerNodeId, peerUdpEndpoint);
 ```
+
+## Join a real ZeroTier network (upstream `libzt`)
+
+This uses the upstream ZeroTier protocol stack (via the `ZeroTier.Sockets` NuGet package) and yields real managed IPs for the network (inside libzt).
+
+```csharp
+using JKamsker.LibZt.Libzt;
+
+var networkId = 0x9ad07d010980bd45UL;
+
+await using var node = new ZtLibztNode(new ZtLibztNodeOptions
+{
+    StoragePath = "path/to/libzt-state",
+});
+
+await node.StartAsync();
+await node.JoinNetworkAsync(networkId);
+await node.WaitForNetworkTransportReadyAsync(networkId, TimeSpan.FromSeconds(30));
+
+var addresses = node.GetNetworkAddresses(networkId);
+```
+
+## HttpClient over real ZeroTier (upstream `libzt`)
+
+```csharp
+using JKamsker.LibZt.Libzt;
+
+using var http = new HttpClient(new ZtLibztHttpMessageHandler());
+var body = await http.GetStringAsync("http://10.121.15.99:5380/");
+```
+
+## Expose a local TCP service over real ZeroTier (upstream `libzt`)
+
+```csharp
+using JKamsker.LibZt.Libzt.Sockets;
+
+await using var forwarder = new ZtLibztTcpPortForwarder(
+    listenPort: 28080,
+    targetHost: "127.0.0.1",
+    targetPort: 5000);
+
+await forwarder.RunAsync();
+```

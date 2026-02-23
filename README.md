@@ -1,13 +1,18 @@
 # JKamsker.LibZt
 
-Fully managed (.NET 10) experimentation-focused replacement surface for `libzt`:
+This repo contains two stacks:
+
+- `JKamsker.LibZt` – fully managed (.NET 10) experimentation-focused replacement *surface* for `libzt` (not protocol-compatible with ZeroTier today).
+- `JKamsker.LibZt.Libzt` – optional thin wrapper around the upstream `libzt` implementation (via `ZeroTier.Sockets`) for joining real ZeroTier networks and getting managed ZeroTier IPs (inside libzt).
+
+`JKamsker.LibZt` provides:
 
 - `ZtNode` for identity + network membership
 - `ZtUdpClient` for UDP-like datagrams over the node-to-node transport
 - `InMemory` transport for deterministic/offline tests
 - `OsUdp` transport for real UDP packet exchange between managed nodes
 
-This repo currently **does not implement the upstream ZeroTier protocol stack** (planet/roots processing, crypto handshakes, virtual NIC / lwIP parity, etc.). The `ztnet` integration is used as an external validation harness for network lifecycle operations and for E2E smoke tests.
+This repo currently **does not implement the upstream ZeroTier protocol stack** (planet/roots processing, crypto handshakes, virtual NIC / lwIP parity, etc.) for the managed stack. The `ztnet` integration is used as an external validation harness for network lifecycle operations and for E2E smoke tests.
 
 ## Quick start
 
