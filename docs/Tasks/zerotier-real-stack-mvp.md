@@ -17,9 +17,9 @@ Status legend:
 - [x] Add minimal unit tests for API surface (compiles, basic argument validation).
 
 ## Milestone Z2 — ZeroTier-compatible identity (must interop with real networks)
-- [ ] Implement ZeroTier identity generation (address + key material) in managed code.
-- [ ] Persist identity under `--state` in a new managed format (`<state>/zerotier/...`).
-- [ ] Add tests with fixed vectors (derived from upstream docs) for node id derivation.
+- [x] Implement ZeroTier identity generation (address + key material) in managed code.
+- [x] Persist identity under `--state` in a new managed format (`<state>/zerotier/...`).
+- [x] Add tests with fixed vectors (derived from upstream docs) for node id derivation.
 
 ## Milestone Z3 — UDP transport + packet framing
 - [ ] Implement a UDP transport loop (send/recv, cancellation, timeouts, logging).

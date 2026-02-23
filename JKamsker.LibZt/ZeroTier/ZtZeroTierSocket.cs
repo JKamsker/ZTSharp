@@ -1,16 +1,22 @@
 using System.Net;
 using JKamsker.LibZt.ZeroTier.Http;
+using JKamsker.LibZt.ZeroTier.Internal;
 
 namespace JKamsker.LibZt.ZeroTier;
 
 public sealed class ZtZeroTierSocket : IAsyncDisposable
 {
     private readonly ZtZeroTierSocketOptions _options;
+    private readonly string _statePath;
+    private readonly ZtZeroTierIdentity _identity;
     private bool _disposed;
 
-    private ZtZeroTierSocket(ZtZeroTierSocketOptions options)
+    private ZtZeroTierSocket(ZtZeroTierSocketOptions options, string statePath, ZtZeroTierIdentity identity)
     {
         _options = options;
+        _statePath = statePath;
+        _identity = identity;
+        NodeId = identity.NodeId;
     }
 
     public ZtNodeId NodeId { get; private set; }
@@ -46,7 +52,21 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(options), "Invalid PlanetSource value.");
         }
 
-        return Task.FromResult(new ZtZeroTierSocket(options));
+        var statePath = Path.Combine(options.StateRootPath, "zerotier");
+        Directory.CreateDirectory(statePath);
+
+        var identityPath = Path.Combine(statePath, "identity.bin");
+        if (!ZtZeroTierIdentityStore.TryLoad(identityPath, out var identity))
+        {
+            identity = ZtZeroTierIdentityGenerator.Generate(cancellationToken);
+            ZtZeroTierIdentityStore.Save(identityPath, identity);
+        }
+        else if (!identity.LocallyValidate())
+        {
+            throw new InvalidOperationException($"Invalid identity at '{identityPath}'. Delete it to regenerate.");
+        }
+
+        return Task.FromResult(new ZtZeroTierSocket(options, statePath, identity));
     }
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(

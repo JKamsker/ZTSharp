@@ -13,6 +13,7 @@ Library:
 
 - `Microsoft.Extensions.Logging.Abstractions` (MIT)
 - `System.Memory.Data` (MIT)
+- `BouncyCastle.Cryptography` (MIT)
 
 Build-time / trimming:
 
