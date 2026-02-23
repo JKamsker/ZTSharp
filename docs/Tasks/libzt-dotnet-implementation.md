@@ -39,6 +39,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [ ] Add OS UDP transport adapter and packet framing.
 - [ ] Implement node-to-node handshake over real UDP path.
 - [ ] Add peer discovery + virtual interface plumbing.
+- [x] Validate network creation via local `ztnet` CLI.
 - [ ] Validate joining an actual ZeroTier network using local `ztnet` CLI.
 - [ ] Verify end-to-end socket communication with external ZeroTier endpoints.
 
