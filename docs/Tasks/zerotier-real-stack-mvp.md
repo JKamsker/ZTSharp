@@ -34,7 +34,7 @@ Status legend:
 - [ ] Implement secure session establishment and controller config fetch.
   - [x] Implement identity wire serialization (Identity::serialize format).
   - [ ] Implement HELLO send + OK parse (unencrypted) over UDP.
-  - [ ] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
+  - [x] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
   - [ ] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
 - [ ] Persist assigned managed IPs to state and expose them via API.
   - [ ] Persist network config + assigned IPs under `<state>/zerotier/`.
