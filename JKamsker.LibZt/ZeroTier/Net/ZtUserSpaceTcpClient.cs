@@ -255,24 +255,40 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
             }
 
             _disposed = true;
-            await _cts.CancelAsync().ConfigureAwait(false);
             _incoming.Writer.TryComplete();
 
             if (_connected && !_remoteClosed)
             {
                 try
                 {
-                    await SendTcpAsync(
-                            seq: _sendNext,
-                            ack: _recvNext,
-                            flags: ZtTcpCodec.Flags.Fin | ZtTcpCodec.Flags.Ack,
-                            options: ReadOnlyMemory<byte>.Empty,
-                            payload: ReadOnlyMemory<byte>.Empty,
-                            cancellationToken: CancellationToken.None)
-                        .ConfigureAwait(false);
-                    _sendNext += 1;
+                    await _sendLock.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        using var finCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        var finSeq = _sendNext;
+                        var expectedAck = unchecked(finSeq + 1);
+
+                        await SendTcpWithRetriesAsync(
+                                seq: finSeq,
+                                ack: _recvNext,
+                                flags: ZtTcpCodec.Flags.Fin | ZtTcpCodec.Flags.Ack,
+                                options: ReadOnlyMemory<byte>.Empty,
+                                payload: ReadOnlyMemory<byte>.Empty,
+                                expectedAck,
+                                finCts.Token)
+                            .ConfigureAwait(false);
+
+                        _sendNext = expectedAck;
+                    }
+                    finally
+                    {
+                        _sendLock.Release();
+                    }
                 }
                 catch (OperationCanceledException)
+                {
+                }
+                catch (TimeoutException)
                 {
                 }
                 catch (ObjectDisposedException)
@@ -285,6 +301,8 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
                 {
                 }
             }
+
+            await _cts.CancelAsync().ConfigureAwait(false);
 
             if (_receiveLoop is not null)
             {

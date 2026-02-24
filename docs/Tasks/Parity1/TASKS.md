@@ -105,7 +105,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Implement out-of-order segment handling + reassembly.
 - [x] Implement receive-window / flow control + backpressure (avoid unbounded buffering).
 - [x] Improve retransmission behavior (RTO/backoff) and loss recovery for real internet paths.
-- [ ] Improve close semantics (FIN/half-close/TIME_WAIT-ish behavior) and error mapping (RST).
+- [x] Improve close semantics (FIN/half-close/TIME_WAIT-ish behavior) and error mapping (RST).
 - [ ] Add stress tests (many concurrent conns, larger payloads, slow reader/writer).
 - [ ] Manual verification: sustained HTTP download over managed stack without stalls/timeouts.
 

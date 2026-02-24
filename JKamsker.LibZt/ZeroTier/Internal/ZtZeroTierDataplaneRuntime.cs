@@ -705,7 +705,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
 
         if (nextHeader == ZtTcpCodec.ProtocolNumber && isUnicastToUs)
         {
-            if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out _, out _, out var flags, out _, out _))
+            if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
             {
                 return;
             }
@@ -722,6 +722,21 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
                 _tcpSynHandlersV6.TryGetValue(dstPort, out var handler))
             {
                 await handler(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            if ((flags & ZtTcpCodec.Flags.Syn) != 0 &&
+                (flags & ZtTcpCodec.Flags.Ack) == 0)
+            {
+                await SendTcpRstAsync(
+                        peerNodeId,
+                        localIp: dst,
+                        remoteIp: src,
+                        localPort: dstPort,
+                        remotePort: srcPort,
+                        acknowledgmentNumber: unchecked(seq + 1),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
     }
@@ -760,7 +775,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
-        if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out _, out _, out var flags, out _, out _))
+        if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
         {
             return;
         }
@@ -782,6 +797,21 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             _tcpSynHandlersV4.TryGetValue(dstPort, out var handler))
         {
             await handler(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if ((flags & ZtTcpCodec.Flags.Syn) != 0 &&
+            (flags & ZtTcpCodec.Flags.Ack) == 0)
+        {
+            await SendTcpRstAsync(
+                    peerNodeId,
+                    localIp: dst,
+                    remoteIp: src,
+                    localPort: dstPort,
+                    remotePort: srcPort,
+                    acknowledgmentNumber: unchecked(seq + 1),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
@@ -981,6 +1011,63 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         requesterIp.CopyTo(span.Slice(24, 4)); // TPA
 
         return reply;
+    }
+
+    private async ValueTask SendTcpRstAsync(
+        ZtNodeId peerNodeId,
+        IPAddress localIp,
+        IPAddress remoteIp,
+        ushort localPort,
+        ushort remotePort,
+        uint acknowledgmentNumber,
+        CancellationToken cancellationToken)
+    {
+        if (localIp.AddressFamily != remoteIp.AddressFamily)
+        {
+            return;
+        }
+
+        var tcp = ZtTcpCodec.Encode(
+            sourceIp: localIp,
+            destinationIp: remoteIp,
+            sourcePort: localPort,
+            destinationPort: remotePort,
+            sequenceNumber: 0,
+            acknowledgmentNumber: acknowledgmentNumber,
+            flags: ZtTcpCodec.Flags.Rst | ZtTcpCodec.Flags.Ack,
+            windowSize: 0,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        if (localIp.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var ip = ZtIpv4Codec.Encode(
+                source: localIp,
+                destination: remoteIp,
+                protocol: ZtTcpCodec.ProtocolNumber,
+                payload: tcp,
+                identification: GenerateIpIdentification());
+
+            await SendIpv4Async(peerNodeId, ip, cancellationToken).ConfigureAwait(false);
+        }
+        else if (localIp.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var ip = ZtIpv6Codec.Encode(
+                source: localIp,
+                destination: remoteIp,
+                nextHeader: ZtTcpCodec.ProtocolNumber,
+                payload: tcp,
+                hopLimit: 64);
+
+            await SendEthernetFrameAsync(peerNodeId, ZtZeroTierFrameCodec.EtherTypeIpv6, ip, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static ushort GenerateIpIdentification()
+    {
+        Span<byte> buffer = stackalloc byte[2];
+        RandomNumberGenerator.Fill(buffer);
+        return BinaryPrimitives.ReadUInt16LittleEndian(buffer);
     }
 
     private static bool TryParseMulticastFramePayload(
