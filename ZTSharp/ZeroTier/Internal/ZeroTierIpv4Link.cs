@@ -184,35 +184,68 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
             switch (verb)
             {
                 case ZeroTierVerb.Error:
-                {
-                    if (isFromRoot)
                     {
-                        ZeroTierTrace.WriteLine($"[zerotier] RX ERROR from root {_rootNodeId} via {datagram.RemoteEndPoint}.");
-                    }
+                        if (isFromRoot)
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] RX ERROR from root {_rootNodeId} via {datagram.RemoteEndPoint}.");
+                        }
 
-                    if (payload.Length < 1 + 8 + 1)
+                        if (payload.Length < 1 + 8 + 1)
+                        {
+                            continue;
+                        }
+
+                        var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
+                        var errorCode = payload[1 + 8];
+                        ulong? networkId = null;
+                        if (payload.Length >= 1 + 8 + 1 + 8)
+                        {
+                            networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
+                        }
+
+                        throw new InvalidOperationException(FormatError(inReVerb, errorCode, networkId));
+                    }
+                case ZeroTierVerb.Rendezvous when isFromRoot:
                     {
+                        if (ZeroTierRendezvousCodec.TryParse(payload, out var rendezvous) && rendezvous.With == _remoteNodeId)
+                        {
+                            var endpoints = NormalizeDirectEndpoints([rendezvous.Endpoint], maxEndpoints: 8);
+                            if (ZeroTierTrace.Enabled)
+                            {
+                                ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS: {rendezvous.With} endpoints: {FormatEndpoints(endpoints)} via {datagram.RemoteEndPoint}.");
+                            }
+
+                            _directEndpoints = endpoints;
+
+                            foreach (var endpoint in endpoints)
+                            {
+                                await SendHolePunchAsync(endpoint, cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+                        else
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS (ignored) via {datagram.RemoteEndPoint}.");
+                        }
+
                         continue;
                     }
-
-                    var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
-                    var errorCode = payload[1 + 8];
-                    ulong? networkId = null;
-                    if (payload.Length >= 1 + 8 + 1 + 8)
+                case ZeroTierVerb.PushDirectPaths when isFromRemote:
                     {
-                        networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
-                    }
+                        if (!ZeroTierPushDirectPathsCodec.TryParse(payload, out var paths) || paths.Length == 0)
+                        {
+                            ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse PUSH_DIRECT_PATHS payload.");
+                            continue;
+                        }
 
-                    throw new InvalidOperationException(FormatError(inReVerb, errorCode, networkId));
-                }
-                case ZeroTierVerb.Rendezvous when isFromRoot:
-                {
-                    if (ZeroTierRendezvousCodec.TryParse(payload, out var rendezvous) && rendezvous.With == _remoteNodeId)
-                    {
-                        var endpoints = NormalizeDirectEndpoints([rendezvous.Endpoint], maxEndpoints: 8);
+                        var endpoints = NormalizeDirectEndpoints(paths.Select(p => p.Endpoint), maxEndpoints: 8);
+                        if (endpoints.Length == 0)
+                        {
+                            continue;
+                        }
+
                         if (ZeroTierTrace.Enabled)
                         {
-                            ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS: {rendezvous.With} endpoints: {FormatEndpoints(endpoints)} via {datagram.RemoteEndPoint}.");
+                            ZeroTierTrace.WriteLine($"[zerotier] RX PUSH_DIRECT_PATHS: endpoints: {FormatEndpoints(endpoints)} (candidates: {paths.Length}).");
                         }
 
                         _directEndpoints = endpoints;
@@ -221,147 +254,114 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                         {
                             await SendHolePunchAsync(endpoint, cancellationToken).ConfigureAwait(false);
                         }
-                    }
-                    else
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS (ignored) via {datagram.RemoteEndPoint}.");
-                    }
 
-                    continue;
-                }
-                case ZeroTierVerb.PushDirectPaths when isFromRemote:
-                {
-                    if (!ZeroTierPushDirectPathsCodec.TryParse(payload, out var paths) || paths.Length == 0)
-                    {
-                        ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse PUSH_DIRECT_PATHS payload.");
                         continue;
                     }
-
-                    var endpoints = NormalizeDirectEndpoints(paths.Select(p => p.Endpoint), maxEndpoints: 8);
-                    if (endpoints.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    if (ZeroTierTrace.Enabled)
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] RX PUSH_DIRECT_PATHS: endpoints: {FormatEndpoints(endpoints)} (candidates: {paths.Length}).");
-                    }
-
-                    _directEndpoints = endpoints;
-
-                    foreach (var endpoint in endpoints)
-                    {
-                        await SendHolePunchAsync(endpoint, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    continue;
-                }
                 case ZeroTierVerb.MulticastFrame:
-                {
-                    if (!isFromRemote)
                     {
+                        if (!isFromRemote)
+                        {
+                            continue;
+                        }
+
+                        if (!TryParseMulticastFramePayload(payload, out var networkId, out var etherType, out var frame))
+                        {
+                            ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse MULTICAST_FRAME payload.");
+                            continue;
+                        }
+
+                        if (networkId != _networkId)
+                        {
+                            continue;
+                        }
+
+                        if (etherType == EtherTypeArp)
+                        {
+                            await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+                        }
+
                         continue;
                     }
-
-                    if (!TryParseMulticastFramePayload(payload, out var networkId, out var etherType, out var frame))
-                    {
-                        ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse MULTICAST_FRAME payload.");
-                        continue;
-                    }
-
-                    if (networkId != _networkId)
-                    {
-                        continue;
-                    }
-
-                    if (etherType == EtherTypeArp)
-                    {
-                        await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    continue;
-                }
                 case ZeroTierVerb.Frame:
-                {
-                    if (!isFromRemote)
                     {
-                        continue;
-                    }
+                        if (!isFromRemote)
+                        {
+                            continue;
+                        }
 
-                    if (!ZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
-                    {
-                        ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse FRAME payload.");
-                        continue;
-                    }
+                        if (!ZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
+                        {
+                            ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse FRAME payload.");
+                            continue;
+                        }
 
-                    if (networkId != _networkId)
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] Drop: FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
-                        continue;
-                    }
+                        if (networkId != _networkId)
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] Drop: FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
+                            continue;
+                        }
 
-                    if (etherType == EtherTypeArp)
-                    {
-                        await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
-                        continue;
-                    }
+                        if (etherType == EtherTypeArp)
+                        {
+                            await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
 
-                    if (etherType != ZeroTierFrameCodec.EtherTypeIpv4)
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] Drop: FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
-                        continue;
-                    }
+                        if (etherType != ZeroTierFrameCodec.EtherTypeIpv4)
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] Drop: FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
+                            continue;
+                        }
 
-                    return packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                }
+                        return packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                    }
                 case ZeroTierVerb.ExtFrame:
-                {
-                    if (!isFromRemote)
                     {
-                        continue;
-                    }
+                        if (!isFromRemote)
+                        {
+                            continue;
+                        }
 
-                    if (!ZeroTierFrameCodec.TryParseExtFramePayload(
-                            payload,
-                            out var networkId,
-                            out _,
-                            out _,
-                            out var to,
-                            out var from,
-                            out var etherType,
-                            out var frame))
-                    {
-                        ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse EXT_FRAME payload.");
-                        continue;
-                    }
+                        if (!ZeroTierFrameCodec.TryParseExtFramePayload(
+                                payload,
+                                out var networkId,
+                                out _,
+                                out _,
+                                out var to,
+                                out var from,
+                                out var etherType,
+                                out var frame))
+                        {
+                            ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse EXT_FRAME payload.");
+                            continue;
+                        }
 
-                    if (networkId != _networkId)
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] Drop: EXT_FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
-                        continue;
-                    }
+                        if (networkId != _networkId)
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] Drop: EXT_FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
+                            continue;
+                        }
 
-                    if (etherType == EtherTypeArp)
-                    {
-                        await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
-                        continue;
-                    }
+                        if (etherType == EtherTypeArp)
+                        {
+                            await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
 
-                    if (etherType != ZeroTierFrameCodec.EtherTypeIpv4)
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] Drop: EXT_FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
-                        continue;
-                    }
+                        if (etherType != ZeroTierFrameCodec.EtherTypeIpv4)
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] Drop: EXT_FRAME network/ethertype mismatch (networkId=0x{networkId:x16}, etherType=0x{etherType:x4}).");
+                            continue;
+                        }
 
-                    if (to != _from || from != _to)
-                    {
-                        ZeroTierTrace.WriteLine($"[zerotier] Drop: EXT_FRAME to/from mismatch (to={to}, from={from}).");
-                        continue;
-                    }
+                        if (to != _from || from != _to)
+                        {
+                            ZeroTierTrace.WriteLine($"[zerotier] Drop: EXT_FRAME to/from mismatch (to={to}, from={from}).");
+                            continue;
+                        }
 
-                    return packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                }
+                        return packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                    }
                 default:
                     continue;
             }

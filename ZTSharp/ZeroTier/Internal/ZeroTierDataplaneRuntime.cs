@@ -474,110 +474,110 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         switch (verb)
         {
             case ZeroTierVerb.MulticastFrame:
-            {
-                if (!TryParseMulticastFramePayload(payload, out var networkId, out var etherType, out var frame))
                 {
+                    if (!TryParseMulticastFramePayload(payload, out var networkId, out var etherType, out var frame))
+                    {
+                        return;
+                    }
+
+                    if (networkId != _networkId)
+                    {
+                        return;
+                    }
+
+                    if (etherType == EtherTypeArp)
+                    {
+                        await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
+                    {
+                        var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                        await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
+                    }
+
                     return;
                 }
-
-                if (networkId != _networkId)
-                {
-                    return;
-                }
-
-                if (etherType == EtherTypeArp)
-                {
-                    await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
-                {
-                    var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                    await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                }
-
-                return;
-            }
             case ZeroTierVerb.Frame:
-            {
-                if (!ZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
                 {
+                    if (!ZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
+                    {
+                        return;
+                    }
+
+                    if (networkId != _networkId)
+                    {
+                        return;
+                    }
+
+                    if (etherType == EtherTypeArp)
+                    {
+                        await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv4)
+                    {
+                        var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                        await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
+                    {
+                        var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                        await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
+                    }
+
                     return;
                 }
-
-                if (networkId != _networkId)
-                {
-                    return;
-                }
-
-                if (etherType == EtherTypeArp)
-                {
-                    await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                if (etherType == ZeroTierFrameCodec.EtherTypeIpv4)
-                {
-                    var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                    await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
-                {
-                    var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                    await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                }
-
-                return;
-            }
             case ZeroTierVerb.ExtFrame:
-            {
-                if (!ZeroTierFrameCodec.TryParseExtFramePayload(
-                        payload,
-                        out var networkId,
-                        out _,
-                        out _,
-                        out var to,
-                        out var from,
-                        out var etherType,
-                        out var frame))
                 {
+                    if (!ZeroTierFrameCodec.TryParseExtFramePayload(
+                            payload,
+                            out var networkId,
+                            out _,
+                            out _,
+                            out var to,
+                            out var from,
+                            out var etherType,
+                            out var frame))
+                    {
+                        return;
+                    }
+
+                    if (networkId != _networkId)
+                    {
+                        return;
+                    }
+
+                    if (to != _localMac || from != ZeroTierMac.FromAddress(peerNodeId, _networkId))
+                    {
+                        return;
+                    }
+
+                    if (etherType == EtherTypeArp)
+                    {
+                        await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv4)
+                    {
+                        var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                        await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+
+                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
+                    {
+                        var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                        await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
+                    }
+
                     return;
                 }
-
-                if (networkId != _networkId)
-                {
-                    return;
-                }
-
-                if (to != _localMac || from != ZeroTierMac.FromAddress(peerNodeId, _networkId))
-                {
-                    return;
-                }
-
-                if (etherType == EtherTypeArp)
-                {
-                    await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                if (etherType == ZeroTierFrameCodec.EtherTypeIpv4)
-                {
-                    var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                    await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
-                {
-                    var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                    await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                }
-
-                return;
-            }
             default:
                 return;
         }
@@ -1135,90 +1135,90 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         switch (verb)
         {
             case ZeroTierVerb.Ok:
-            {
-                if (payload.Length < 1 + 8)
                 {
+                    if (payload.Length < 1 + 8)
+                    {
+                        return false;
+                    }
+
+                    var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1, 8));
+
+                    if (inReVerb == ZeroTierVerb.Whois &&
+                        _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
+                    {
+                        if (payload.Length < (OkIndexPayload - OkIndexInReVerb))
+                        {
+                            whoisTcs.TrySetException(new InvalidOperationException("WHOIS OK payload too short."));
+                            return true;
+                        }
+
+                        try
+                        {
+                            var identity = ZeroTierIdentityCodec.Deserialize(payload.Slice(1 + 8), out _);
+                            whoisTcs.TrySetResult(identity);
+                        }
+                        catch (FormatException ex)
+                        {
+                            whoisTcs.TrySetException(ex);
+                        }
+
+                        return true;
+                    }
+
+                    if (inReVerb == ZeroTierVerb.MulticastGather &&
+                        _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
+                    {
+                        if (!ZeroTierMulticastGatherCodec.TryParseOkPayload(
+                                payload.Slice(1 + 8),
+                                out var okNetworkId,
+                                out _,
+                                out var totalKnown,
+                                out var members) ||
+                            okNetworkId != _networkId)
+                        {
+                            gatherTcs.TrySetException(new InvalidOperationException("Invalid MULTICAST_GATHER OK payload."));
+                            return true;
+                        }
+
+                        gatherTcs.TrySetResult((totalKnown, members));
+                        return true;
+                    }
+
                     return false;
                 }
-
-                var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
-                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1, 8));
-
-                if (inReVerb == ZeroTierVerb.Whois &&
-                    _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
-                {
-                    if (payload.Length < (OkIndexPayload - OkIndexInReVerb))
-                    {
-                        whoisTcs.TrySetException(new InvalidOperationException("WHOIS OK payload too short."));
-                        return true;
-                    }
-
-                    try
-                    {
-                        var identity = ZeroTierIdentityCodec.Deserialize(payload.Slice(1 + 8), out _);
-                        whoisTcs.TrySetResult(identity);
-                    }
-                    catch (FormatException ex)
-                    {
-                        whoisTcs.TrySetException(ex);
-                    }
-
-                    return true;
-                }
-
-                if (inReVerb == ZeroTierVerb.MulticastGather &&
-                    _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
-                {
-                    if (!ZeroTierMulticastGatherCodec.TryParseOkPayload(
-                            payload.Slice(1 + 8),
-                            out var okNetworkId,
-                            out _,
-                            out var totalKnown,
-                            out var members) ||
-                        okNetworkId != _networkId)
-                    {
-                        gatherTcs.TrySetException(new InvalidOperationException("Invalid MULTICAST_GATHER OK payload."));
-                        return true;
-                    }
-
-                    gatherTcs.TrySetResult((totalKnown, members));
-                    return true;
-                }
-
-                return false;
-            }
             case ZeroTierVerb.Error:
-            {
-                if (payload.Length < 1 + 8 + 1)
                 {
+                    if (payload.Length < 1 + 8 + 1)
+                    {
+                        return false;
+                    }
+
+                    var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1, 8));
+                    var errorCode = payload[1 + 8];
+                    ulong? networkId = null;
+                    if (payload.Length >= 1 + 8 + 1 + 8)
+                    {
+                        networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
+                    }
+
+                    if (inReVerb == ZeroTierVerb.Whois &&
+                        _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
+                    {
+                        whoisTcs.TrySetException(new InvalidOperationException(FormatError(inReVerb, errorCode, networkId)));
+                        return true;
+                    }
+
+                    if (inReVerb == ZeroTierVerb.MulticastGather &&
+                        _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
+                    {
+                        gatherTcs.TrySetException(new InvalidOperationException(FormatError(inReVerb, errorCode, networkId)));
+                        return true;
+                    }
+
                     return false;
                 }
-
-                var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
-                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1, 8));
-                var errorCode = payload[1 + 8];
-                ulong? networkId = null;
-                if (payload.Length >= 1 + 8 + 1 + 8)
-                {
-                    networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
-                }
-
-                if (inReVerb == ZeroTierVerb.Whois &&
-                    _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
-                {
-                    whoisTcs.TrySetException(new InvalidOperationException(FormatError(inReVerb, errorCode, networkId)));
-                    return true;
-                }
-
-                if (inReVerb == ZeroTierVerb.MulticastGather &&
-                    _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
-                {
-                    gatherTcs.TrySetException(new InvalidOperationException(FormatError(inReVerb, errorCode, networkId)));
-                    return true;
-                }
-
-                return false;
-            }
             default:
                 return false;
         }

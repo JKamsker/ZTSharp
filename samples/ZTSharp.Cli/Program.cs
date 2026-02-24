@@ -113,41 +113,41 @@ static async Task RunJoinAsync(string[] commandArgs)
                 stack = ReadOptionValue(commandArgs, ref i, "--stack");
                 break;
             case "--transport":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--transport");
-                transportMode = value switch
                 {
-                    "osudp" => TransportMode.OsUdp,
-                    "inmem" => TransportMode.InMemory,
-                    _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
-                };
-                break;
-            }
-            case "--udp-port":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
-                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                    parsed is < 0 or > ushort.MaxValue)
-                {
-                    throw new InvalidOperationException("Invalid --udp-port value.");
+                    var value = ReadOptionValue(commandArgs, ref i, "--transport");
+                    transportMode = value switch
+                    {
+                        "osudp" => TransportMode.OsUdp,
+                        "inmem" => TransportMode.InMemory,
+                        _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
+                    };
+                    break;
                 }
+            case "--udp-port":
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                        parsed is < 0 or > ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException("Invalid --udp-port value.");
+                    }
 
-                udpListenPort = parsed;
-                break;
-            }
+                    udpListenPort = parsed;
+                    break;
+                }
             case "--advertise":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--advertise");
-                advertisedEndpoint = ParseIpEndpoint(value);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--advertise");
+                    advertisedEndpoint = ParseIpEndpoint(value);
+                    break;
+                }
             case "--peer":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--peer");
-                var parsed = ParsePeer(value);
-                peers.Add(parsed);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--peer");
+                    var parsed = ParsePeer(value);
+                    peers.Add(parsed);
+                    break;
+                }
             case "--once":
                 once = true;
                 break;
@@ -296,15 +296,15 @@ static async Task RunListenAsync(string[] commandArgs)
                 stack = ReadOptionValue(commandArgs, ref i, "--stack");
                 break;
             case "--body-bytes":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--body-bytes");
-                if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out bodyBytes) || bodyBytes < 0)
                 {
-                    throw new InvalidOperationException("Invalid --body-bytes value.");
-                }
+                    var value = ReadOptionValue(commandArgs, ref i, "--body-bytes");
+                    if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out bodyBytes) || bodyBytes < 0)
+                    {
+                        throw new InvalidOperationException("Invalid --body-bytes value.");
+                    }
 
-                break;
-            }
+                    break;
+                }
             default:
                 throw new InvalidOperationException($"Unknown option '{arg}'.");
         }
@@ -659,48 +659,48 @@ static async Task RunCallAsync(string[] commandArgs)
                 httpMode = ReadOptionValue(commandArgs, ref i, "--http");
                 break;
             case "--map-ip":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--map-ip");
-                var mapping = ParseIpMapping(value);
-                ipMappings.Add(mapping);
-                break;
-            }
-            case "--transport":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--transport");
-                transportMode = value switch
                 {
-                    "osudp" => TransportMode.OsUdp,
-                    "inmem" => TransportMode.InMemory,
-                    _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
-                };
-                break;
-            }
-            case "--udp-port":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
-                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                    parsed is < 0 or > ushort.MaxValue)
-                {
-                    throw new InvalidOperationException("Invalid --udp-port value.");
+                    var value = ReadOptionValue(commandArgs, ref i, "--map-ip");
+                    var mapping = ParseIpMapping(value);
+                    ipMappings.Add(mapping);
+                    break;
                 }
+            case "--transport":
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--transport");
+                    transportMode = value switch
+                    {
+                        "osudp" => TransportMode.OsUdp,
+                        "inmem" => TransportMode.InMemory,
+                        _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
+                    };
+                    break;
+                }
+            case "--udp-port":
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                        parsed is < 0 or > ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException("Invalid --udp-port value.");
+                    }
 
-                udpListenPort = parsed;
-                break;
-            }
+                    udpListenPort = parsed;
+                    break;
+                }
             case "--advertise":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--advertise");
-                advertisedEndpoint = ParseIpEndpoint(value);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--advertise");
+                    advertisedEndpoint = ParseIpEndpoint(value);
+                    break;
+                }
             case "--peer":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--peer");
-                var parsed = ParsePeer(value);
-                peers.Add(parsed);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--peer");
+                    var parsed = ParsePeer(value);
+                    peers.Add(parsed);
+                    break;
+                }
             default:
                 throw new InvalidOperationException($"Unknown option '{arg}'.");
         }
@@ -1076,11 +1076,11 @@ static async Task RunUdpSendAsync(string[] commandArgs)
                 stack = ReadOptionValue(commandArgs, ref i, "--stack");
                 break;
             case "--to":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--to");
-                destination = ParseIpEndpoint(value);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--to");
+                    destination = ParseIpEndpoint(value);
+                    break;
+                }
             case "--data":
                 dataText = ReadOptionValue(commandArgs, ref i, "--data");
                 break;
@@ -1231,59 +1231,59 @@ static async Task RunExposeAsync(string[] commandArgs)
                 stack = ReadOptionValue(commandArgs, ref i, "--stack");
                 break;
             case "--listen":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--listen");
-                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                    parsed is < 1 or > ushort.MaxValue)
                 {
-                    throw new InvalidOperationException("Invalid --listen value.");
-                }
+                    var value = ReadOptionValue(commandArgs, ref i, "--listen");
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                        parsed is < 1 or > ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException("Invalid --listen value.");
+                    }
 
-                overlayListenPort = parsed;
-                break;
-            }
+                    overlayListenPort = parsed;
+                    break;
+                }
             case "--to":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--to");
-                target = ParseHostPort(value);
-                break;
-            }
-            case "--transport":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--transport");
-                transportMode = value switch
                 {
-                    "osudp" => TransportMode.OsUdp,
-                    "inmem" => TransportMode.InMemory,
-                    _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
-                };
-                break;
-            }
-            case "--udp-port":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
-                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                    parsed is < 0 or > ushort.MaxValue)
-                {
-                    throw new InvalidOperationException("Invalid --udp-port value.");
+                    var value = ReadOptionValue(commandArgs, ref i, "--to");
+                    target = ParseHostPort(value);
+                    break;
                 }
+            case "--transport":
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--transport");
+                    transportMode = value switch
+                    {
+                        "osudp" => TransportMode.OsUdp,
+                        "inmem" => TransportMode.InMemory,
+                        _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
+                    };
+                    break;
+                }
+            case "--udp-port":
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--udp-port");
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                        parsed is < 0 or > ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException("Invalid --udp-port value.");
+                    }
 
-                udpListenPort = parsed;
-                break;
-            }
+                    udpListenPort = parsed;
+                    break;
+                }
             case "--advertise":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--advertise");
-                advertisedEndpoint = ParseIpEndpoint(value);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--advertise");
+                    advertisedEndpoint = ParseIpEndpoint(value);
+                    break;
+                }
             case "--peer":
-            {
-                var value = ReadOptionValue(commandArgs, ref i, "--peer");
-                var parsed = ParsePeer(value);
-                peers.Add(parsed);
-                break;
-            }
+                {
+                    var value = ReadOptionValue(commandArgs, ref i, "--peer");
+                    var parsed = ParsePeer(value);
+                    peers.Add(parsed);
+                    break;
+                }
             default:
                 throw new InvalidOperationException($"Unknown option '{arg}'.");
         }

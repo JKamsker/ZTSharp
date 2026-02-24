@@ -83,17 +83,17 @@ static async Task RunTcpEchoServerAsync(string[] args)
                 networkText = ReadOptionValue(args, ref i, "--network");
                 break;
             case "--port":
-            {
-                var value = ReadOptionValue(args, ref i, "--port");
-                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                    parsed is < 1 or > ushort.MaxValue)
                 {
-                    throw new InvalidOperationException("Invalid --port value.");
-                }
+                    var value = ReadOptionValue(args, ref i, "--port");
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                        parsed is < 1 or > ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException("Invalid --port value.");
+                    }
 
-                port = parsed;
-                break;
-            }
+                    port = parsed;
+                    break;
+                }
             default:
                 throw new InvalidOperationException($"Unknown option '{arg}'.");
         }
@@ -302,17 +302,17 @@ static async Task RunUdpServerAsync(string[] args)
                 networkText = ReadOptionValue(args, ref i, "--network");
                 break;
             case "--port":
-            {
-                var value = ReadOptionValue(args, ref i, "--port");
-                if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                    parsed is < 1 or > ushort.MaxValue)
                 {
-                    throw new InvalidOperationException("Invalid --port value.");
-                }
+                    var value = ReadOptionValue(args, ref i, "--port");
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
+                        parsed is < 1 or > ushort.MaxValue)
+                    {
+                        throw new InvalidOperationException("Invalid --port value.");
+                    }
 
-                port = parsed;
-                break;
-            }
+                    port = parsed;
+                    break;
+                }
             default:
                 throw new InvalidOperationException($"Unknown option '{arg}'.");
         }
