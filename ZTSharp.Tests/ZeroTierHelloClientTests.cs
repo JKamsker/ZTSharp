@@ -85,7 +85,7 @@ public sealed class ZeroTierHelloClientTests
 
         var serverTask = RunHelloServerOnceAsync(remoteUdp, remoteIdentity, localIdentity);
 
-        _ = await ZeroTierHelloClient.HelloAsync(
+        var remoteProtocolVersion = await ZeroTierHelloClient.HelloAsync(
             udp,
             localIdentity,
             planet,
@@ -94,6 +94,8 @@ public sealed class ZeroTierHelloClientTests
             sharedKey: sharedKey,
             timeout: TimeSpan.FromSeconds(2),
             cancellationToken: CancellationToken.None);
+
+        Assert.Equal(11, remoteProtocolVersion);
 
         await serverTask;
     }

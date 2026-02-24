@@ -26,6 +26,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
     private readonly ZeroTierMac _from;
     private readonly byte[] _rootKey;
     private readonly byte[] _sharedKey;
+    private readonly byte _remoteProtocolVersion;
     private IPEndPoint[] _directEndpoints = Array.Empty<IPEndPoint>();
     private int _traceRxRemaining = 50;
     private int _traceRxVerbRemaining = 50;
@@ -42,7 +43,8 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         ulong networkId,
         IPAddress localManagedIp,
         byte[] inlineCom,
-        byte[] sharedKey)
+        byte[] sharedKey,
+        byte remoteProtocolVersion)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(relayEndpoint);
@@ -68,6 +70,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         _from = ZeroTierMac.FromAddress(localNodeId, networkId);
         _rootKey = rootKey;
         _sharedKey = sharedKey;
+        _remoteProtocolVersion = remoteProtocolVersion;
     }
 
     public async ValueTask SendAsync(ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken = default)
@@ -86,7 +89,8 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
             to: _to,
             from: _from,
             ipv4Packet: ipv4Packet.Span,
-            sharedKey: _sharedKey);
+            sharedKey: _sharedKey,
+            remoteProtocolVersion: _remoteProtocolVersion);
 
         var directEndpoints = _directEndpoints;
         if (ZeroTierTrace.Enabled && _traceTxRemaining > 0)
@@ -565,7 +569,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
             VerbRaw: (byte)ZeroTierVerb.ExtFrame);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, _sharedKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_sharedKey, _remoteProtocolVersion), encryptPayload: true);
         return packet;
     }
 

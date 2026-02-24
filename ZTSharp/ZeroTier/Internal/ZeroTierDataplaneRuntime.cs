@@ -261,7 +261,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
         var peerProtocolVersion = _peerProtocolVersions.TryGetValue(peerNodeId, out var protocolVersion) ? protocolVersion : (byte)0;
-        var outboundKey = ZeroTierPacketCrypto.SelectOutboundKey(key, peerProtocolVersion);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
         var packetId = GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
@@ -274,7 +273,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             from: _localMac,
             etherType: ZeroTierFrameCodec.EtherTypeIpv4,
             frame: ipv4Packet.Span,
-            sharedKey: outboundKey);
+            sharedKey: key,
+            remoteProtocolVersion: peerProtocolVersion);
 
         await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
     }
@@ -290,7 +290,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
         var peerProtocolVersion = _peerProtocolVersions.TryGetValue(peerNodeId, out var protocolVersion) ? protocolVersion : (byte)0;
-        var outboundKey = ZeroTierPacketCrypto.SelectOutboundKey(key, peerProtocolVersion);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
         var packetId = GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
@@ -303,7 +302,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             from: _localMac,
             etherType: etherType,
             frame: frame.Span,
-            sharedKey: outboundKey);
+            sharedKey: key,
+            remoteProtocolVersion: peerProtocolVersion);
 
         await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
     }
