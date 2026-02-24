@@ -19,6 +19,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
 
     private const ushort EtherTypeArp = 0x0806;
+    private const int HelloPayloadMinLength = 13 + (5 + 1 + ZtZeroTierIdentity.PublicKeyLength + 1);
 
     private readonly ZtZeroTierUdpTransport _udp;
     private readonly ZtNodeId _rootNodeId;
@@ -343,6 +344,13 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
 
         var peerNodeId = decoded.Header.Source;
 
+        if (decoded.Header.CipherSuite == 0 && decoded.Header.Verb == ZtZeroTierVerb.Hello)
+        {
+            await HandleHelloAsync(peerNodeId, decoded.Header.PacketId, packetBytes, datagram.RemoteEndPoint, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
         if (!ZtZeroTierPacketCrypto.Dearmor(packetBytes, key))
         {
@@ -450,6 +458,79 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             }
             default:
                 return;
+        }
+    }
+
+    private async ValueTask HandleHelloAsync(
+        ZtNodeId peerNodeId,
+        ulong helloPacketId,
+        byte[] packetBytes,
+        IPEndPoint remoteEndPoint,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (packetBytes.Length < ZtZeroTierPacketHeader.Length + HelloPayloadMinLength)
+        {
+            return;
+        }
+
+        var payload = packetBytes.AsSpan(ZtZeroTierPacketHeader.Length);
+        if (payload.Length < HelloPayloadMinLength)
+        {
+            return;
+        }
+
+        var helloTimestamp = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(5, 8));
+
+        ZtZeroTierIdentity identity;
+        try
+        {
+            identity = ZtZeroTierIdentityCodec.Deserialize(payload.Slice(13), out _);
+        }
+        catch (FormatException)
+        {
+            return;
+        }
+
+        if (identity.NodeId != peerNodeId || !identity.LocallyValidate())
+        {
+            return;
+        }
+
+        var sharedKey = new byte[48];
+        ZtZeroTierC25519.Agree(_localIdentity.PrivateKey!, identity.PublicKey, sharedKey);
+
+        if (!ZtZeroTierPacketCrypto.Dearmor(packetBytes, sharedKey))
+        {
+            if (ZtZeroTierTrace.Enabled)
+            {
+                ZtZeroTierTrace.WriteLine($"[zerotier] Drop: failed to authenticate HELLO from {peerNodeId} via {remoteEndPoint}.");
+            }
+
+            return;
+        }
+
+        _peerKeys[peerNodeId] = sharedKey;
+
+        var okPacket = ZtZeroTierHelloOkPacketBuilder.BuildPacket(
+            packetId: GeneratePacketId(),
+            destination: peerNodeId,
+            source: _localIdentity.NodeId,
+            inRePacketId: helloPacketId,
+            helloTimestampEcho: helloTimestamp,
+            externalSurfaceAddress: remoteEndPoint,
+            sharedKey: sharedKey);
+
+        try
+        {
+            await _udp.SendAsync(remoteEndPoint, okPacket, cancellationToken).ConfigureAwait(false);
+        }
+        catch (SocketException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 

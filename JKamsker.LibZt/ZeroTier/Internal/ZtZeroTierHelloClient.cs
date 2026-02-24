@@ -19,10 +19,10 @@ internal readonly record struct ZtZeroTierHelloOk(
 
 internal static class ZtZeroTierHelloClient
 {
-    private const byte AdvertisedProtocolVersion = 11; // <12 => avoid AES-GMAC-SIV for early MVP.
-    private const byte AdvertisedMajorVersion = 1;
-    private const byte AdvertisedMinorVersion = 12;
-    private const ushort AdvertisedRevision = 0;
+    internal const byte AdvertisedProtocolVersion = 11; // <12 => avoid AES-GMAC-SIV for early MVP.
+    internal const byte AdvertisedMajorVersion = 1;
+    internal const byte AdvertisedMinorVersion = 12;
+    internal const ushort AdvertisedRevision = 0;
 
     private const int OkIndexInReVerb = ZtZeroTierPacketHeader.Length;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
