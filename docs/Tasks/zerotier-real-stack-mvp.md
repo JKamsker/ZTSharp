@@ -31,7 +31,7 @@ Status legend:
   - [x] Embed default planet bytes (no network fetch).
   - [x] Implement `World` (planet) binary decode (roots + stable endpoints).
   - [x] Add unit tests for planet decode (roots present, endpoints valid).
-- [ ] Implement secure session establishment and controller config fetch.
+- [x] Implement secure session establishment and controller config fetch.
   - [x] Implement identity wire serialization (Identity::serialize format).
   - [x] Implement HELLO send + OK parse (unencrypted) over UDP.
   - [x] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
