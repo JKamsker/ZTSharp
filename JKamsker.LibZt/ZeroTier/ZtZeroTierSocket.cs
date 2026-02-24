@@ -199,6 +199,40 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         return new ZtZeroTierTcpListener(runtime, localAddress, (ushort)port);
     }
 
+    public async ValueTask<ZtZeroTierUdpSocket> BindUdpAsync(int port, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (port is < 0 or > ushort.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be between 0 and 65535.");
+        }
+
+        await JoinAsync(cancellationToken).ConfigureAwait(false);
+        var (localAddress, comBytes) = GetLocalIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localAddress, comBytes, cancellationToken).ConfigureAwait(false);
+
+        if (port != 0)
+        {
+            return new ZtZeroTierUdpSocket(runtime, localAddress, (ushort)port);
+        }
+
+        for (var attempt = 0; attempt < 32; attempt++)
+        {
+            var localPort = GenerateEphemeralPort();
+            try
+            {
+                return new ZtZeroTierUdpSocket(runtime, localAddress, localPort);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        throw new InvalidOperationException("Failed to bind UDP to an ephemeral port (too many collisions).");
+    }
+
     public ValueTask<Stream> ConnectTcpAsync(IPEndPoint remote, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(remote);

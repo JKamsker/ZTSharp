@@ -71,12 +71,12 @@ These are “human runnable” smoke tests; automated variants live in the test 
 
 ## Milestone P1 — UDP (IPv4) user-space sockets
 - [x] Add UDP codec (header + pseudo-header checksum) and tests.
-- [ ] Extend the routed IP demux to handle UDP alongside TCP.
-- [ ] Implement a public managed API for UDP:
+- [x] Extend the routed IP demux to handle UDP alongside TCP.
+- [x] Implement a public managed API for UDP:
   - `ZtZeroTierSocket.BindUdpAsync(...)`
   - `SendToAsync(...)` / `ReceiveFromAsync(...)`
   - cancellation + timeouts + disposal semantics
-- [ ] Implement basic UDP “port in use” and binding validation.
+- [x] Implement basic UDP “port in use” and binding validation.
 - [ ] Add a CLI command for UDP (for manual verification + CI-friendly smoke):
   - `libzt udp-listen <port> --stack managed ...`
   - `libzt udp-send --to <ip:port> --data <...> ...`

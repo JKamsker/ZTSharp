@@ -43,8 +43,11 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<ZtNodeId, byte[]> _peerKeys = new();
     private readonly SemaphoreSlim _peerKeyLock = new(1, 1);
 
+    private readonly ConcurrentDictionary<IPAddress, ZtNodeId> _managedIpToNodeId = new();
+
     private readonly ConcurrentDictionary<ZtZeroTierTcpRouteKey, ZtZeroTierRoutedIpv4Link> _routes = new();
     private readonly ConcurrentDictionary<ushort, Func<ZtNodeId, ReadOnlyMemory<byte>, CancellationToken, Task>> _tcpSynHandlers = new();
+    private readonly ConcurrentDictionary<ushort, ChannelWriter<ZtZeroTierRoutedIpv4Packet>> _udpHandlers = new();
 
     private int _traceRxRemaining = 200;
 
@@ -121,11 +124,27 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
     public void UnregisterTcpListener(ushort localPort)
         => _tcpSynHandlers.TryRemove(localPort, out _);
 
+    public bool TryRegisterUdpPort(ushort localPort, ChannelWriter<ZtZeroTierRoutedIpv4Packet> handler)
+        => _udpHandlers.TryAdd(localPort, handler);
+
+    public void UnregisterUdpPort(ushort localPort)
+        => _udpHandlers.TryRemove(localPort, out _);
+
     public async Task<ZtNodeId> ResolveNodeIdAsync(IPAddress managedIp, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(managedIp);
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_managedIpToNodeId.TryGetValue(managedIp, out var cachedNodeId))
+        {
+            if (ZtZeroTierTrace.Enabled)
+            {
+                ZtZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {cachedNodeId} (cache).");
+            }
+
+            return cachedNodeId;
+        }
 
         var group = ZtZeroTierMulticastGroup.DeriveForAddressResolution(managedIp);
         var (totalKnown, members) = await MulticastGatherAsync(group, gatherLimit: 32, cancellationToken).ConfigureAwait(false);
@@ -541,7 +560,29 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
-        if (!dst.Equals(_localManagedIp) || protocol != ZtTcpCodec.ProtocolNumber)
+        if (!dst.Equals(_localManagedIp))
+        {
+            return;
+        }
+
+        _managedIpToNodeId[src] = peerNodeId;
+
+        if (protocol == ZtUdpCodec.ProtocolNumber)
+        {
+            if (!ZtUdpCodec.TryParse(ipPayload, out _, out var udpDstPort, out _))
+            {
+                return;
+            }
+
+            if (_udpHandlers.TryGetValue(udpDstPort, out var udpHandler))
+            {
+                udpHandler.TryWrite(new ZtZeroTierRoutedIpv4Packet(peerNodeId, ipv4Packet));
+            }
+
+            return;
+        }
+
+        if (protocol != ZtTcpCodec.ProtocolNumber)
         {
             return;
         }
