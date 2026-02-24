@@ -93,4 +93,4 @@ Status legend:
 - [x] Implement TCP passive-open (listen/accept) on top of the user-space IPv4/TCP stack.
 - [x] Expose a public API (`ZtZeroTierSocket.ListenTcpAsync` + `AcceptAsync`) that returns a `Stream`.
 - [x] Update CLI `expose` to support `--stack managed` using the new listener.
-- [ ] Manual verification: start `libzt expose --stack managed` and connect from another ZeroTier network participant to `http://<managed-ip>:<port>/`.
+- [x] Manual verification: start `libzt expose --stack managed` and connect from another ZeroTier network participant to `http://<managed-ip>:<port>/`.
