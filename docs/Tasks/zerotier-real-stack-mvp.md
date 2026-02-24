@@ -80,5 +80,10 @@ Status legend:
 ## Milestone Z9 — NAT traversal (RENDEZVOUS) for `EXT_FRAME`
 - [x] Implement `RENDEZVOUS` payload codec + unit tests.
 - [ ] Handle upstream root control packets (`RENDEZVOUS`, `ERROR`) in `ZtZeroTierIpv4Link` using the root key.
-- [ ] Use `RENDEZVOUS` hints to send UDP hole-punch and prefer direct peer endpoints for `EXT_FRAME`.
+- [ ] Handle peer `PUSH_DIRECT_PATHS` control packets and track direct endpoints for the session.
+- [ ] Use direct endpoint hints to send UDP hole-punch and prefer direct peer endpoints for `EXT_FRAME`.
+
+## Milestone Z10 — Address resolution (ARP/multicast) for inbound traffic
+- [ ] Implement `MULTICAST_LIKE` and subscribe to our address-resolution group (so other peers can ARP for our managed IP).
+- [ ] Parse `MULTICAST_FRAME` and respond to inbound ARP requests for our managed IP.
 - [ ] Manual verification: `libzt call --stack managed --network 9ad07d01093a69e3 --url http://10.121.15.99:5380/` returns an HTTP response (after network authorization).
