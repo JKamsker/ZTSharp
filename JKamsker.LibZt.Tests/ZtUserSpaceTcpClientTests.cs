@@ -58,6 +58,54 @@ public sealed class ZtUserSpaceTcpClientTests
     }
 
     [Fact]
+    public async Task ConnectAsync_RetransmitsSyn_WhenNoSynAckArrives()
+    {
+        await using var link = new InMemoryIpv4Link();
+        var localIp = IPAddress.Parse("10.0.0.1");
+        var remoteIp = IPAddress.Parse("10.0.0.2");
+        const ushort remotePort = 80;
+        const ushort localPort = 50000;
+
+        await using var client = new ZtUserSpaceTcpClient(link, localIp, remoteIp, remotePort, localPort: localPort, mss: 1200);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var connectTask = client.ConnectAsync(cts.Token);
+
+        var syn1 = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(ZtIpv4Codec.TryParse(syn1.Span, out _, out _, out _, out var syn1Payload));
+        Assert.True(ZtTcpCodec.TryParse(syn1Payload, out _, out _, out var syn1Seq, out _, out var syn1Flags, out _, out _));
+        Assert.Equal(ZtTcpCodec.Flags.Syn, syn1Flags);
+
+        var syn2 = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(ZtIpv4Codec.TryParse(syn2.Span, out _, out _, out _, out var syn2Payload));
+        Assert.True(ZtTcpCodec.TryParse(syn2Payload, out _, out _, out var syn2Seq, out _, out var syn2Flags, out _, out _));
+        Assert.Equal(ZtTcpCodec.Flags.Syn, syn2Flags);
+        Assert.Equal(syn1Seq, syn2Seq);
+
+        var synAckTcp = ZtTcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: 1000,
+            acknowledgmentNumber: unchecked(syn1Seq + 1),
+            flags: ZtTcpCodec.Flags.Syn | ZtTcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(ZtIpv4Codec.Encode(remoteIp, localIp, ZtTcpCodec.ProtocolNumber, synAckTcp, identification: 1));
+
+        await connectTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        var ack = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(ZtIpv4Codec.TryParse(ack.Span, out _, out _, out _, out var ackPayload));
+        Assert.True(ZtTcpCodec.TryParse(ackPayload, out _, out _, out _, out var ackAck, out var ackFlags, out _, out _));
+        Assert.Equal(ZtTcpCodec.Flags.Ack, ackFlags);
+        Assert.Equal(1001u, ackAck);
+    }
+
+    [Fact]
     public async Task WriteAsync_WaitsForAck()
     {
         await using var link = new InMemoryIpv4Link();
@@ -138,4 +186,3 @@ public sealed class ZtUserSpaceTcpClientTests
         }
     }
 }
-

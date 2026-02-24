@@ -87,19 +87,45 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
         _connectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var synOptions = ZtTcpCodec.EncodeMssOption(_mss);
-        await SendTcpAsync(
-                seq: _sendNext,
-                ack: 0,
-                flags: ZtTcpCodec.Flags.Syn,
-                options: synOptions,
-                payload: ReadOnlyMemory<byte>.Empty,
-                cancellationToken)
-            .ConfigureAwait(false);
+        var synSeq = _sendNext;
+        _sendNext = unchecked(_sendNext + 1);
 
-        _sendNext += 1;
+        const int synRetries = 5;
+        var delay = TimeSpan.FromMilliseconds(250);
 
-        await _connectTcs.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
-        _connected = true;
+        for (var attempt = 0; attempt <= synRetries; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await SendTcpAsync(
+                    seq: synSeq,
+                    ack: 0,
+                    flags: ZtTcpCodec.Flags.Syn,
+                    options: synOptions,
+                    payload: ReadOnlyMemory<byte>.Empty,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            try
+            {
+                await _connectTcs.Task.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
+                _connected = true;
+                return;
+            }
+            catch (TimeoutException)
+            {
+                if (attempt >= synRetries)
+                {
+                    break;
+                }
+
+                delay = delay < TimeSpan.FromSeconds(2)
+                    ? delay + delay
+                    : TimeSpan.FromSeconds(2);
+            }
+        }
+
+        throw new TimeoutException("Timed out waiting for TCP SYN-ACK.");
     }
 
     public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
