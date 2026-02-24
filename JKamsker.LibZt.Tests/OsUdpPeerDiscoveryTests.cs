@@ -31,8 +31,8 @@ public sealed class OsUdpPeerDiscoveryTests
 
         await Task.Delay(100);
 
-        await using var udp1 = new UdpClient(node1, networkId, 12001);
-        await using var udp2 = new UdpClient(node2, networkId, 12002);
+        await using var udp1 = new ZtUdpClient(node1, networkId, 12001);
+        await using var udp2 = new ZtUdpClient(node2, networkId, 12002);
 
         var node1Id = (await node1.GetIdentityAsync()).NodeId.Value;
         var node2Id = (await node2.GetIdentityAsync()).NodeId.Value;

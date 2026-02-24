@@ -34,12 +34,12 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add offline integration tests for join/leave and network membership transitions.
 
 ## Milestone M3 — Managed user-space stack MVP
-	- [x] Implement UDP-like datagrams over node transport (`UdpClient`).
+	- [x] Implement UDP-like datagrams over node transport (`ZtUdpClient`).
 	- [x] Implement overlay TCP stream/listener primitives over node transport.
-	- [x] Provide OS TCP wrapper APIs for local tests (`TcpClient`, `TcpListener`).
+	- [x] Provide OS TCP wrapper APIs for local tests (`ZtTcpClient`, `ZtTcpListener`).
 	- [x] Add IPv4/IPv6 overlay endpoint/address model support (virtual NIC / lwIP parity).
 	- [x] Add IPv4/IPv6 support in `OsUdp` transport.
-	- [x] Add `UdpClient`, `TcpClient`, `TcpListener` public APIs.
+	- [x] Add `ZtUdpClient`, `ZtTcpClient`, `ZtTcpListener` public APIs.
 	- [x] Add offline echo tests for UDP frames and OS TCP loopback.
 
 ## Milestone M4 — Real interop via `net` validation network
@@ -51,11 +51,11 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Validate network creation via local `net` CLI.
 - [x] Run manual `net network create` command with configured local credentials.
 - [x] Validate joining a `net`-managed network (membership + authorization) using local `net` CLI (does not join the ZeroTier overlay yet).
-- [x] Verify end-to-end socket communication between managed nodes in that network (`UdpClient` + `OverlayTcpClient`).
+- [x] Verify end-to-end socket communication between managed nodes in that network (`ZtUdpClient` + `OverlayTcpClient`).
 - [x] Add optional E2E test scaffold gated by `LIBZT_RUN_E2E` for external CLI smoke checks.
 
 ## Milestone M5 — Cross-platform and hardening
-- [x] Add OS UDP transport with cross-platform support (Windows/Linux/macOS via `UdpClient`, IPv4 fallback when IPv6 is unavailable).
+- [x] Add OS UDP transport with cross-platform support (Windows/Linux/macOS via `ZtUdpClient`, IPv4 fallback when IPv6 is unavailable).
 - [x] Add persistence migration/compatibility notes for `planet`/`roots` storage.
 - [x] Add resilience and cancellation semantics.
 - [x] Add performance/memory benchmarks for core loops.

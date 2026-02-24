@@ -39,6 +39,6 @@ It uses a custom wire format and transport layer.
 | Overlay addressing | `networks.d/*.addr` persistence |
 | Frame delivery | `InMemory` (single-process) and `OsUdp` (real UDP) transports |
 | Peer directory | `peers.d/<NWID>/*.peer` persistence |
-| UDP datagrams | `UdpClient` over managed transport |
+| UDP datagrams | `ZtUdpClient` over managed transport |
 | TCP streams | `OverlayTcpClient` / `OverlayTcpListener` |
 | Event loop | `EventLoop` scheduling primitives for future protocol state machines |

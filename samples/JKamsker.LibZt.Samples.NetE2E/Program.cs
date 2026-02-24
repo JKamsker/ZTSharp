@@ -80,8 +80,8 @@ try
     _ = await RunZtNetCommandAsync($"--yes --quiet network member authorize {networkIdText} {node1IdText}", timeout);
     _ = await RunZtNetCommandAsync($"--yes --quiet network member authorize {networkIdText} {node2IdText}", timeout);
 
-    await using var udp1 = new UdpClient(node1, networkId, 10001);
-    await using var udp2 = new UdpClient(node2, networkId, 10002);
+    await using var udp1 = new ZtUdpClient(node1, networkId, 10001);
+    await using var udp2 = new ZtUdpClient(node2, networkId, 10002);
 
     await udp1.ConnectAsync(node2Identity.NodeId.Value, 10002);
     await udp2.ConnectAsync(node1Identity.NodeId.Value, 10001);

@@ -32,7 +32,7 @@ Validates the legacy managed overlay stack (not the real ZeroTier protocol).
 1. Creates a new ZeroTier network via `net`
 2. Starts two managed overlay nodes (`Node` with `OsUdp` transport)
 3. Authorizes both node IDs as network members via `net`
-4. Runs a ping/pong over `UdpClient`
+4. Runs a ping/pong over `ZtUdpClient`
 5. Runs a ping/pong over `OverlayTcpClient` / `OverlayTcpListener`
 6. Deletes the network
 

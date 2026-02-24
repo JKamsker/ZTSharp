@@ -104,8 +104,8 @@ public class ExternalZtNetTests
             var auth2 = await RunZtNetCommandAsync($"--yes --quiet network member authorize {networkIdText} {node2Id}");
             Assert.Equal(0, auth2.ExitCode);
 
-            await using var udp1 = new UdpClient(node1, networkId, 10001);
-            await using var udp2 = new UdpClient(node2, networkId, 10002);
+            await using var udp1 = new ZtUdpClient(node1, networkId, 10001);
+            await using var udp2 = new ZtUdpClient(node2, networkId, 10002);
 
             await udp1.ConnectAsync(node2Identity.NodeId.Value, 10002);
             await udp2.ConnectAsync(node1Identity.NodeId.Value, 10001);
@@ -125,11 +125,11 @@ public class ExternalZtNetTests
 
             await using var listener = new OverlayTcpListener(node2, networkId, 12002);
             var acceptTask = listener.AcceptTcpClientAsync().AsTask();
-            await using var tcpClient = new OverlayTcpClient(node1, networkId, 12001);
-            await tcpClient.ConnectAsync(node2Identity.NodeId.Value, 12002);
+            await using var ZtTcpClient = new OverlayTcpClient(node1, networkId, 12001);
+            await ZtTcpClient.ConnectAsync(node2Identity.NodeId.Value, 12002);
             await using var serverConnection = await acceptTask.WaitAsync(TimeSpan.FromSeconds(3));
 
-            var clientStream = tcpClient.GetStream();
+            var clientStream = ZtTcpClient.GetStream();
             var serverStream = serverConnection.GetStream();
 
             await clientStream.WriteAsync(ping);

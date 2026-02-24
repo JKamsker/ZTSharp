@@ -7,7 +7,7 @@ namespace JKamsker.LibZt.Sockets;
 /// <summary>
 /// Managed UDP-like client backed by the node transport.
 /// </summary>
-public sealed class UdpClient : IAsyncDisposable
+public sealed class ZtUdpClient : IAsyncDisposable
 {
     private const byte UdpFrameVersion = 1;
     private const byte UdpFrameType = 1;
@@ -23,7 +23,7 @@ public sealed class UdpClient : IAsyncDisposable
     private int _connectedPort;
     private bool _disposed;
 
-    public UdpClient(Node node, ulong networkId, int localPort, bool ownsConnection = true)
+    public ZtUdpClient(Node node, ulong networkId, int localPort, bool ownsConnection = true)
     {
         ArgumentNullException.ThrowIfNull(node);
         if (localPort is < 1 or > ushort.MaxValue)

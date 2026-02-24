@@ -155,13 +155,13 @@ await node.SendFrameAsync(networkId, new byte[] { 1, 2, 3 });
 
 ### UDP Datagrams
 
-`UdpClient` multiplexes datagrams by a managed port pair inside the node-to-node transport.
+`ZtUdpClient` multiplexes datagrams by a managed port pair inside the node-to-node transport.
 
 ```csharp
 using JKamsker.LibZt.Sockets;
 
-await using var udpA = new UdpClient(nodeA, networkId, localPort: 10001);
-await using var udpB = new UdpClient(nodeB, networkId, localPort: 10002);
+await using var udpA = new ZtUdpClient(nodeA, networkId, localPort: 10001);
+await using var udpB = new ZtUdpClient(nodeB, networkId, localPort: 10002);
 
 await udpA.ConnectAsync(nodeB.NodeId.Value, remotePort: 10002);
 await udpB.ConnectAsync(nodeA.NodeId.Value, remotePort: 10001);

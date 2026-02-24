@@ -7,16 +7,16 @@ namespace JKamsker.LibZt.Sockets;
 /// <summary>
 /// Managed TCP client wrapper with a small API surface in line with ZeroTier-style usage.
 /// </summary>
-public sealed class TcpClient : IAsyncDisposable
+public sealed class ZtTcpClient : IAsyncDisposable
 {
     private readonly SystemTcpClient _client;
 
-    internal TcpClient(SystemTcpClient client)
+    internal ZtTcpClient(SystemTcpClient client)
     {
         _client = client;
     }
 
-    public TcpClient()
+    public ZtTcpClient()
     {
         _client = new SystemTcpClient();
     }

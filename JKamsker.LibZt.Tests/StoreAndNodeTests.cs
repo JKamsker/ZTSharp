@@ -339,8 +339,8 @@ public class StoreAndNodeTests
         await node1.JoinNetworkAsync(networkId);
         await node2.JoinNetworkAsync(networkId);
 
-        await using var node1Udp = new UdpClient(node1, networkId, 10001);
-        await using var node2Udp = new UdpClient(node2, networkId, 10002);
+        await using var node1Udp = new ZtUdpClient(node1, networkId, 10001);
+        await using var node2Udp = new ZtUdpClient(node2, networkId, 10002);
 
         await node2Udp.ConnectAsync((await node1.GetIdentityAsync()).NodeId.Value, 10001);
 
@@ -392,8 +392,8 @@ public class StoreAndNodeTests
         await node1.AddPeerAsync(networkId, node2Id, node2Endpoint);
         await node2.AddPeerAsync(networkId, node1Id, node1Endpoint);
 
-        await using var node1Udp = new UdpClient(node1, networkId, 11001);
-        await using var node2Udp = new UdpClient(node2, networkId, 11002);
+        await using var node1Udp = new ZtUdpClient(node1, networkId, 11001);
+        await using var node2Udp = new ZtUdpClient(node2, networkId, 11002);
 
         await node2Udp.ConnectAsync(node1Id, 11001);
 
@@ -413,12 +413,12 @@ public class StoreAndNodeTests
     [Fact]
     public async Task TcpListener_EchoesPayloadOffline()
     {
-        await using var listener = new TcpListener(IPAddress.Loopback, 0);
+        await using var listener = new ZtTcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = listener.LocalEndpoint.Port;
         var acceptTask = listener.AcceptTcpClientAsync();
 
-        await using var client = new TcpClient();
+        await using var client = new ZtTcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
         await using var server = await acceptTask;
 

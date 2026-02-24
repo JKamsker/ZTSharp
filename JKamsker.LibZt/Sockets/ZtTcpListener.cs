@@ -8,12 +8,12 @@ namespace JKamsker.LibZt.Sockets;
 /// <summary>
 /// Managed TCP listener wrapper.
 /// </summary>
-public sealed class TcpListener : IAsyncDisposable
+public sealed class ZtTcpListener : IAsyncDisposable
 {
     private readonly SystemTcpListener _listener;
     private bool _started;
 
-    public TcpListener(IPAddress address, int port)
+    public ZtTcpListener(IPAddress address, int port)
     {
         _listener = new SystemTcpListener(address, port);
     }
@@ -28,7 +28,7 @@ public sealed class TcpListener : IAsyncDisposable
 
     public void Stop() => _listener.Stop();
 
-    public async Task<TcpClient> AcceptTcpClientAsync(CancellationToken cancellationToken = default)
+    public async Task<ZtTcpClient> AcceptTcpClientAsync(CancellationToken cancellationToken = default)
     {
         if (!_started)
         {
@@ -39,7 +39,7 @@ public sealed class TcpListener : IAsyncDisposable
 #pragma warning disable CA2000 // Wrapper takes ownership of the accepted socket and disposes it.
         SystemTcpClient client = await _listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
 #pragma warning restore CA2000
-        return new TcpClient(client);
+        return new ZtTcpClient(client);
     }
 
     public async ValueTask DisposeAsync()
