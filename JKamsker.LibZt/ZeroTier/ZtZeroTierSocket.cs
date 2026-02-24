@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Net;
+using System.Security.Cryptography;
 using JKamsker.LibZt.ZeroTier.Http;
 using JKamsker.LibZt.ZeroTier.Internal;
 using JKamsker.LibZt.ZeroTier.Net;
@@ -14,6 +16,8 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
     private readonly ZtZeroTierIdentity _identity;
     private readonly ZtZeroTierWorld _planet;
     private readonly SemaphoreSlim _joinLock = new(1, 1);
+    private readonly SemaphoreSlim _runtimeLock = new(1, 1);
+    private ZtZeroTierDataplaneRuntime? _runtime;
     private byte[]? _networkConfigDictionaryBytes;
     private ZtZeroTierHelloOk? _upstreamRoot;
     private byte[]? _upstreamRootKey;
@@ -179,6 +183,22 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         return client;
     }
 
+    public async ValueTask<ZtZeroTierTcpListener> ListenTcpAsync(int port, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (port is < 1 or > ushort.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be between 1 and 65535.");
+        }
+
+        await JoinAsync(cancellationToken).ConfigureAwait(false);
+        var (localAddress, comBytes) = GetLocalIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localAddress, comBytes, cancellationToken).ConfigureAwait(false);
+        return new ZtZeroTierTcpListener(runtime, localAddress, (ushort)port);
+    }
+
     public ValueTask<Stream> ConnectTcpAsync(IPEndPoint remote, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(remote);
@@ -188,11 +208,30 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         return ConnectTcpCoreAsync(remote, cancellationToken);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
-        _joinLock.Dispose();
-        return ValueTask.CompletedTask;
+
+        await _runtimeLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_runtime is not null)
+            {
+                await _runtime.DisposeAsync().ConfigureAwait(false);
+                _runtime = null;
+            }
+        }
+        finally
+        {
+            _runtimeLock.Release();
+            _runtimeLock.Dispose();
+            _joinLock.Dispose();
+        }
     }
 
     private static IPAddress[] LoadPersistedManagedIps(string statePath, ulong networkId)
@@ -281,6 +320,37 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
 
+        var (localAddress, comBytes) = GetLocalIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localAddress, comBytes, cancellationToken).ConfigureAwait(false);
+
+        var remoteNodeId = await runtime.ResolveNodeIdAsync(remote.Address, cancellationToken).ConfigureAwait(false);
+
+        var localPort = GenerateEphemeralPort();
+        var localEndpoint = new IPEndPoint(localAddress, localPort);
+
+        var link = runtime.RegisterTcpRoute(remoteNodeId, localEndpoint, remote);
+        var tcp = new ZtUserSpaceTcpClient(
+            link,
+            localAddress,
+            remote.Address,
+            remotePort: (ushort)remote.Port,
+            localPort: localPort);
+
+        try
+        {
+            await tcp.ConnectAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await tcp.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return tcp.GetStream();
+    }
+
+    private (IPAddress LocalAddress, byte[] InlineCom) GetLocalIpv4AndInlineCom()
+    {
         var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
         if (localAddress is null)
         {
@@ -313,6 +383,29 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             comBytes = comBytes.AsSpan(0, comLen).ToArray();
         }
 
+        return (localAddress, comBytes);
+    }
+
+    [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "UDP transport ownership transfers to ZtZeroTierDataplaneRuntime, which is disposed by ZtZeroTierSocket.DisposeAsync.")]
+    private async Task<ZtZeroTierDataplaneRuntime> GetOrCreateRuntimeAsync(
+        IPAddress localAddress,
+        byte[] inlineCom,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_runtime is not null)
+            {
+                return _runtime;
+            }
+
             var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
             try
             {
@@ -339,6 +432,16 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     ZtZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
                 }
 
+                var runtime = new ZtZeroTierDataplaneRuntime(
+                    udp,
+                    rootNodeId: helloOk.RootNodeId,
+                    rootEndpoint: helloOk.RootEndpoint,
+                    rootKey: rootKey,
+                    localIdentity: _identity,
+                    networkId: _options.NetworkId,
+                    localManagedIp: localAddress,
+                    inlineCom: inlineCom);
+
                 try
                 {
                     await ZtZeroTierMulticastLikeClient
@@ -358,97 +461,26 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     // Best-effort. Some environments restrict certain outbound paths (IPv6, captive portals, etc.).
                 }
 
-                var group = ZtZeroTierMulticastGroup.DeriveForAddressResolution(remote.Address);
-                var (totalKnown, members) = await ZtZeroTierMulticastGatherClient
-                    .GatherAsync(
-                        udp,
-                        helloOk.RootNodeId,
-                        helloOk.RootEndpoint,
-                        rootKey,
-                    _identity.NodeId,
-                    _options.NetworkId,
-                    group,
-                    gatherLimit: 32,
-                    inlineCom: comBytes,
-                    timeout: TimeSpan.FromSeconds(5),
-                    cancellationToken)
-                .ConfigureAwait(false);
-
-            if (members.Length == 0)
-            {
-                throw new InvalidOperationException($"Could not resolve '{remote}' to a ZeroTier node id (no multicast-gather results).");
-            }
-
-            var remoteNodeId = members[0];
-            if (ZtZeroTierTrace.Enabled)
-            {
-                var list = string.Join(", ", members.Take(8).Select(member => member.ToString()));
-                var suffix = members.Length > 8 ? ", ..." : string.Empty;
-                ZtZeroTierTrace.WriteLine($"[zerotier] Resolve {remote.Address} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {helloOk.RootNodeId} via {helloOk.RootEndpoint}).");
-            }
-
-            byte[] sharedKey;
-            using (var keyCache = new ZtZeroTierPeerKeyCache(udp, helloOk.RootNodeId, helloOk.RootEndpoint, rootKey, _identity))
-            {
-                sharedKey = await keyCache.GetSharedKeyAsync(remoteNodeId, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await ZtZeroTierHelloClient.HelloAsync(
-                        udp,
-                        _identity,
-                        _planet,
-                        destination: remoteNodeId,
-                        physicalDestination: helloOk.RootEndpoint,
-                        sharedKey: sharedKey,
-                        timeout: TimeSpan.FromSeconds(3),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                // Best-effort. Some peers may still be reachable (and able to WHOIS our identity) even if OK(HELLO) is not received.
-                if (ZtZeroTierTrace.Enabled)
-                {
-                    ZtZeroTierTrace.WriteLine($"[zerotier] HELLO to {remoteNodeId} timed out (best-effort).");
-                }
-            }
-
-            var link = new ZtZeroTierIpv4Link(
-                udp,
-                relayEndpoint: helloOk.RootEndpoint,
-                rootNodeId: helloOk.RootNodeId,
-                rootKey: rootKey,
-                localNodeId: _identity.NodeId,
-                remoteNodeId,
-                _options.NetworkId,
-                localManagedIp: localAddress,
-                comBytes,
-                sharedKey);
-
-            var tcp = new ZtUserSpaceTcpClient(
-                link,
-                localAddress,
-                remote.Address,
-                remotePort: (ushort)remote.Port);
-
-            try
-            {
-                await tcp.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                _runtime = runtime;
+                return runtime;
             }
             catch
             {
-                await tcp.DisposeAsync().ConfigureAwait(false);
+                await udp.DisposeAsync().ConfigureAwait(false);
                 throw;
             }
-
-            return tcp.GetStream();
         }
-        catch
+        finally
         {
-            await udp.DisposeAsync().ConfigureAwait(false);
-            throw;
+            _runtimeLock.Release();
         }
+    }
+
+    private static ushort GenerateEphemeralPort()
+    {
+        Span<byte> buffer = stackalloc byte[2];
+        RandomNumberGenerator.Fill(buffer);
+        var port = BinaryPrimitives.ReadUInt16LittleEndian(buffer);
+        return (ushort)(49152 + (port % (ushort)(65535 - 49152)));
     }
 }
