@@ -96,6 +96,6 @@ Status legend:
 - [x] Manual verification: start `libzt expose --stack managed` and connect from another ZeroTier network participant to `http://<managed-ip>:<port>/`.
 
 ## Milestone Z12 â€” CLI listen logger (managed-only)
-- [ ] Add `libzt listen <port> --stack managed` that joins the network and listens for inbound TCP connections.
-- [ ] Log HTTP request line + headers for each accepted connection and respond `HTTP 200 OK`.
-- [ ] Manual verification: `libzt listen` logs a request from `libzt call --stack managed --url http://<managed-ip>:<port>/`.
+- [x] Add `libzt listen <port> --stack managed` that joins the network and listens for inbound TCP connections.
+- [x] Log HTTP request line + headers for each accepted connection and respond `HTTP 200 OK`.
+- [x] Manual verification: `libzt listen` logs a request from `libzt call --stack managed --url http://<managed-ip>:<port>/`.
