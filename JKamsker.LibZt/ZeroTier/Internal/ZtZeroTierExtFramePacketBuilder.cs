@@ -4,7 +4,7 @@ namespace JKamsker.LibZt.ZeroTier.Internal;
 
 internal static class ZtZeroTierExtFramePacketBuilder
 {
-    public static byte[] BuildIpv4Packet(
+    public static byte[] BuildPacket(
         ulong packetId,
         ZtNodeId destination,
         ZtNodeId source,
@@ -12,7 +12,8 @@ internal static class ZtZeroTierExtFramePacketBuilder
         ReadOnlySpan<byte> inlineCom,
         ZtZeroTierMac to,
         ZtZeroTierMac from,
-        ReadOnlySpan<byte> ipv4Packet,
+        ushort etherType,
+        ReadOnlySpan<byte> frame,
         ReadOnlySpan<byte> sharedKey)
     {
         var extFrameFlags = (byte)(0x01 | (ZtZeroTierTrace.Enabled ? 0x10 : 0x00));
@@ -22,8 +23,8 @@ internal static class ZtZeroTierExtFramePacketBuilder
             inlineCom: inlineCom,
             to,
             from,
-            ZtZeroTierFrameCodec.EtherTypeIpv4,
-            ipv4Packet);
+            etherType,
+            frame);
 
         var header = new ZtZeroTierPacketHeader(
             PacketId: packetId,
@@ -37,4 +38,26 @@ internal static class ZtZeroTierExtFramePacketBuilder
         ZtZeroTierPacketCrypto.Armor(packet, sharedKey, encryptPayload: true);
         return packet;
     }
+
+    public static byte[] BuildIpv4Packet(
+        ulong packetId,
+        ZtNodeId destination,
+        ZtNodeId source,
+        ulong networkId,
+        ReadOnlySpan<byte> inlineCom,
+        ZtZeroTierMac to,
+        ZtZeroTierMac from,
+        ReadOnlySpan<byte> ipv4Packet,
+        ReadOnlySpan<byte> sharedKey)
+        => BuildPacket(
+            packetId,
+            destination,
+            source,
+            networkId,
+            inlineCom,
+            to,
+            from,
+            ZtZeroTierFrameCodec.EtherTypeIpv4,
+            ipv4Packet,
+            sharedKey);
 }
