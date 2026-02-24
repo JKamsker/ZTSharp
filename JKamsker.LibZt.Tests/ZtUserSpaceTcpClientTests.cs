@@ -164,14 +164,14 @@ public sealed class ZtUserSpaceTcpClientTests
         await writeTask.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
-    private sealed class InMemoryIpv4Link : IZtUserSpaceIpv4Link
+    private sealed class InMemoryIpv4Link : IZtUserSpaceIpLink
     {
         public Channel<ReadOnlyMemory<byte>> Incoming { get; } = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
         public Channel<ReadOnlyMemory<byte>> Outgoing { get; } = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
 
-        public ValueTask SendAsync(ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken = default)
+        public ValueTask SendAsync(ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken = default)
         {
-            Outgoing.Writer.TryWrite(ipv4Packet);
+            Outgoing.Writer.TryWrite(ipPacket);
             return ValueTask.CompletedTask;
         }
 

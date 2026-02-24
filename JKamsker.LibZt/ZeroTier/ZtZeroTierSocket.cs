@@ -188,14 +188,41 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        await JoinAsync(cancellationToken).ConfigureAwait(false);
+        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+        if (localAddress is null)
+        {
+            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+
+        return await ListenTcpAsync(localAddress, port, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ZtZeroTierTcpListener> ListenTcpAsync(IPAddress localAddress, int port, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(localAddress);
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (port is < 1 or > ushort.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be between 1 and 65535.");
         }
 
+        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            throw new NotSupportedException($"Unsupported address family: {localAddress.AddressFamily}.");
+        }
+
         await JoinAsync(cancellationToken).ConfigureAwait(false);
-        var (localAddress, comBytes) = GetLocalIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localAddress, comBytes, cancellationToken).ConfigureAwait(false);
+        if (!ManagedIps.Contains(localAddress))
+        {
+            throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
+        }
+
+        var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
         return new ZtZeroTierTcpListener(runtime, localAddress, (ushort)port);
     }
 
@@ -377,15 +404,26 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(remote), "Remote port must be between 1 and 65535.");
         }
 
-        if (remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
         {
-            throw new NotSupportedException("Only IPv4 is supported in the ZeroTier TCP MVP.");
+            throw new NotSupportedException($"Unsupported address family: {remote.Address.AddressFamily}.");
+        }
+
+        if (IPAddress.IsLoopback(remote.Address))
+        {
+            throw new NotSupportedException("Loopback addresses are not supported in the ZeroTier managed stack.");
         }
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
 
-        var (localAddress, comBytes) = GetLocalIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localAddress, comBytes, cancellationToken).ConfigureAwait(false);
+        var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
+
+        var localAddress = remote.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            ? localIpv4
+            : ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+              ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
 
         var remoteNodeId = await runtime.ResolveNodeIdAsync(remote.Address, cancellationToken).ConfigureAwait(false);
 

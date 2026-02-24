@@ -340,10 +340,11 @@ static async Task RunListenZeroTierAsync(
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    ZtZeroTierTcpListener? listener = null;
+    ZtZeroTierTcpListener? listener4 = null;
+    ZtZeroTierTcpListener? listener6 = null;
     using var listenCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     var listenToken = listenCts.Token;
-    Task[]? acceptors = null;
+    List<Task>? acceptors = null;
 
     try
     {
@@ -359,22 +360,36 @@ static async Task RunListenZeroTierAsync(
             }
         }
 
-        var managedIp = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
-        if (managedIp is null)
+        var managedIp4 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+        var managedIp6 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6);
+        if (managedIp4 is null && managedIp6 is null)
         {
-            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+            throw new InvalidOperationException("No managed IPs assigned for this network.");
         }
 
-        listener = await socket.ListenTcpAsync(listenPort, listenToken).ConfigureAwait(false);
-
-        Console.WriteLine($"Listen: http://{managedIp}:{listenPort}/");
-
         var acceptorCount = Math.Clamp(Environment.ProcessorCount, 2, 8);
-        acceptors = new Task[acceptorCount];
+        acceptors = new List<Task>(acceptorCount * 2);
 
-        for (var i = 0; i < acceptors.Length; i++)
+        if (managedIp4 is not null)
         {
-            acceptors[i] = RunListenAcceptorAsync(listener, listenToken);
+            listener4 = await socket.ListenTcpAsync(managedIp4, listenPort, listenToken).ConfigureAwait(false);
+            Console.WriteLine($"Listen: http://{managedIp4}:{listenPort}/");
+
+            for (var i = 0; i < acceptorCount; i++)
+            {
+                acceptors.Add(RunListenAcceptorAsync(listener4, listenToken));
+            }
+        }
+
+        if (managedIp6 is not null)
+        {
+            listener6 = await socket.ListenTcpAsync(managedIp6, listenPort, listenToken).ConfigureAwait(false);
+            Console.WriteLine($"Listen: http://[{managedIp6}]:{listenPort}/");
+
+            for (var i = 0; i < acceptorCount; i++)
+            {
+                acceptors.Add(RunListenAcceptorAsync(listener6, listenToken));
+            }
         }
 
         await Task.WhenAll(acceptors).ConfigureAwait(false);
@@ -389,7 +404,7 @@ static async Task RunListenZeroTierAsync(
         {
         }
 
-        if (acceptors is not null)
+        if (acceptors is not null && acceptors.Count != 0)
         {
             try
             {
@@ -400,11 +415,22 @@ static async Task RunListenZeroTierAsync(
             }
         }
 
-        if (listener is not null)
+        if (listener4 is not null)
         {
             try
             {
-                await listener.DisposeAsync().ConfigureAwait(false);
+                await listener4.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        if (listener6 is not null)
+        {
+            try
+            {
+                await listener6.DisposeAsync().ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
             {
@@ -871,7 +897,8 @@ static async Task RunUdpListenZeroTierAsync(
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    ZtZeroTierUdpSocket? udp = null;
+    ZtZeroTierUdpSocket? udp4 = null;
+    ZtZeroTierUdpSocket? udp6 = null;
 
     try
     {
@@ -887,60 +914,59 @@ static async Task RunUdpListenZeroTierAsync(
             }
         }
 
-        var managedIp = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
-        if (managedIp is null)
+        var managedIp4 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+        var managedIp6 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6);
+
+        if (managedIp4 is null && managedIp6 is null)
         {
-            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+            throw new InvalidOperationException("No managed IPs assigned for this network.");
         }
 
-        udp = await socket.BindUdpAsync(listenPort, cancellationToken).ConfigureAwait(false);
+        if (managedIp4 is not null)
+        {
+            udp4 = await socket.BindUdpAsync(managedIp4, listenPort, cancellationToken).ConfigureAwait(false);
+            Console.WriteLine($"UDP Listen: {managedIp4}:{listenPort}");
+        }
 
-        Console.WriteLine($"UDP Listen: {managedIp}:{listenPort}");
+        if (managedIp6 is not null)
+        {
+            udp6 = await socket.BindUdpAsync(managedIp6, listenPort, cancellationToken).ConfigureAwait(false);
+            Console.WriteLine($"UDP Listen: [{managedIp6}]:{listenPort}");
+        }
 
-        var buffer = new byte[ushort.MaxValue];
         var pongBytes = Encoding.UTF8.GetBytes("pong");
 
-        while (!cancellationToken.IsCancellationRequested)
+        var listeners = new List<Task>(capacity: 2);
+        if (udp4 is not null)
         {
-            ZtZeroTierUdpReceiveResult received;
-            try
-            {
-                received = await udp.ReceiveFromAsync(buffer, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-
-            var text = Encoding.UTF8.GetString(buffer, 0, received.ReceivedBytes);
-            Console.WriteLine($"UDP RX {received.RemoteEndPoint}: {text}");
-
-            if (received.ReceivedBytes == 4 &&
-                buffer[0] == (byte)'p' &&
-                buffer[1] == (byte)'i' &&
-                buffer[2] == (byte)'n' &&
-                buffer[3] == (byte)'g')
-            {
-                try
-                {
-                    await udp.SendToAsync(pongBytes, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                }
-                catch (SocketException)
-                {
-                }
-            }
+            listeners.Add(RunUdpEchoLoopAsync(udp4, pongBytes, cancellationToken));
         }
+
+        if (udp6 is not null)
+        {
+            listeners.Add(RunUdpEchoLoopAsync(udp6, pongBytes, cancellationToken));
+        }
+
+        await Task.WhenAll(listeners).ConfigureAwait(false);
     }
     finally
     {
-        if (udp is not null)
+        if (udp4 is not null)
         {
             try
             {
-                await udp.DisposeAsync().ConfigureAwait(false);
+                await udp4.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        if (udp6 is not null)
+        {
+            try
+            {
+                await udp6.DisposeAsync().ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
             {
@@ -948,6 +974,45 @@ static async Task RunUdpListenZeroTierAsync(
         }
 
         await socket.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunUdpEchoLoopAsync(ZtZeroTierUdpSocket udp, byte[] pongBytes, CancellationToken cancellationToken)
+{
+    var buffer = new byte[ushort.MaxValue];
+
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        ZtZeroTierUdpReceiveResult received;
+        try
+        {
+            received = await udp.ReceiveFromAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            break;
+        }
+
+        var text = Encoding.UTF8.GetString(buffer, 0, received.ReceivedBytes);
+        Console.WriteLine($"UDP RX {udp.LocalEndpoint} <- {received.RemoteEndPoint}: {text}");
+
+        if (received.ReceivedBytes == 4 &&
+            buffer[0] == (byte)'p' &&
+            buffer[1] == (byte)'i' &&
+            buffer[2] == (byte)'n' &&
+            buffer[3] == (byte)'g')
+        {
+            try
+            {
+                await udp.SendToAsync(pongBytes, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (SocketException)
+            {
+            }
+        }
     }
 }
 
@@ -1051,7 +1116,24 @@ static async Task RunUdpSendZeroTierAsync(
             }
         }
 
-        udp = await socket.BindUdpAsync(0, cancellationToken).ConfigureAwait(false);
+        if (destination.AddressFamily == AddressFamily.InterNetwork)
+        {
+            udp = await socket.BindUdpAsync(0, cancellationToken).ConfigureAwait(false);
+        }
+        else if (destination.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var localV6 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6);
+            if (localV6 is null)
+            {
+                throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+            }
+
+            udp = await socket.BindUdpAsync(localV6, 0, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            throw new NotSupportedException($"Unsupported address family: {destination.AddressFamily}.");
+        }
 
         var bytes = Encoding.UTF8.GetBytes(dataText);
         var sent = await udp.SendToAsync(bytes, destination, cancellationToken).ConfigureAwait(false);

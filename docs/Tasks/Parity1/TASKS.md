@@ -92,13 +92,13 @@ These are “human runnable” smoke tests; automated variants live in the test 
   - respond to Neighbor Solicitation for our managed IPv6
   - send Neighbor Advertisement (correct flags/target LL address)
 - [x] Subscribe/respond to the relevant multicast groups for IPv6 neighbor discovery (ZeroTier multicast groups / L2 multicast).
-- [ ] E2E manual verification:
+- [x] E2E manual verification:
   - OS: `ping6 <managed-ipv6>` succeeds
   - OS: `curl -g "http://[<managed-ipv6>]:5380/"` hits the managed listener
 
 ## Milestone P3 — IPv6 sockets (TCP + UDP)
-- [ ] Add IPv6 support to the user-space TCP stack (active-open + passive-open).
-- [ ] Add UDP-over-IPv6 support (SendTo/ReceiveFrom).
+- [x] Add IPv6 support to the user-space TCP stack (active-open + passive-open).
+- [x] Add UDP-over-IPv6 support (SendTo/ReceiveFrom).
 - [ ] Add E2E tests for IPv6 TCP and UDP (gated by env vars like the existing E2E tests).
 
 ## Milestone P4 — TCP robustness (toward libzt expectations)

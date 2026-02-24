@@ -11,7 +11,7 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
     private const ushort DefaultMss = 1200;
     private const ushort DefaultWindow = 65535;
 
-    private readonly IZtUserSpaceIpv4Link _link;
+    private readonly IZtUserSpaceIpLink _link;
     private readonly IPAddress _localAddress;
     private readonly IPAddress _remoteAddress;
     private readonly ushort _remotePort;
@@ -33,7 +33,7 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
     private bool _disposed;
 
     public ZtUserSpaceTcpClient(
-        IZtUserSpaceIpv4Link link,
+        IZtUserSpaceIpLink link,
         IPAddress localAddress,
         IPAddress remoteAddress,
         ushort remotePort,
@@ -44,10 +44,15 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(localAddress);
         ArgumentNullException.ThrowIfNull(remoteAddress);
 
-        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
-            remoteAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (localAddress.AddressFamily != remoteAddress.AddressFamily)
         {
-            throw new ArgumentOutOfRangeException(nameof(localAddress), "Only IPv4 is supported.");
+            throw new ArgumentOutOfRangeException(nameof(remoteAddress), "Local and remote address families must match.");
+        }
+
+        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            throw new ArgumentOutOfRangeException(nameof(localAddress), "Only IPv4 and IPv6 are supported.");
         }
 
         if (remotePort == 0)
@@ -298,10 +303,10 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
         var token = _cts.Token;
         while (!token.IsCancellationRequested)
         {
-            ReadOnlyMemory<byte> ipv4Packet;
+            ReadOnlyMemory<byte> ipPacket;
             try
             {
-                ipv4Packet = await _link.ReceiveAsync(token).ConfigureAwait(false);
+                ipPacket = await _link.ReceiveAsync(token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -328,14 +333,32 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
                 return;
             }
 
-            if (!ZtIpv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
+            IPAddress src;
+            IPAddress dst;
+            ReadOnlySpan<byte> ipPayload;
+            if (_localAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
-                continue;
-            }
+                if (!ZtIpv4Codec.TryParse(ipPacket.Span, out src, out dst, out var protocol, out ipPayload))
+                {
+                    continue;
+                }
 
-            if (!src.Equals(_remoteAddress) || !dst.Equals(_localAddress) || protocol != ZtTcpCodec.ProtocolNumber)
+                if (!src.Equals(_remoteAddress) || !dst.Equals(_localAddress) || protocol != ZtTcpCodec.ProtocolNumber)
+                {
+                    continue;
+                }
+            }
+            else
             {
-                continue;
+                if (!ZtIpv6Codec.TryParse(ipPacket.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+                {
+                    continue;
+                }
+
+                if (!src.Equals(_remoteAddress) || !dst.Equals(_localAddress) || nextHeader != ZtTcpCodec.ProtocolNumber)
+                {
+                    continue;
+                }
             }
 
             if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out var ack, out var flags, out _, out var tcpPayload))
@@ -487,12 +510,25 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
             options: options.Span,
             payload.Span);
 
-        var ip = ZtIpv4Codec.Encode(
-            _localAddress,
-            _remoteAddress,
-            protocol: ZtTcpCodec.ProtocolNumber,
-            payload: tcp,
-            identification: GenerateIpIdentification());
+        byte[] ip;
+        if (_localAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            ip = ZtIpv4Codec.Encode(
+                _localAddress,
+                _remoteAddress,
+                protocol: ZtTcpCodec.ProtocolNumber,
+                payload: tcp,
+                identification: GenerateIpIdentification());
+        }
+        else
+        {
+            ip = ZtIpv6Codec.Encode(
+                _localAddress,
+                _remoteAddress,
+                nextHeader: ZtTcpCodec.ProtocolNumber,
+                payload: tcp,
+                hopLimit: 64);
+        }
 
         await _link.SendAsync(ip, cancellationToken).ConfigureAwait(false);
     }

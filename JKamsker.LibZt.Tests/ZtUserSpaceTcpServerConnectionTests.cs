@@ -41,7 +41,7 @@ public sealed class ZtUserSpaceTcpServerConnectionTests
         Assert.Equal("world", Encoding.ASCII.GetString(buffer2));
     }
 
-    private sealed class InMemoryIpv4Link : IZtUserSpaceIpv4Link
+    private sealed class InMemoryIpv4Link : IZtUserSpaceIpLink
     {
         private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
         private InMemoryIpv4Link? _peer;
@@ -55,12 +55,12 @@ public sealed class ZtUserSpaceTcpServerConnectionTests
             return (a, b);
         }
 
-        public ValueTask SendAsync(ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken = default)
+        public ValueTask SendAsync(ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ObjectDisposedException.ThrowIf(_peer is null, this);
 
-            _peer!._incoming.Writer.TryWrite(ipv4Packet.ToArray());
+            _peer!._incoming.Writer.TryWrite(ipPacket.ToArray());
             return ValueTask.CompletedTask;
         }
 

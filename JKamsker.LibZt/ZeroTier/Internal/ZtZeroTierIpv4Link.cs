@@ -8,7 +8,7 @@ using JKamsker.LibZt.ZeroTier.Transport;
 
 namespace JKamsker.LibZt.ZeroTier.Internal;
 
-internal sealed class ZtZeroTierIpv4Link : IZtUserSpaceIpv4Link
+internal sealed class ZtZeroTierIpv4Link : IZtUserSpaceIpLink
 {
     private const int IndexVerb = 27;
     private const ushort EtherTypeArp = 0x0806;
@@ -70,11 +70,12 @@ internal sealed class ZtZeroTierIpv4Link : IZtUserSpaceIpv4Link
         _sharedKey = sharedKey;
     }
 
-    public async ValueTask SendAsync(ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken = default)
+    public async ValueTask SendAsync(ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        var ipv4Packet = ipPacket;
         var packetId = GeneratePacketId();
         var packet = ZtZeroTierExtFramePacketBuilder.BuildIpv4Packet(
             packetId,

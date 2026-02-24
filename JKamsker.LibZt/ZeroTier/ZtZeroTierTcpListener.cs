@@ -22,18 +22,19 @@ public sealed class ZtZeroTierTcpListener : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(localAddress);
-        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
         {
-            throw new NotSupportedException("Only IPv4 is supported in the TCP MVP.");
+            throw new NotSupportedException("Only IPv4 and IPv6 are supported.");
         }
 
         _runtime = runtime;
         _localAddress = localAddress;
         _localPort = localPort;
 
-        if (!_runtime.TryRegisterTcpListener(localPort, OnSynAsync))
+        if (!_runtime.TryRegisterTcpListener(localAddress.AddressFamily, localPort, OnSynAsync))
         {
-            throw new InvalidOperationException($"A TCP listener is already registered for port {localPort}.");
+            throw new InvalidOperationException($"A TCP listener is already registered for {localAddress.AddressFamily} port {localPort}.");
         }
     }
 
@@ -56,7 +57,7 @@ public sealed class ZtZeroTierTcpListener : IAsyncDisposable
             }
 
             _disposed = true;
-            _runtime.UnregisterTcpListener(_localPort);
+            _runtime.UnregisterTcpListener(_localAddress.AddressFamily, _localPort);
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
 
@@ -83,21 +84,39 @@ public sealed class ZtZeroTierTcpListener : IAsyncDisposable
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Ownership of accepted connections transfers to the accept queue consumer (via the returned Stream).")]
-    private Task OnSynAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken)
+    private Task OnSynAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken)
     {
         if (_disposed)
         {
             return Task.CompletedTask;
         }
 
-        if (!ZtIpv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
+        IPAddress src;
+        IPAddress dst;
+        ReadOnlySpan<byte> ipPayload;
+        if (_localAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
-            return Task.CompletedTask;
-        }
+            if (!ZtIpv4Codec.TryParse(ipPacket.Span, out src, out dst, out var protocol, out ipPayload))
+            {
+                return Task.CompletedTask;
+            }
 
-        if (!dst.Equals(_localAddress) || protocol != ZtTcpCodec.ProtocolNumber)
+            if (!dst.Equals(_localAddress) || protocol != ZtTcpCodec.ProtocolNumber)
+            {
+                return Task.CompletedTask;
+            }
+        }
+        else
         {
-            return Task.CompletedTask;
+            if (!ZtIpv6Codec.TryParse(ipPacket.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+            {
+                return Task.CompletedTask;
+            }
+
+            if (!dst.Equals(_localAddress) || nextHeader != ZtTcpCodec.ProtocolNumber)
+            {
+                return Task.CompletedTask;
+            }
         }
 
         if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out _, out _, out var flags, out _, out _))
@@ -121,7 +140,7 @@ public sealed class ZtZeroTierTcpListener : IAsyncDisposable
             remoteAddress: src,
             remotePort: srcPort);
 
-        link.IncomingWriter.TryWrite(ipv4Packet);
+        link.IncomingWriter.TryWrite(ipPacket);
 
         _connectionTasks.Add(HandleAcceptedConnectionAsync(connection, cancellationToken));
         return Task.CompletedTask;

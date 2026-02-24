@@ -3,15 +3,15 @@ using JKamsker.LibZt.ZeroTier.Protocol;
 
 namespace JKamsker.LibZt.ZeroTier.Internal;
 
-internal sealed class ZtZeroTierRoutedIpv4Link : IZtZeroTierRoutedIpLink
+internal sealed class ZtZeroTierRoutedIpv6Link : IZtZeroTierRoutedIpLink
 {
     private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
     private readonly ZtZeroTierDataplaneRuntime _runtime;
-    private readonly ZtZeroTierTcpRouteKey _routeKey;
+    private readonly ZtZeroTierTcpRouteKeyV6 _routeKey;
     private readonly ZtNodeId _peerNodeId;
     private bool _disposed;
 
-    public ZtZeroTierRoutedIpv4Link(ZtZeroTierDataplaneRuntime runtime, ZtZeroTierTcpRouteKey routeKey, ZtNodeId peerNodeId)
+    public ZtZeroTierRoutedIpv6Link(ZtZeroTierDataplaneRuntime runtime, ZtZeroTierTcpRouteKeyV6 routeKey, ZtNodeId peerNodeId)
     {
         ArgumentNullException.ThrowIfNull(runtime);
 
@@ -26,7 +26,7 @@ internal sealed class ZtZeroTierRoutedIpv4Link : IZtZeroTierRoutedIpLink
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _runtime.SendIpv4Async(_peerNodeId, ipPacket, cancellationToken);
+        return _runtime.SendEthernetFrameAsync(_peerNodeId, ZtZeroTierFrameCodec.EtherTypeIpv6, ipPacket, cancellationToken);
     }
 
     public ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken = default)
