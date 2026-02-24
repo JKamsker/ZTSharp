@@ -25,3 +25,23 @@ jobs:
       - name: Test
         run: dotnet test -c Release --no-build
 
+  pack:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore
+      - name: Build
+        run: dotnet build -c Release --no-restore
+      - name: Pack
+        run: dotnet pack ZTSharp/ZTSharp.csproj -c Release --no-build -o artifacts/nuget -p:ContinuousIntegrationBuild=true -p:VersionSuffix=ci.${{ github.run_number }}
+      - name: Upload NuGet artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget
+          if-no-files-found: error
+          path: artifacts/nuget/*
