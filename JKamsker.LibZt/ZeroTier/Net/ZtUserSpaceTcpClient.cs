@@ -31,7 +31,6 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
     private bool _connected;
     private bool _remoteClosed;
     private bool _disposed;
-    private ZtTcpStream? _stream;
 
     public ZtUserSpaceTcpClient(
         IZtUserSpaceIpv4Link link,
@@ -67,15 +66,7 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
     public bool Connected => _connected && !_disposed && !_remoteClosed;
 
     public Stream GetStream()
-    {
-        if (_stream is not null)
-        {
-            return _stream;
-        }
-
-        _stream = new ZtTcpStream(this);
-        return _stream;
-    }
+        => new ZtTcpStream(this);
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -225,8 +216,6 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
             _disposed = true;
             await _cts.CancelAsync().ConfigureAwait(false);
             _incoming.Writer.TryComplete();
-            _stream?.Dispose();
-            _stream = null;
 
             if (_connected && !_remoteClosed)
             {
@@ -512,6 +501,37 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
         }
 
         public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    _client.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (IOException)
+                {
+                }
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await _client.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
 
         public override int Read(byte[] buffer, int offset, int count)
             => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();

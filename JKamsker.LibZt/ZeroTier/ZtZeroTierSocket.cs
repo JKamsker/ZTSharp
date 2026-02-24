@@ -1,7 +1,9 @@
 using System.Net;
 using JKamsker.LibZt.ZeroTier.Http;
 using JKamsker.LibZt.ZeroTier.Internal;
+using JKamsker.LibZt.ZeroTier.Net;
 using JKamsker.LibZt.ZeroTier.Protocol;
+using JKamsker.LibZt.ZeroTier.Transport;
 
 namespace JKamsker.LibZt.ZeroTier;
 
@@ -12,6 +14,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
     private readonly ZtZeroTierIdentity _identity;
     private readonly ZtZeroTierWorld _planet;
     private readonly SemaphoreSlim _joinLock = new(1, 1);
+    private byte[]? _networkConfigDictionaryBytes;
     private bool _joined;
     private bool _disposed;
 
@@ -23,6 +26,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         _planet = planet;
         NodeId = identity.NodeId;
         ManagedIps = LoadPersistedManagedIps(statePath, options.NetworkId);
+        _networkConfigDictionaryBytes = LoadPersistedNetworkConfigDictionary(statePath, options.NetworkId);
     }
 
     public ZtNodeId NodeId { get; private set; }
@@ -99,6 +103,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                 .ConfigureAwait(false);
 
             ManagedIps = result.ManagedIps;
+            _networkConfigDictionaryBytes = result.DictionaryBytes;
             PersistNetworkState(result);
             _joined = true;
         }
@@ -130,7 +135,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         ObjectDisposedException.ThrowIf(_disposed, this);
-        throw new NotSupportedException("Real ZeroTier network support is not implemented yet (MVP in progress).");
+        return ConnectTcpCoreAsync(remote, cancellationToken);
     }
 
     public ValueTask DisposeAsync()
@@ -173,6 +178,29 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         }
     }
 
+    private static byte[]? LoadPersistedNetworkConfigDictionary(string statePath, ulong networkId)
+    {
+        var networksDir = Path.Combine(statePath, "networks.d");
+        var path = Path.Combine(networksDir, $"{networkId:x16}.netconf.dict");
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return File.ReadAllBytes(path);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     private void PersistNetworkState(ZtZeroTierNetworkConfigResult result)
     {
         var networksDir = Path.Combine(_statePath, "networks.d");
@@ -183,5 +211,118 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
 
         var ipsPath = Path.Combine(networksDir, $"{_options.NetworkId:x16}.ips.txt");
         File.WriteAllLines(ipsPath, result.ManagedIps.Select(ip => ip.ToString()));
+    }
+
+    [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Ownership transfers to the returned Stream (disposes ZtUserSpaceTcpClient, link, and UDP transport).")]
+    private async ValueTask<Stream> ConnectTcpCoreAsync(IPEndPoint remote, CancellationToken cancellationToken)
+    {
+        if (remote.Port is < 1 or > ushort.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(remote), "Remote port must be between 1 and 65535.");
+        }
+
+        if (remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            throw new NotSupportedException("Only IPv4 is supported in the ZeroTier TCP MVP.");
+        }
+
+        await JoinAsync(cancellationToken).ConfigureAwait(false);
+
+        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+        if (localAddress is null)
+        {
+            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+
+        var dict = _networkConfigDictionaryBytes;
+        if (dict is null)
+        {
+            throw new InvalidOperationException("Missing network config dictionary (join not completed?).");
+        }
+
+        if (!ZtZeroTierDictionary.TryGet(dict, "C", out var comBytes) || comBytes.Length == 0)
+        {
+            throw new InvalidOperationException("Network config does not contain a certificate of membership (key 'C').");
+        }
+
+        var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+        try
+        {
+            var helloOk = await ZtZeroTierHelloClient
+                .HelloRootsAsync(udp, _identity, _planet, timeout: TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+
+            var root = _planet.Roots.FirstOrDefault(r => r.Identity.NodeId == helloOk.RootNodeId);
+            if (root is null)
+            {
+                throw new InvalidOperationException($"Root identity not found for {helloOk.RootNodeId}.");
+            }
+
+            var rootKey = new byte[48];
+            ZtZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
+
+            var group = ZtZeroTierMulticastGroup.DeriveForAddressResolution(remote.Address);
+            var (_, members) = await ZtZeroTierMulticastGatherClient
+                .GatherAsync(
+                    udp,
+                    helloOk.RootNodeId,
+                    helloOk.RootEndpoint,
+                    rootKey,
+                    _identity.NodeId,
+                    _options.NetworkId,
+                    group,
+                    gatherLimit: 32,
+                    timeout: TimeSpan.FromSeconds(5),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (members.Length == 0)
+            {
+                throw new InvalidOperationException($"Could not resolve '{remote}' to a ZeroTier node id (no multicast-gather results).");
+            }
+
+            var remoteNodeId = members[0];
+
+            byte[] sharedKey;
+            using (var keyCache = new ZtZeroTierPeerKeyCache(udp, helloOk.RootNodeId, helloOk.RootEndpoint, rootKey, _identity))
+            {
+                sharedKey = await keyCache.GetSharedKeyAsync(remoteNodeId, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            }
+
+            var link = new ZtZeroTierIpv4Link(
+                udp,
+                relayEndpoint: helloOk.RootEndpoint,
+                localNodeId: _identity.NodeId,
+                remoteNodeId,
+                _options.NetworkId,
+                comBytes,
+                sharedKey);
+
+            var tcp = new ZtUserSpaceTcpClient(
+                link,
+                localAddress,
+                remote.Address,
+                remotePort: (ushort)remote.Port);
+
+            try
+            {
+                await tcp.ConnectAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tcp.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+
+            return tcp.GetStream();
+        }
+        catch
+        {
+            await udp.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 }

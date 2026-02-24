@@ -24,12 +24,18 @@ var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 
 ## Status
 
-The public API surface is scaffolded, but the real ZeroTier protocol implementation is **not implemented yet**.
+MVP supports outbound IPv4 TCP connections to peers by their ZeroTier-managed IP, using a pure managed stack.
 
 Right now:
 
-- `ZtZeroTierSocket.CreateAsync(...)` validates options and returns an instance.
-- Any attempt to open a TCP connection (including via `HttpClient`) throws `NotSupportedException`.
+- `ZtZeroTierSocket.JoinAsync()` joins a real network and persists assigned managed IPs.
+- `ZtZeroTierSocket.ConnectTcpAsync(...)` can dial `http://<zt-ip>:<port>` through `HttpClient` (via `ZtZeroTierHttpMessageHandler`).
+
+Current limitations:
+
+- Outbound client-only (no listeners/port forwards yet).
+- IPv4 only.
+- Uses a single upstream root as a relay for simplicity (no direct path negotiation yet).
 
 ## CLI
 
@@ -40,4 +46,3 @@ The CLI accepts:
 - `--stack libzt` (alias for `zerotier`)
 
 MVP is expected to support outbound `call` for the `zerotier` stack.
-

@@ -60,7 +60,7 @@ public sealed class ZtZeroTierApiTests
     }
 
     [Fact]
-    public async Task ConnectTcpAsync_NotSupported_Yet()
+    public async Task ConnectTcpAsync_Throws_ForIpv6Remote()
     {
         await using var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
         {
@@ -70,7 +70,7 @@ public sealed class ZtZeroTierApiTests
 
         await Assert.ThrowsAsync<NotSupportedException>(async () =>
         {
-            _ = await socket.ConnectTcpAsync(new IPEndPoint(IPAddress.Loopback, 80)).ConfigureAwait(false);
+            _ = await socket.ConnectTcpAsync(new IPEndPoint(IPAddress.IPv6Loopback, 80)).ConfigureAwait(false);
         });
     }
 }
