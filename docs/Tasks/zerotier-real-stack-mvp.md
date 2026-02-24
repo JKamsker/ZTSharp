@@ -45,7 +45,7 @@ Status legend:
   - [x] Implement managed `MAC` + `MulticastGroup` primitives (address resolution groups).
   - [x] Resolve ZeroTier managed IPs to node ids via `MULTICAST_GATHER`.
   - [x] Implement `WHOIS` peer identity cache + C25519 shared keys.
-  - [ ] Implement `FRAME`/`EXT_FRAME` TX/RX for IPv4 payloads (include inline COM for MVP).
+  - [x] Implement `FRAME`/`EXT_FRAME` TX/RX for IPv4 payloads (include inline COM for MVP).
 - [ ] Implement minimal user-space IPv4 + TCP active-open (client only).
   - [ ] Add IPv4 codec + checksum helpers.
   - [ ] Add TCP codec + MSS option (small MSS to avoid ZT fragmentation).
