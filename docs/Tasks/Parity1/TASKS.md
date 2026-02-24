@@ -107,7 +107,8 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Improve retransmission behavior (RTO/backoff) and loss recovery for real internet paths.
 - [x] Improve close semantics (FIN/half-close/TIME_WAIT-ish behavior) and error mapping (RST).
 - [x] Add stress tests (many concurrent conns, larger payloads, slow reader/writer).
-- [ ] Manual verification: sustained HTTP download over managed stack without stalls/timeouts.
+- [x] Manual verification: sustained HTTP download over managed stack without stalls/timeouts.
+  - Verified 2026-02-24: remote OS `curl` downloaded a 2 MiB body from managed `listen --body-bytes 2097152` without stalling/timeouts.
 
 ## Milestone P5 — Socket-like managed API (drop-in ergonomics)
 - [ ] Define a minimal but practical socket API surface that matches common app usage:

@@ -72,6 +72,7 @@ static void PrintHelp()
 
         Options:
           --listen <port>             Listen port (default: <localPort>)
+          --body-bytes <bytes>       For 'listen': response body size (default: small 'ok\\n')
           --to <host:port>            Forward target (default: 127.0.0.1:<localPort>) or UDP target (udp-send)
           --data <text>               UDP payload (udp-send)
           --state <path>              State directory (default: temp folder)
@@ -278,6 +279,7 @@ static async Task RunListenAsync(string[] commandArgs)
     string? statePath = null;
     string? networkText = null;
     var stack = "managed";
+    long bodyBytes = 0;
 
     for (var i = 1; i < commandArgs.Length; i++)
     {
@@ -293,6 +295,16 @@ static async Task RunListenAsync(string[] commandArgs)
             case "--stack":
                 stack = ReadOptionValue(commandArgs, ref i, "--stack");
                 break;
+            case "--body-bytes":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--body-bytes");
+                if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out bodyBytes) || bodyBytes < 0)
+                {
+                    throw new InvalidOperationException("Invalid --body-bytes value.");
+                }
+
+                break;
+            }
             default:
                 throw new InvalidOperationException($"Unknown option '{arg}'.");
         }
@@ -316,7 +328,7 @@ static async Task RunListenAsync(string[] commandArgs)
 
     if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        await RunListenZeroTierAsync(statePath, networkId, localPort, cts.Token).ConfigureAwait(false);
+        await RunListenZeroTierAsync(statePath, networkId, localPort, bodyBytes, cts.Token).ConfigureAwait(false);
         return;
     }
 
@@ -327,6 +339,7 @@ static async Task RunListenZeroTierAsync(
     string statePath,
     ulong networkId,
     int listenPort,
+    long bodyBytes,
     CancellationToken cancellationToken)
 {
     if (listenPort is < 1 or > ushort.MaxValue)
@@ -377,7 +390,7 @@ static async Task RunListenZeroTierAsync(
 
             for (var i = 0; i < acceptorCount; i++)
             {
-                acceptors.Add(RunListenAcceptorAsync(listener4, listenToken));
+                acceptors.Add(RunListenAcceptorAsync(listener4, bodyBytes, listenToken));
             }
         }
 
@@ -388,7 +401,7 @@ static async Task RunListenZeroTierAsync(
 
             for (var i = 0; i < acceptorCount; i++)
             {
-                acceptors.Add(RunListenAcceptorAsync(listener6, listenToken));
+                acceptors.Add(RunListenAcceptorAsync(listener6, bodyBytes, listenToken));
             }
         }
 
@@ -441,7 +454,7 @@ static async Task RunListenZeroTierAsync(
     }
 }
 
-static async Task RunListenAcceptorAsync(ZtZeroTierTcpListener listener, CancellationToken cancellationToken)
+static async Task RunListenAcceptorAsync(ZtZeroTierTcpListener listener, long bodyBytes, CancellationToken cancellationToken)
 {
     while (!cancellationToken.IsCancellationRequested)
     {
@@ -465,7 +478,7 @@ static async Task RunListenAcceptorAsync(ZtZeroTierTcpListener listener, Cancell
 
         try
         {
-            await HandleListenConnectionAsync(accepted, cancellationToken).ConfigureAwait(false);
+            await HandleListenConnectionAsync(accepted, bodyBytes, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -482,7 +495,7 @@ static async Task RunListenAcceptorAsync(ZtZeroTierTcpListener listener, Cancell
     }
 }
 
-static async Task HandleListenConnectionAsync(Stream accepted, CancellationToken cancellationToken)
+static async Task HandleListenConnectionAsync(Stream accepted, long bodyBytes, CancellationToken cancellationToken)
 {
     var overlayStream = accepted;
     try
@@ -503,7 +516,7 @@ static async Task HandleListenConnectionAsync(Stream accepted, CancellationToken
         Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] {requestLine}");
         Console.WriteLine(headers);
 
-        await WriteHttpOkAsync(overlayStream, cancellationToken).ConfigureAwait(false);
+        await WriteHttpOkAsync(overlayStream, bodyBytes, cancellationToken).ConfigureAwait(false);
     }
     finally
     {
@@ -571,20 +584,44 @@ static int IndexOfHttpHeaderTerminator(ReadOnlySpan<byte> buffer)
     return -1;
 }
 
-static async Task WriteHttpOkAsync(Stream stream, CancellationToken cancellationToken)
+static async Task WriteHttpOkAsync(Stream stream, long bodyBytes, CancellationToken cancellationToken)
 {
-    const string bodyText = "ok\n";
-    var body = Encoding.UTF8.GetBytes(bodyText);
+    var body = bodyBytes > 0
+        ? ReadOnlyMemory<byte>.Empty
+        : Encoding.UTF8.GetBytes("ok\n");
+
+    var contentLength = bodyBytes > 0 ? bodyBytes : body.Length;
     var headerText =
         "HTTP/1.1 200 OK\r\n" +
-        "Content-Type: text/plain; charset=utf-8\r\n" +
-        $"Content-Length: {body.Length}\r\n" +
+        (bodyBytes > 0
+            ? "Content-Type: application/octet-stream\r\n"
+            : "Content-Type: text/plain; charset=utf-8\r\n") +
+        $"Content-Length: {contentLength.ToString(CultureInfo.InvariantCulture)}\r\n" +
         "Connection: close\r\n" +
         "\r\n";
 
     var header = Encoding.ASCII.GetBytes(headerText);
     await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
-    await stream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+
+    if (bodyBytes > 0)
+    {
+        const int chunkSize = 16 * 1024;
+        var chunk = new byte[chunkSize];
+        chunk.AsSpan().Fill((byte)'a');
+
+        var remaining = bodyBytes;
+        while (remaining > 0)
+        {
+            var toWrite = (int)Math.Min(chunk.Length, remaining);
+            await stream.WriteAsync(chunk.AsMemory(0, toWrite), cancellationToken).ConfigureAwait(false);
+            remaining -= toWrite;
+        }
+    }
+    else
+    {
+        await stream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+    }
+
     await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
 }
 
