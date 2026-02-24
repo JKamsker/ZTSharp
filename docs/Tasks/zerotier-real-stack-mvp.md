@@ -59,3 +59,9 @@ Status legend:
 - [x] Update tunnel demo + ztnet scripts/docs to pass `--stack overlay` where they rely on the legacy overlay stack.
 - [x] Implement `join --stack managed` (one-shot join + print node id + assigned managed IPs).
 - [x] Update docs (`README.md`, `docs/USAGE.md`, `docs/COMPATIBILITY.md`, `docs/E2E.md`, `docs/ZEROTIER_STACK.md`) to reflect the real ZeroTier stack MVP.
+
+## Milestone Z7 — Robustness fixes
+- [x] Ignore unreachable root endpoints during HELLO root discovery (e.g. when IPv6 has no route).
+- [x] Send `HELLO` to the controller before `NETWORK_CONFIG_REQUEST` (controller must learn the node identity before decrypting).
+- [x] Include request metadata dictionary in `NETWORK_CONFIG_REQUEST` (version/protocol/rules-engine).
+- [x] Surface `ERROR(NETWORK_CONFIG_REQUEST)` as a meaningful exception (e.g. not authorized) instead of timing out.

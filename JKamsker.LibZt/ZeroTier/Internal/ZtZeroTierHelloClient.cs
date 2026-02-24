@@ -83,9 +83,22 @@ internal static class ZtZeroTierHelloClient
                     key,
                     out var packetId);
 
-                pending[packetId] = root.Identity.NodeId;
-                await udp.SendAsync(endpoint, packet, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await udp.SendAsync(endpoint, packet, cancellationToken).ConfigureAwait(false);
+                    pending[packetId] = root.Identity.NodeId;
+                }
+                catch (System.Net.Sockets.SocketException)
+                {
+                    // Some environments don't have IPv6 connectivity. Ignore send failures and wait for any
+                    // reachable root to respond.
+                }
             }
+        }
+
+        if (pending.Count == 0)
+        {
+            throw new InvalidOperationException("Failed to send HELLO to any root endpoints (no reachable network?).");
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -179,6 +192,112 @@ internal static class ZtZeroTierHelloClient
                 RemoteMinorVersion: remoteMinor,
                 RemoteRevision: remoteRevision,
                 ExternalSurfaceAddress: surface);
+        }
+    }
+
+    public static async Task HelloAsync(
+        ZtZeroTierUdpTransport udp,
+        ZtZeroTierIdentity localIdentity,
+        ZtZeroTierWorld planet,
+        ZtNodeId destination,
+        IPEndPoint physicalDestination,
+        byte[] sharedKey,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(udp);
+        ArgumentNullException.ThrowIfNull(localIdentity);
+        ArgumentNullException.ThrowIfNull(planet);
+        ArgumentNullException.ThrowIfNull(physicalDestination);
+        ArgumentNullException.ThrowIfNull(sharedKey);
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be positive.");
+        }
+
+        if (localIdentity.PrivateKey is null)
+        {
+            throw new InvalidOperationException("Local identity must contain a private key.");
+        }
+
+        var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        var packet = BuildHelloPacket(
+            localIdentity,
+            destination,
+            physicalDestination,
+            planet,
+            helloTimestamp,
+            sharedKey,
+            out var packetId);
+
+        await udp.SendAsync(physicalDestination, packet, cancellationToken).ConfigureAwait(false);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+
+        while (true)
+        {
+            ZtZeroTierUdpDatagram datagram;
+            try
+            {
+                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
+            }
+
+            var packetBytes = datagram.Payload.ToArray();
+            if (!ZtZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
+            {
+                continue;
+            }
+
+            if (decoded.Header.Source != destination)
+            {
+                continue;
+            }
+
+            if (!ZtZeroTierPacketCrypto.Dearmor(packetBytes, sharedKey))
+            {
+                continue;
+            }
+
+            if ((packetBytes[27] & ZtZeroTierPacketHeader.VerbFlagCompressed) != 0)
+            {
+                if (!ZtZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                {
+                    continue;
+                }
+
+                packetBytes = uncompressed;
+            }
+
+            var verb = (ZtZeroTierVerb)(packetBytes[27] & 0x1F);
+            if (verb != ZtZeroTierVerb.Ok)
+            {
+                continue;
+            }
+
+            if (packetBytes.Length < HelloOkIndexRevision + 2)
+            {
+                continue;
+            }
+
+            var inReVerb = (ZtZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
+            if (inReVerb != ZtZeroTierVerb.Hello)
+            {
+                continue;
+            }
+
+            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
+            if (inRePacketId != packetId)
+            {
+                continue;
+            }
+
+            return;
         }
     }
 

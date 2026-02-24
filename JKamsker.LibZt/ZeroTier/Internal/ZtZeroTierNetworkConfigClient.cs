@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -89,6 +90,17 @@ internal static class ZtZeroTierNetworkConfigClient
             }
 
             keys[controllerNodeId] = controllerKey;
+
+            await ZtZeroTierHelloClient.HelloAsync(
+                    udp,
+                    localIdentity,
+                    planet,
+                    destination: controllerNodeId,
+                    physicalDestination: helloOk.RootEndpoint,
+                    sharedKey: controllerKey,
+                    timeout: GetRemainingTimeout(deadline),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
             var (dictBytes, ips) = await RequestNetworkConfigAsync(
                     udp,
@@ -216,9 +228,20 @@ internal static class ZtZeroTierNetworkConfigClient
             throw new InvalidOperationException("Missing controller key.");
         }
 
-        var reqPayload = new byte[8 + 2];
+        var metaDataBytes = BuildRequestMetadataDictionary();
+        if (metaDataBytes.Length > ushort.MaxValue)
+        {
+            throw new InvalidOperationException("Network config request metadata dictionary is too large.");
+        }
+
+        var reqPayload = new byte[8 + 2 + metaDataBytes.Length + 16];
         BinaryPrimitives.WriteUInt64BigEndian(reqPayload.AsSpan(0, 8), networkId);
-        BinaryPrimitives.WriteUInt16BigEndian(reqPayload.AsSpan(8, 2), 0);
+        BinaryPrimitives.WriteUInt16BigEndian(reqPayload.AsSpan(8, 2), (ushort)metaDataBytes.Length);
+        metaDataBytes.CopyTo(reqPayload.AsSpan(10));
+
+        var ptr = 10 + metaDataBytes.Length;
+        BinaryPrimitives.WriteUInt64BigEndian(reqPayload.AsSpan(ptr, 8), 0);
+        BinaryPrimitives.WriteUInt64BigEndian(reqPayload.AsSpan(ptr + 8, 8), 0);
 
         var reqPacketId = GeneratePacketId();
         var reqHeader = new ZtZeroTierPacketHeader(
@@ -264,6 +287,35 @@ internal static class ZtZeroTierNetworkConfigClient
 
             var verb = (ZtZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
             var payloadStart = -1;
+
+            if (verb == ZtZeroTierVerb.Error)
+            {
+                if (packetBytes.Length < IndexPayload + 1 + 8 + 1)
+                {
+                    continue;
+                }
+
+                var inReVerb = (ZtZeroTierVerb)(packetBytes[IndexPayload] & 0x1F);
+                if (inReVerb != ZtZeroTierVerb.NetworkConfigRequest)
+                {
+                    continue;
+                }
+
+                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
+                if (inRePacketId != reqPacketId)
+                {
+                    continue;
+                }
+
+                var errorCode = packetBytes[IndexPayload + 1 + 8];
+                ulong? errorNetworkId = null;
+                if (packetBytes.Length >= IndexPayload + 1 + 8 + 1 + 8)
+                {
+                    errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
+                }
+
+                throw new InvalidOperationException(FormatNetworkConfigRequestError(errorCode, errorNetworkId));
+            }
 
             if (verb == ZtZeroTierVerb.Ok)
             {
@@ -566,6 +618,59 @@ internal static class ZtZeroTierNetworkConfigClient
         signature = packetBytes.AsSpan(ptr, sigLen).ToArray();
         signatureMessage = packetBytes.AsSpan(payloadStart, signatureStart - payloadStart + 1 + 8 + 4 + 4);
         return true;
+    }
+
+    private static byte[] BuildRequestMetadataDictionary()
+    {
+        var sb = new StringBuilder();
+
+        AppendHexKeyValue(sb, "v", 7); // ZT_NETWORKCONFIG_VERSION
+        AppendHexKeyValue(sb, "vend", 1); // ZT_VENDOR_ZEROTIER
+        AppendHexKeyValue(sb, "pv", 11); // Protocol (matches our HELLO advert)
+        AppendHexKeyValue(sb, "majv", 1); // ZEROTIER_ONE_VERSION_MAJOR
+        AppendHexKeyValue(sb, "minv", 12); // ZEROTIER_ONE_VERSION_MINOR
+        AppendHexKeyValue(sb, "revv", 0); // ZEROTIER_ONE_VERSION_REVISION
+        AppendHexKeyValue(sb, "mr", 1024); // ZT_MAX_NETWORK_RULES
+        AppendHexKeyValue(sb, "mc", 128); // ZT_MAX_NETWORK_CAPABILITIES
+        AppendHexKeyValue(sb, "mcr", 64); // ZT_MAX_CAPABILITY_RULES
+        AppendHexKeyValue(sb, "mt", 128); // ZT_MAX_NETWORK_TAGS
+        AppendHexKeyValue(sb, "f", 0); // Flags
+        AppendHexKeyValue(sb, "revr", 1); // ZT_RULES_ENGINE_REVISION
+
+        return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    private static void AppendHexKeyValue(StringBuilder sb, string key, ulong value)
+    {
+        if (sb.Length != 0)
+        {
+            sb.Append('\n');
+        }
+
+        sb.Append(key);
+        sb.Append('=');
+        sb.Append(value.ToString("x16", CultureInfo.InvariantCulture));
+    }
+
+    private static string FormatNetworkConfigRequestError(byte errorCode, ulong? networkId)
+    {
+        var message = errorCode switch
+        {
+            0x01 => "Invalid NETWORK_CONFIG_REQUEST.",
+            0x02 => "Bad/unsupported protocol version for NETWORK_CONFIG_REQUEST.",
+            0x03 => "Controller object not found for NETWORK_CONFIG_REQUEST.",
+            0x04 => "Identity collision reported by controller.",
+            0x05 => "Controller does not support NETWORK_CONFIG_REQUEST.",
+            0x06 => "Network membership certificate required (COM update needed).",
+            0x07 => "Network access denied (not authorized).",
+            0x08 => "Unwanted multicast (unexpected for NETWORK_CONFIG_REQUEST).",
+            0x09 => "Network authentication required (external/2FA).",
+            _ => $"Unknown error for NETWORK_CONFIG_REQUEST (0x{errorCode:x2})."
+        };
+
+        return networkId is null
+            ? $"{message}"
+            : $"{message} (network: 0x{networkId:x16})";
     }
 
     private static async Task<(ZtNodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)?> ReceiveAndDecryptAsync(

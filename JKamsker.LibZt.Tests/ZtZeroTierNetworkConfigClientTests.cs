@@ -192,6 +192,26 @@ public sealed class ZtZeroTierNetworkConfigClientTests
             }
 
             var verb = (ZtZeroTierVerb)(authPacket[27] & 0x1F);
+            if (verb == ZtZeroTierVerb.Hello)
+            {
+                var helloTimestamp = BinaryPrimitives.ReadUInt64BigEndian(
+                    authPacket.AsSpan(ZtZeroTierPacketHeader.Length + 5, 8));
+
+                var helloOkPayload = BuildHelloOkPayload(decoded.Header.PacketId, helloTimestamp, datagram.RemoteEndPoint);
+                var helloOkHeader = new ZtZeroTierPacketHeader(
+                    PacketId: 6,
+                    Destination: decoded.Header.Source,
+                    Source: controllerIdentity.NodeId,
+                    Flags: 0,
+                    Mac: 0,
+                    VerbRaw: (byte)ZtZeroTierVerb.Ok);
+
+                var helloOkPacket = ZtZeroTierPacketCodec.Encode(helloOkHeader, helloOkPayload);
+                ZtZeroTierPacketCrypto.Armor(helloOkPacket, key, encryptPayload: true);
+                await controllerUdp.SendAsync(datagram.RemoteEndPoint, helloOkPacket, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (verb != ZtZeroTierVerb.NetworkConfigRequest)
             {
                 continue;
