@@ -36,9 +36,9 @@ Status legend:
   - [x] Implement HELLO send + OK parse (unencrypted) over UDP.
   - [x] Implement C25519 key agreement + packet armor/dearmor for non-HELLO.
   - [x] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
-- [ ] Persist assigned managed IPs to state and expose them via API.
-  - [ ] Persist network config + assigned IPs under `<state>/zerotier/`.
-  - [ ] Expose assigned IPs via `ZtZeroTierSocket.ManagedIps`.
+- [x] Persist assigned managed IPs to state and expose them via API.
+  - [x] Persist network config + assigned IPs under `<state>/zerotier/`.
+  - [x] Expose assigned IPs via `ZtZeroTierSocket.ManagedIps`.
 
 ## Milestone Z5 — Outbound TCP + HttpClient “just works”
 - [ ] Implement minimal user-space IPv4 + ARP + TCP active-open (client only).

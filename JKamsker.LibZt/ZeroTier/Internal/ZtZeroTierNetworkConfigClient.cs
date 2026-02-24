@@ -42,11 +42,23 @@ internal static class ZtZeroTierNetworkConfigClient
 
         var rootKeys = BuildRootKeys(localIdentity, planet);
 
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        static TimeSpan GetRemainingTimeout(DateTimeOffset deadline)
+        {
+            var remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                throw new TimeoutException("Timed out while joining the network.");
+            }
+
+            return remaining;
+        }
+
         var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
         try
         {
             var helloOk = await ZtZeroTierHelloClient
-                .HelloRootsAsync(udp, localIdentity, planet, timeout, cancellationToken)
+                .HelloRootsAsync(udp, localIdentity, planet, GetRemainingTimeout(deadline), cancellationToken)
                 .ConfigureAwait(false);
 
             if (!rootKeys.TryGetValue(helloOk.RootNodeId, out var upstreamRootKey))
@@ -63,7 +75,7 @@ internal static class ZtZeroTierNetworkConfigClient
                     rootKey: upstreamRootKey,
                     localNodeId: localIdentity.NodeId,
                     controllerNodeId,
-                    timeout,
+                    GetRemainingTimeout(deadline),
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -85,7 +97,7 @@ internal static class ZtZeroTierNetworkConfigClient
                     localNodeId: localIdentity.NodeId,
                     controllerIdentity,
                     networkId,
-                    timeout,
+                    GetRemainingTimeout(deadline),
                     cancellationToken)
                 .ConfigureAwait(false);
 
