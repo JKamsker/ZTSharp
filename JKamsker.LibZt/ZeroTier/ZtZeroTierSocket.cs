@@ -15,6 +15,8 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
     private readonly ZtZeroTierWorld _planet;
     private readonly SemaphoreSlim _joinLock = new(1, 1);
     private byte[]? _networkConfigDictionaryBytes;
+    private ZtZeroTierHelloOk? _upstreamRoot;
+    private byte[]? _upstreamRootKey;
     private bool _joined;
     private bool _disposed;
 
@@ -150,6 +152,8 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
 
             ManagedIps = result.ManagedIps;
             _networkConfigDictionaryBytes = result.DictionaryBytes;
+            _upstreamRoot = result.UpstreamRoot;
+            _upstreamRootKey = result.UpstreamRootKey;
             PersistNetworkState(result);
             _joined = true;
         }
@@ -294,26 +298,36 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             throw new InvalidOperationException("Network config does not contain a certificate of membership (key 'C').");
         }
 
-        var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
-        try
-        {
-            var helloOk = await ZtZeroTierHelloClient
-                .HelloRootsAsync(udp, _identity, _planet, timeout: TimeSpan.FromSeconds(10), cancellationToken)
-                .ConfigureAwait(false);
-
-            var root = _planet.Roots.FirstOrDefault(r => r.Identity.NodeId == helloOk.RootNodeId);
-            if (root is null)
+            var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+            try
             {
-                throw new InvalidOperationException($"Root identity not found for {helloOk.RootNodeId}.");
-            }
+                ZtZeroTierHelloOk helloOk;
+                byte[] rootKey;
+                if (_upstreamRoot is { } cachedRoot && _upstreamRootKey is not null)
+                {
+                    helloOk = cachedRoot;
+                    rootKey = _upstreamRootKey;
+                }
+                else
+                {
+                    helloOk = await ZtZeroTierHelloClient
+                        .HelloRootsAsync(udp, _identity, _planet, timeout: TimeSpan.FromSeconds(10), cancellationToken)
+                        .ConfigureAwait(false);
 
-            var rootKey = new byte[48];
-            ZtZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
+                    var root = _planet.Roots.FirstOrDefault(r => r.Identity.NodeId == helloOk.RootNodeId);
+                    if (root is null)
+                    {
+                        throw new InvalidOperationException($"Root identity not found for {helloOk.RootNodeId}.");
+                    }
 
-            var group = ZtZeroTierMulticastGroup.DeriveForAddressResolution(remote.Address);
-            var (_, members) = await ZtZeroTierMulticastGatherClient
-                .GatherAsync(
-                    udp,
+                    rootKey = new byte[48];
+                    ZtZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
+                }
+
+                var group = ZtZeroTierMulticastGroup.DeriveForAddressResolution(remote.Address);
+                var (_, members) = await ZtZeroTierMulticastGatherClient
+                    .GatherAsync(
+                        udp,
                     helloOk.RootNodeId,
                     helloOk.RootEndpoint,
                     rootKey,

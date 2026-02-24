@@ -112,6 +112,23 @@ internal sealed class ZtZeroTierIpv4Link : IZtUserSpaceIpv4Link
 
             switch (verb)
             {
+                case ZtZeroTierVerb.Error:
+                {
+                    if (payload.Length < 1 + 8 + 1)
+                    {
+                        continue;
+                    }
+
+                    var inReVerb = (ZtZeroTierVerb)(payload[0] & 0x1F);
+                    var errorCode = payload[1 + 8];
+                    ulong? networkId = null;
+                    if (payload.Length >= 1 + 8 + 1 + 8)
+                    {
+                        networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
+                    }
+
+                    throw new InvalidOperationException(FormatError(inReVerb, errorCode, networkId));
+                }
                 case ZtZeroTierVerb.Frame:
                 {
                     if (!ZtZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
@@ -176,5 +193,32 @@ internal sealed class ZtZeroTierIpv4Link : IZtUserSpaceIpv4Link
         RandomNumberGenerator.Fill(buffer);
         return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
-}
 
+    private static string FormatError(ZtZeroTierVerb inReVerb, byte errorCode, ulong? networkId)
+    {
+        var message = errorCode switch
+        {
+            0x01 => "Invalid request.",
+            0x02 => "Bad/unsupported protocol version.",
+            0x03 => "Object not found.",
+            0x04 => "Identity collision.",
+            0x05 => "Unsupported operation.",
+            0x06 => "Network membership certificate required (COM update needed).",
+            0x07 => "Network access denied (not authorized).",
+            0x08 => "Unwanted multicast.",
+            0x09 => "Network authentication required (external/2FA).",
+            _ => $"Unknown error (0x{errorCode:x2})."
+        };
+
+        var prefix = inReVerb switch
+        {
+            ZtZeroTierVerb.ExtFrame => "ERROR(EXT_FRAME)",
+            ZtZeroTierVerb.Frame => "ERROR(FRAME)",
+            _ => $"ERROR({inReVerb})"
+        };
+
+        return networkId is null
+            ? $"{prefix}: {message}"
+            : $"{prefix}: {message} (network: 0x{networkId:x16})";
+    }
+}

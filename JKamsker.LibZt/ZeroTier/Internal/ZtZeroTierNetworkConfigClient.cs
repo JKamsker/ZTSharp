@@ -9,6 +9,8 @@ using JKamsker.LibZt.ZeroTier.Transport;
 namespace JKamsker.LibZt.ZeroTier.Internal;
 
 internal sealed record ZtZeroTierNetworkConfigResult(
+    ZtZeroTierHelloOk UpstreamRoot,
+    byte[] UpstreamRootKey,
     ZtZeroTierIdentity ControllerIdentity,
     byte[] DictionaryBytes,
     IPAddress[] ManagedIps);
@@ -113,7 +115,7 @@ internal static class ZtZeroTierNetworkConfigClient
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            return new ZtZeroTierNetworkConfigResult(controllerIdentity, dictBytes, ips);
+            return new ZtZeroTierNetworkConfigResult(helloOk, upstreamRootKey, controllerIdentity, dictBytes, ips);
         }
         finally
         {

@@ -311,6 +311,22 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
             {
                 return;
             }
+            catch (InvalidOperationException ex)
+            {
+                _remoteClosed = true;
+                _incoming.Writer.TryComplete(ex);
+                _connectTcs?.TrySetException(ex);
+                _ackTcs?.TrySetException(ex);
+                return;
+            }
+            catch (IOException ex)
+            {
+                _remoteClosed = true;
+                _incoming.Writer.TryComplete(ex);
+                _connectTcs?.TrySetException(ex);
+                _ackTcs?.TrySetException(ex);
+                return;
+            }
 
             if (!ZtIpv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
             {

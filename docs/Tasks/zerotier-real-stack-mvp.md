@@ -73,5 +73,7 @@ Status legend:
 - [x] Include inline COM in `MULTICAST_GATHER` requests and surface `ERROR(MULTICAST_GATHER)` as a meaningful exception.
 - [x] Send `HELLO` to the remote peer before starting `EXT_FRAME` TCP traffic (introduce our identity).
 - [x] Retransmit TCP SYN during `ConnectAsync` (avoid single-shot SYN and brittle 10s connect wait).
+- [x] Cache upstream root (HELLO OK + root key) from join and reuse for dials (avoid extra root discovery and timeouts).
+- [x] Surface data-plane `ERROR(...)` packets and propagate link failures into TCP connect/receive (avoid silent timeouts).
 - [x] Add/extend unit tests for the above.
 - [ ] Manual verification: `libzt call --stack managed --network 9ad07d01093a69e3 --url http://10.121.15.99:5380/` returns an HTTP response (after network authorization).
