@@ -466,6 +466,10 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     ZtZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
                 }
 
+                var localManagedIpsV6 = ManagedIps
+                    .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                    .ToArray();
+
                 var runtime = new ZtZeroTierDataplaneRuntime(
                     udp,
                     rootNodeId: helloOk.RootNodeId,
@@ -474,11 +478,21 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     localIdentity: _identity,
                     networkId: _options.NetworkId,
                     localManagedIpV4: localAddress,
-                    localManagedIpsV6: ManagedIps.Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6).ToArray(),
+                    localManagedIpsV6: localManagedIpsV6,
                     inlineCom: inlineCom);
 
                 try
                 {
+                    var groups = new List<ZtZeroTierMulticastGroup>(1 + localManagedIpsV6.Length)
+                    {
+                        ZtZeroTierMulticastGroup.DeriveForAddressResolution(localAddress)
+                    };
+
+                    for (var i = 0; i < localManagedIpsV6.Length; i++)
+                    {
+                        groups.Add(ZtZeroTierMulticastGroup.DeriveForAddressResolution(localManagedIpsV6[i]));
+                    }
+
                     await ZtZeroTierMulticastLikeClient
                         .SendAsync(
                             udp,
@@ -487,7 +501,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                             rootKey,
                             _identity.NodeId,
                             _options.NetworkId,
-                            groups: [ZtZeroTierMulticastGroup.DeriveForAddressResolution(localAddress)],
+                            groups: groups,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }

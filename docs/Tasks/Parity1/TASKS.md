@@ -88,10 +88,10 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Ensure we persist/print assigned IPv6 managed IPs (already parsed, but verify state + CLI output).
 - [x] Handle IPv6 in `FRAME`/`EXT_FRAME` (EtherType `0x86DD`) and route to an IPv6 handler.
 - [x] Implement minimal IPv6 parsing/serialization utilities + tests.
-- [ ] Implement ICMPv6 Neighbor Discovery (NDP) responder so OS ZeroTier clients can reach us by IPv6:
+- [x] Implement ICMPv6 Neighbor Discovery (NDP) responder so OS ZeroTier clients can reach us by IPv6:
   - respond to Neighbor Solicitation for our managed IPv6
   - send Neighbor Advertisement (correct flags/target LL address)
-- [ ] Subscribe/respond to the relevant multicast groups for IPv6 neighbor discovery (ZeroTier multicast groups / L2 multicast).
+- [x] Subscribe/respond to the relevant multicast groups for IPv6 neighbor discovery (ZeroTier multicast groups / L2 multicast).
 - [ ] E2E manual verification:
   - OS: `ping6 <managed-ipv6>` succeeds
   - OS: `curl -g "http://[<managed-ipv6>]:5380/"` hits the managed listener

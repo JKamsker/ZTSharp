@@ -586,16 +586,16 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         }
     }
 
-    private ValueTask HandleIpv6PacketAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipv6Packet, CancellationToken cancellationToken)
+    private async ValueTask HandleIpv6PacketAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipv6Packet, CancellationToken cancellationToken)
     {
         if (_localManagedIpsV6.Length == 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
-        if (!ZtIpv6Codec.TryParse(ipv6Packet.Span, out var src, out var dst, out _, out _, out _))
+        if (!ZtIpv6Codec.TryParse(ipv6Packet.Span, out var src, out var dst, out var nextHeader, out var hopLimit, out var ipPayload))
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         var isToUs = dst.IsIPv6Multicast;
@@ -613,7 +613,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
 
         if (!isToUs)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         if (!IsUnspecifiedIpv6(src))
@@ -621,7 +621,11 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             _managedIpToNodeId[src] = peerNodeId;
         }
 
-        return ValueTask.CompletedTask;
+        if (nextHeader == ZtIcmpv6Codec.ProtocolNumber)
+        {
+            var icmpMessage = ipv6Packet.Slice(ZtIpv6Codec.HeaderLength, ipPayload.Length);
+            await HandleIcmpv6Async(peerNodeId, src, dst, hopLimit, icmpMessage, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task HandleIpv4PacketAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken)
@@ -681,6 +685,110 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         {
             await handler(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async ValueTask HandleIcmpv6Async(
+        ZtNodeId peerNodeId,
+        IPAddress sourceIp,
+        IPAddress destinationIp,
+        byte hopLimit,
+        ReadOnlyMemory<byte> icmpMessage,
+        CancellationToken cancellationToken)
+    {
+        var icmpSpan = icmpMessage.Span;
+
+        if (!ZtIcmpv6Codec.TryParse(icmpSpan, out var type, out var code, out _))
+        {
+            return;
+        }
+
+        // Echo request / reply
+        if (type == 128 && code == 0)
+        {
+            if (IsUnspecifiedIpv6(sourceIp) || !TryGetLocalManagedIpv6(destinationIp, out _))
+            {
+                return;
+            }
+
+            var reply = icmpSpan.ToArray();
+            reply[0] = 129; // Echo Reply
+            reply[1] = 0;
+            BinaryPrimitives.WriteUInt16BigEndian(reply.AsSpan(2, 2), 0);
+
+            var checksum = ZtIcmpv6Codec.ComputeChecksum(destinationIp, sourceIp, reply);
+            BinaryPrimitives.WriteUInt16BigEndian(reply.AsSpan(2, 2), checksum);
+
+            var packet = ZtIpv6Codec.Encode(
+                source: destinationIp,
+                destination: sourceIp,
+                nextHeader: ZtIcmpv6Codec.ProtocolNumber,
+                payload: reply,
+                hopLimit: 64);
+
+            await SendEthernetFrameAsync(peerNodeId, ZtZeroTierFrameCodec.EtherTypeIpv6, packet, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Neighbor Solicitation
+        if (type == 135 && code == 0)
+        {
+            if (hopLimit != 255)
+            {
+                return;
+            }
+
+            if (icmpSpan.Length < 24)
+            {
+                return;
+            }
+
+            var targetIp = new IPAddress(icmpSpan.Slice(8, 16));
+            if (IsUnspecifiedIpv6(sourceIp) || !TryGetLocalManagedIpv6(targetIp, out var localTarget))
+            {
+                return;
+            }
+
+            var na = new byte[32];
+            var span = na.AsSpan();
+
+            span[0] = 136; // Neighbor Advertisement
+            span[1] = 0;
+            BinaryPrimitives.WriteUInt16BigEndian(span.Slice(2, 2), 0); // checksum placeholder
+            BinaryPrimitives.WriteUInt32BigEndian(span.Slice(4, 4), 0x6000_0000u); // solicited + override
+            localTarget.GetAddressBytes().CopyTo(span.Slice(8, 16));
+
+            span[24] = 2; // option type: Target Link-Layer Address
+            span[25] = 1; // option length: 8 bytes
+            _localMac.CopyTo(span.Slice(26, 6));
+
+            var checksum = ZtIcmpv6Codec.ComputeChecksum(localTarget, sourceIp, na);
+            BinaryPrimitives.WriteUInt16BigEndian(span.Slice(2, 2), checksum);
+
+            var packet = ZtIpv6Codec.Encode(
+                source: localTarget,
+                destination: sourceIp,
+                nextHeader: ZtIcmpv6Codec.ProtocolNumber,
+                payload: na,
+                hopLimit: 255);
+
+            await SendEthernetFrameAsync(peerNodeId, ZtZeroTierFrameCodec.EtherTypeIpv6, packet, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private bool TryGetLocalManagedIpv6(IPAddress address, out IPAddress localIp)
+    {
+        for (var i = 0; i < _localManagedIpsV6.Length; i++)
+        {
+            var ip = _localManagedIpsV6[i];
+            if (address.Equals(ip))
+            {
+                localIp = ip;
+                return true;
+            }
+        }
+
+        localIp = IPAddress.IPv6None;
+        return false;
     }
 
     private static bool IsUnspecifiedIpv6(IPAddress address)
