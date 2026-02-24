@@ -118,6 +118,7 @@ try {
             "--",
             "expose", $ApiPort,
             "--network", $Network,
+            "--stack", "overlay",
             "--transport", "osudp",
             "--udp-port", $ExposeUdpPort,
             "--listen", $OverlayPort,
@@ -139,6 +140,7 @@ try {
         --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
         call `
         --network $Network `
+        --stack overlay `
         --transport osudp `
         --udp-port $CallUdpPort `
         --state $callState `

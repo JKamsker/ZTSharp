@@ -66,6 +66,7 @@ Write-Step "Joining network $Network (state: $StateRootPath)..."
     join `
     --once `
     --network $Network `
+    --stack overlay `
     --transport osudp `
     --udp-port $UdpPort `
     --state $StateRootPath | Out-Host
@@ -87,6 +88,7 @@ Write-Step "Fetching $Url (call --http $HttpMode)..."
     call `
     --http $HttpMode `
     --network $Network `
+    --stack overlay `
     --transport osudp `
     --udp-port 0 `
     --state $StateRootPath `

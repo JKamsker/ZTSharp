@@ -28,6 +28,7 @@ In terminal B:
 dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
   expose 5005 `
   --network 0xCAFE2001 `
+  --stack overlay `
   --transport osudp `
   --udp-port 49001 `
   --listen 28080 `
@@ -50,6 +51,7 @@ In terminal C (replace `<NODE_ID>` with the node id from step 2):
 dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
   call `
   --network 0xCAFE2001 `
+  --stack overlay `
   --transport osudp `
   --udp-port 49002 `
   --peer <NODE_ID>@127.0.0.1:49001 `
