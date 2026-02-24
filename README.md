@@ -1,5 +1,14 @@
 # ZTSharp
 
+[![CI](https://github.com/JKamsker/ZTSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/JKamsker/ZTSharp/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/ZTSharp.svg)](https://www.nuget.org/packages/ZTSharp)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ZTSharp.svg)](https://www.nuget.org/packages/ZTSharp)
+![.NET](https://img.shields.io/badge/.NET-10.0-512bd4)
+
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://github.com/JKamsker/ZTSharp/blob/master/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/JKamsker/ZTSharp)](https://github.com/JKamsker/ZTSharp/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/JKamsker/ZTSharp)](https://github.com/JKamsker/ZTSharp/issues)
+
 > **Warning**
 > This project is experimental. It has not been audited for security, optimized for performance,
 > or hardened for stability. Do not use it in production environments where any of these properties
