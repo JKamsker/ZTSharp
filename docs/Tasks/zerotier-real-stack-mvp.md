@@ -78,7 +78,7 @@ Status legend:
 - [x] Add/extend unit tests for the above.
 
 ## Milestone Z9 — NAT traversal (RENDEZVOUS) for `EXT_FRAME`
-- [ ] Implement `RENDEZVOUS` payload codec + unit tests.
+- [x] Implement `RENDEZVOUS` payload codec + unit tests.
 - [ ] Handle upstream root control packets (`RENDEZVOUS`, `ERROR`) in `ZtZeroTierIpv4Link` using the root key.
 - [ ] Use `RENDEZVOUS` hints to send UDP hole-punch and prefer direct peer endpoints for `EXT_FRAME`.
 - [ ] Manual verification: `libzt call --stack managed --network 9ad07d01093a69e3 --url http://10.121.15.99:5380/` returns an HTTP response (after network authorization).
