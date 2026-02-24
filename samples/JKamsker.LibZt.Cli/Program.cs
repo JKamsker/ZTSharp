@@ -684,6 +684,7 @@ static async Task RunExposeZeroTierAsync(
     ZtZeroTierTcpListener? listener = null;
     using var exposeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     var exposeToken = exposeCts.Token;
+    Task[]? acceptors = null;
 
     try
     {
@@ -709,28 +710,15 @@ static async Task RunExposeZeroTierAsync(
 
         Console.WriteLine($"Expose: http://{managedIp}:{listenPort}/ -> {targetHost}:{targetPort}");
 
-        while (!exposeToken.IsCancellationRequested)
-        {
-            Stream accepted;
-            try
-            {
-                accepted = await listener.AcceptAsync(exposeToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (exposeToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (ChannelClosedException)
-            {
-                break;
-            }
-            catch (ObjectDisposedException)
-            {
-                break;
-            }
+        var acceptorCount = Math.Clamp(Environment.ProcessorCount, 2, 8);
+        acceptors = new Task[acceptorCount];
 
-            await HandleExposeConnectionAsync(accepted, targetHost, targetPort, exposeToken).ConfigureAwait(false);
+        for (var i = 0; i < acceptors.Length; i++)
+        {
+            acceptors[i] = RunExposeAcceptorAsync(listener, targetHost, targetPort, exposeToken);
         }
+
+        await Task.WhenAll(acceptors).ConfigureAwait(false);
     }
     finally
     {
@@ -740,6 +728,17 @@ static async Task RunExposeZeroTierAsync(
         }
         catch (ObjectDisposedException)
         {
+        }
+
+        if (acceptors is not null)
+        {
+            try
+            {
+                await Task.WhenAll(acceptors).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (exposeToken.IsCancellationRequested)
+            {
+            }
         }
 
         if (listener is not null)
@@ -754,6 +753,51 @@ static async Task RunExposeZeroTierAsync(
         }
 
         await socket.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunExposeAcceptorAsync(
+    ZtZeroTierTcpListener listener,
+    string targetHost,
+    int targetPort,
+    CancellationToken cancellationToken)
+{
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        Stream accepted;
+        try
+        {
+            accepted = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            break;
+        }
+        catch (ChannelClosedException)
+        {
+            break;
+        }
+        catch (ObjectDisposedException)
+        {
+            break;
+        }
+
+        try
+        {
+            await HandleExposeConnectionAsync(accepted, targetHost, targetPort, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (SocketException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 }
 
