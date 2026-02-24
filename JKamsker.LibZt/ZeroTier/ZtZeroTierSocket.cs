@@ -339,6 +339,24 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                 sharedKey = await keyCache.GetSharedKeyAsync(remoteNodeId, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
             }
 
+            try
+            {
+                await ZtZeroTierHelloClient.HelloAsync(
+                        udp,
+                        _identity,
+                        _planet,
+                        destination: remoteNodeId,
+                        physicalDestination: helloOk.RootEndpoint,
+                        sharedKey: sharedKey,
+                        timeout: TimeSpan.FromSeconds(3),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // Best-effort. Some peers may still be reachable (and able to WHOIS our identity) even if OK(HELLO) is not received.
+            }
+
             var link = new ZtZeroTierIpv4Link(
                 udp,
                 relayEndpoint: helloOk.RootEndpoint,
