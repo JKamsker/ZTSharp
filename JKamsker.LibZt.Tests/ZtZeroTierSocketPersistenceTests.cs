@@ -50,5 +50,48 @@ public sealed class ZtZeroTierSocketPersistenceTests
             }
         }
     }
-}
 
+    [Fact]
+    public async Task CreateAsync_ImportsLibztIdentity_WhenPresent()
+    {
+        Assert.True(ZtZeroTierIdentity.TryParse(KnownGoodIdentity, out var identity));
+
+        var stateRoot = Path.Combine(Path.GetTempPath(), "zt-zero-tier-test-" + Guid.NewGuid());
+        Directory.CreateDirectory(stateRoot);
+
+        var networkId = 0x9ad07d01093a69e3UL;
+        var libztDir = Path.Combine(stateRoot, "libzt");
+        var importedIdentityPath = Path.Combine(stateRoot, "zerotier", "identity.bin");
+
+        try
+        {
+            Directory.CreateDirectory(libztDir);
+            File.WriteAllText(Path.Combine(libztDir, "identity.secret"), KnownGoodIdentity);
+
+            await using var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+            {
+                StateRootPath = stateRoot,
+                NetworkId = networkId
+            });
+
+            Assert.Equal(identity.NodeId, socket.NodeId);
+
+            Assert.True(ZtZeroTierIdentityStore.TryLoad(importedIdentityPath, out var persisted));
+            Assert.Equal(identity.NodeId, persisted.NodeId);
+            Assert.NotNull(persisted.PrivateKey);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(stateRoot, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+}

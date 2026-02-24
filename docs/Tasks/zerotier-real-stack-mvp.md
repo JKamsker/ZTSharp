@@ -68,7 +68,7 @@ Status legend:
 - [x] Print node id before join errors in the CLI (so the node can be authorized).
 
 ## Milestone Z8 — libzt parity for “dial by managed IP”
-- [ ] Import existing `libzt` state identity (`<state>/libzt/identity.secret`) into the managed identity store when present.
+- [x] Import existing `libzt` state identity (`<state>/libzt/identity.secret`) into the managed identity store when present.
 - [ ] Include inline COM in `MULTICAST_GATHER` requests and surface `ERROR(MULTICAST_GATHER)` as a meaningful exception.
 - [ ] Send `HELLO` to the remote peer before starting `EXT_FRAME` TCP traffic (introduce our identity).
 - [ ] Retransmit TCP SYN during `ConnectAsync` (avoid single-shot SYN and brittle 10s connect wait).

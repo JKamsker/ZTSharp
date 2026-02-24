@@ -68,8 +68,16 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         var identityPath = Path.Combine(statePath, "identity.bin");
         if (!ZtZeroTierIdentityStore.TryLoad(identityPath, out var identity))
         {
-            identity = ZtZeroTierIdentityGenerator.Generate(cancellationToken);
-            ZtZeroTierIdentityStore.Save(identityPath, identity);
+            if (!File.Exists(identityPath) &&
+                TryLoadLibztIdentity(options.StateRootPath, out identity))
+            {
+                ZtZeroTierIdentityStore.Save(identityPath, identity);
+            }
+            else
+            {
+                identity = ZtZeroTierIdentityGenerator.Generate(cancellationToken);
+                ZtZeroTierIdentityStore.Save(identityPath, identity);
+            }
         }
         else if (!identity.LocallyValidate())
         {
@@ -79,6 +87,44 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         var planet = ZtZeroTierPlanetLoader.Load(options, cancellationToken);
 
         return Task.FromResult(new ZtZeroTierSocket(options, statePath, identity, planet));
+    }
+
+    private static bool TryLoadLibztIdentity(string stateRootPath, out ZtZeroTierIdentity identity)
+    {
+        identity = default!;
+        ArgumentException.ThrowIfNullOrWhiteSpace(stateRootPath);
+
+        var libztSecretPath = Path.Combine(stateRootPath, "libzt", "identity.secret");
+        if (!File.Exists(libztSecretPath))
+        {
+            return false;
+        }
+
+        string text;
+        try
+        {
+            text = File.ReadAllText(libztSecretPath);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        if (!ZtZeroTierIdentity.TryParse(text, out identity))
+        {
+            return false;
+        }
+
+        if (identity.PrivateKey is null)
+        {
+            return false;
+        }
+
+        return identity.LocallyValidate();
     }
 
     public async Task JoinAsync(CancellationToken cancellationToken = default)
