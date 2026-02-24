@@ -102,6 +102,6 @@ Status legend:
 
 ## Milestone Z13 — OS ZeroTier client can connect inbound
 - [x] Add trace logs in `ZtZeroTierDataplaneRuntime` for first inbound packets (`LIBZT_ZEROTIER_TRACE=true`).
-- [ ] Handle peer `HELLO` and respond with `OK(HELLO)` in `ZtZeroTierDataplaneRuntime`.
+- [x] Handle peer `HELLO` and respond with `OK(HELLO)` in `ZtZeroTierDataplaneRuntime`.
 - [ ] Handle `RENDEZVOUS` (from root) and `PUSH_DIRECT_PATHS` (from peers) in `ZtZeroTierDataplaneRuntime` and send UDP hole punches.
 - [ ] Manual verification: from an OS ZeroTier client on `9ad07d01093a69e3`, `curl http://10.121.15.82:5380/` receives `ok`.
