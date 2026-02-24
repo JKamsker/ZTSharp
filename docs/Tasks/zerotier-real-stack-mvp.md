@@ -41,10 +41,15 @@ Status legend:
   - [x] Expose assigned IPs via `ZtZeroTierSocket.ManagedIps`.
 
 ## Milestone Z5 — Outbound TCP + HttpClient “just works”
-- [ ] Implement minimal user-space IPv4 + ARP + TCP active-open (client only).
-  - [ ] Add minimal IPv4 stack (routing + ICMP optional).
-  - [ ] Add TCP active-open (client) with streams.
+- [ ] Implement root-relayed dataplane (single-root MVP).
+  - [ ] Implement managed `MAC` + `MulticastGroup` primitives (address resolution groups).
+  - [ ] Resolve ZeroTier managed IPs to node ids via `MULTICAST_GATHER`.
+  - [ ] Implement `WHOIS` peer identity cache + C25519 shared keys.
+  - [ ] Implement `FRAME`/`EXT_FRAME` TX/RX for IPv4 payloads (include inline COM for MVP).
+- [ ] Implement minimal user-space IPv4 + TCP active-open (client only).
+  - [ ] Add IPv4 codec + checksum helpers.
+  - [ ] Add TCP codec + MSS option (small MSS to avoid ZT fragmentation).
+  - [ ] Add TCP active-open (client) with a `Stream` abstraction (basic retransmit).
 - [ ] Wire `ZtZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
-  - [ ] Resolve ZeroTier managed IPs to overlay peers using network config/ARP.
   - [ ] Implement `ConnectTcpAsync` to return a stream backed by user-space TCP.
 - [ ] Add opt-in E2E test (`LIBZT_RUN_ZEROTIER_E2E`) with env-configured NWID + URL.
