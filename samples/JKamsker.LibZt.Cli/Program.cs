@@ -1,6 +1,8 @@
+using System.Buffers;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Net;
+using System.Text;
 using System.Threading.Channels;
 using JKamsker.LibZt.Http;
 using JKamsker.LibZt;
@@ -23,6 +25,9 @@ try
     {
         case "join":
             await RunJoinAsync(commandArgs).ConfigureAwait(false);
+            break;
+        case "listen":
+            await RunListenAsync(commandArgs).ConfigureAwait(false);
             break;
         case "expose":
             await RunExposeAsync(commandArgs).ConfigureAwait(false);
@@ -53,6 +58,7 @@ static void PrintHelp()
         """
         Usage:
           libzt join --network <nwid> [options]
+          libzt listen <localPort> --network <nwid> [options]
           libzt expose <localPort> --network <nwid> [options]
           libzt call --network <nwid> --url <url> [options]
 
@@ -245,6 +251,306 @@ static async Task RunJoinZeroTierAsync(string statePath, ulong networkId, bool o
     {
         await socket.DisposeAsync().ConfigureAwait(false);
     }
+}
+
+static async Task RunListenAsync(string[] commandArgs)
+{
+    if (commandArgs.Length == 0 || commandArgs[0].StartsWith('-'))
+    {
+        throw new InvalidOperationException("Missing <localPort>.");
+    }
+
+    if (!int.TryParse(commandArgs[0], NumberStyles.None, CultureInfo.InvariantCulture, out var localPort) ||
+        localPort is < 1 or > ushort.MaxValue)
+    {
+        throw new InvalidOperationException("Invalid <localPort>.");
+    }
+
+    string? statePath = null;
+    string? networkText = null;
+    var stack = "managed";
+
+    for (var i = 1; i < commandArgs.Length; i++)
+    {
+        var arg = commandArgs[i];
+        switch (arg)
+        {
+            case "--state":
+                statePath = ReadOptionValue(commandArgs, ref i, "--state");
+                break;
+            case "--network":
+                networkText = ReadOptionValue(commandArgs, ref i, "--network");
+                break;
+            case "--stack":
+                stack = ReadOptionValue(commandArgs, ref i, "--stack");
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown option '{arg}'.");
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(networkText))
+    {
+        throw new InvalidOperationException("Missing --network <nwid>.");
+    }
+
+    statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+    var networkId = ParseNetworkId(networkText);
+    stack = NormalizeStack(stack);
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunListenZeroTierAsync(statePath, networkId, localPort, cts.Token).ConfigureAwait(false);
+        return;
+    }
+
+    throw new InvalidOperationException("Invalid --stack value (expected managed).");
+}
+
+static async Task RunListenZeroTierAsync(
+    string statePath,
+    ulong networkId,
+    int listenPort,
+    CancellationToken cancellationToken)
+{
+    if (listenPort is < 1 or > ushort.MaxValue)
+    {
+        throw new ArgumentOutOfRangeException(nameof(listenPort));
+    }
+
+    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    {
+        StateRootPath = statePath,
+        NetworkId = networkId
+    }, cancellationToken).ConfigureAwait(false);
+
+    ZtZeroTierTcpListener? listener = null;
+    using var listenCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    var listenToken = listenCts.Token;
+    Task[]? acceptors = null;
+
+    try
+    {
+        Console.WriteLine($"NodeId: {socket.NodeId}");
+
+        await socket.JoinAsync(listenToken).ConfigureAwait(false);
+        if (socket.ManagedIps.Count != 0)
+        {
+            Console.WriteLine("Managed IPs:");
+            foreach (var ip in socket.ManagedIps)
+            {
+                Console.WriteLine($"  {ip}");
+            }
+        }
+
+        var managedIp = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+        if (managedIp is null)
+        {
+            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+
+        listener = await socket.ListenTcpAsync(listenPort, listenToken).ConfigureAwait(false);
+
+        Console.WriteLine($"Listen: http://{managedIp}:{listenPort}/");
+
+        var acceptorCount = Math.Clamp(Environment.ProcessorCount, 2, 8);
+        acceptors = new Task[acceptorCount];
+
+        for (var i = 0; i < acceptors.Length; i++)
+        {
+            acceptors[i] = RunListenAcceptorAsync(listener, listenToken);
+        }
+
+        await Task.WhenAll(acceptors).ConfigureAwait(false);
+    }
+    finally
+    {
+        try
+        {
+            await listenCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        if (acceptors is not null)
+        {
+            try
+            {
+                await Task.WhenAll(acceptors).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (listenToken.IsCancellationRequested)
+            {
+            }
+        }
+
+        if (listener is not null)
+        {
+            try
+            {
+                await listener.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        await socket.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunListenAcceptorAsync(ZtZeroTierTcpListener listener, CancellationToken cancellationToken)
+{
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        Stream accepted;
+        try
+        {
+            accepted = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            break;
+        }
+        catch (ChannelClosedException)
+        {
+            break;
+        }
+        catch (ObjectDisposedException)
+        {
+            break;
+        }
+
+        try
+        {
+            await HandleListenConnectionAsync(accepted, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (SocketException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+}
+
+static async Task HandleListenConnectionAsync(Stream accepted, CancellationToken cancellationToken)
+{
+    var overlayStream = accepted;
+    try
+    {
+        var headers = await ReadHttpHeadersAsync(overlayStream, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(headers))
+        {
+            return;
+        }
+
+        var requestLine = headers;
+        var firstLineEnd = headers.IndexOf("\r\n", StringComparison.Ordinal);
+        if (firstLineEnd >= 0)
+        {
+            requestLine = headers.Substring(0, firstLineEnd);
+        }
+
+        Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] {requestLine}");
+        Console.WriteLine(headers);
+
+        await WriteHttpOkAsync(overlayStream, cancellationToken).ConfigureAwait(false);
+    }
+    finally
+    {
+        try
+        {
+            await overlayStream.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+}
+
+static async Task<string?> ReadHttpHeadersAsync(Stream stream, CancellationToken cancellationToken)
+{
+    const int maxBytes = 64 * 1024;
+    var rented = ArrayPool<byte>.Shared.Rent(maxBytes);
+    try
+    {
+        var total = 0;
+        while (total < maxBytes)
+        {
+            var read = await stream
+                .ReadAsync(rented.AsMemory(total, maxBytes - total), cancellationToken)
+                .ConfigureAwait(false);
+
+            if (read == 0)
+            {
+                return total == 0 ? null : Encoding.ASCII.GetString(rented, 0, total);
+            }
+
+            total += read;
+            var end = IndexOfHttpHeaderTerminator(rented.AsSpan(0, total));
+            if (end >= 0)
+            {
+                return Encoding.ASCII.GetString(rented, 0, end + 4);
+            }
+        }
+
+        return Encoding.ASCII.GetString(rented, 0, total);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+        return null;
+    }
+    finally
+    {
+        ArrayPool<byte>.Shared.Return(rented);
+    }
+}
+
+static int IndexOfHttpHeaderTerminator(ReadOnlySpan<byte> buffer)
+{
+    for (var i = 0; i <= buffer.Length - 4; i++)
+    {
+        if (buffer[i] == (byte)'\r' &&
+            buffer[i + 1] == (byte)'\n' &&
+            buffer[i + 2] == (byte)'\r' &&
+            buffer[i + 3] == (byte)'\n')
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static async Task WriteHttpOkAsync(Stream stream, CancellationToken cancellationToken)
+{
+    const string bodyText = "ok\n";
+    var body = Encoding.UTF8.GetBytes(bodyText);
+    var headerText =
+        "HTTP/1.1 200 OK\r\n" +
+        "Content-Type: text/plain; charset=utf-8\r\n" +
+        $"Content-Length: {body.Length}\r\n" +
+        "Connection: close\r\n" +
+        "\r\n";
+
+    var header = Encoding.ASCII.GetBytes(headerText);
+    await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
+    await stream.WriteAsync(body, cancellationToken).ConfigureAwait(false);
+    await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
 }
 
 static async Task RunCallAsync(string[] commandArgs)
