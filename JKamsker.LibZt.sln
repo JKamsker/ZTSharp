@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Samples.Demo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Benchmarks", "JKamsker.LibZt.Benchmarks\JKamsker.LibZt.Benchmarks.csproj", "{C4803008-FA85-4816-AD64-518C84750837}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Samples.ZeroTierSockets", "samples\JKamsker.LibZt.Samples.ZeroTierSockets\JKamsker.LibZt.Samples.ZeroTierSockets.csproj", "{95715DC6-E3E2-4280-AB9C-63B4F5851056}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -99,6 +101,18 @@ Global
 		{C4803008-FA85-4816-AD64-518C84750837}.Release|x64.Build.0 = Release|Any CPU
 		{C4803008-FA85-4816-AD64-518C84750837}.Release|x86.ActiveCfg = Release|Any CPU
 		{C4803008-FA85-4816-AD64-518C84750837}.Release|x86.Build.0 = Release|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Debug|x64.Build.0 = Debug|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Debug|x86.Build.0 = Debug|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Release|x64.ActiveCfg = Release|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Release|x64.Build.0 = Release|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Release|x86.ActiveCfg = Release|Any CPU
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -107,5 +121,6 @@ Global
 		{5F42012C-E634-4AB7-B59A-5D3285F62635} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{479C17D2-0665-4510-937D-6554E3F15092} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{9599644D-1129-4945-B806-9148624C079F} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{95715DC6-E3E2-4280-AB9C-63B4F5851056} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal

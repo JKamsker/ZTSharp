@@ -116,7 +116,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
   - UDP datagrams with `ReceiveFromAsync`/`SendToAsync`
   - explicit local bind + cancellation + timeouts
 - [x] Add a compatibility wrapper layer to ease porting from `System.Net.Sockets.Socket` / `ZeroTier.Sockets.Socket`-style code.
-- [ ] Add samples showing:
+- [x] Add samples showing:
   - TCP echo server/client
   - UDP request/response
   - `HttpClient` over managed TCP (already) + `SocketsHttpHandler.ConnectCallback` example
