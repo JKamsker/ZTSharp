@@ -183,6 +183,12 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         return client;
     }
 
+    public Sockets.ZtManagedSocket CreateSocket(
+        System.Net.Sockets.AddressFamily addressFamily,
+        System.Net.Sockets.SocketType socketType,
+        System.Net.Sockets.ProtocolType protocolType)
+        => new(this, addressFamily, socketType, protocolType);
+
     public async ValueTask<ZtZeroTierTcpListener> ListenTcpAsync(int port, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
