@@ -74,6 +74,7 @@ internal static class ZeroTierMulticastGatherClient
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
         ZeroTierPacketCrypto.Armor(packet, rootKey, encryptPayload: true);
+        var requestPacketId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
         await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -132,7 +133,7 @@ internal static class ZeroTierMulticastGatherClient
                 }
 
                 var errorInRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
-                if (errorInRePacketId != packetId)
+                if (errorInRePacketId != requestPacketId)
                 {
                     continue;
                 }
@@ -164,7 +165,7 @@ internal static class ZeroTierMulticastGatherClient
             }
 
             var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (inRePacketId != packetId)
+            if (inRePacketId != requestPacketId)
             {
                 continue;
             }

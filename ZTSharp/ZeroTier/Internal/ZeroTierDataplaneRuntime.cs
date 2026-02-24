@@ -1291,6 +1291,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
         ZeroTierPacketCrypto.Armor(packet, _rootKey, encryptPayload: true);
+        packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
 
         var tcs = new TaskCompletionSource<ZeroTierIdentity>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_pendingWhois.TryAdd(packetId, tcs))
@@ -1338,6 +1339,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
         ZeroTierPacketCrypto.Armor(packet, _rootKey, encryptPayload: true);
+        packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
 
         var tcs = new TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_pendingGather.TryAdd(packetId, tcs))

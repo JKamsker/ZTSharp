@@ -104,27 +104,46 @@ public sealed class ZeroTierPacketCryptoTests
         var payload = "test-payload"u8.ToArray();
         var plain = ZeroTierPacketCodec.Encode(header, payload);
 
-        var key = new byte[32];
-        RandomNumberGenerator.Fill(key);
+        // Encrypt + decrypt (Salsa20/12-Poly1305, 32-byte key)
+        var key32 = new byte[32];
+        RandomNumberGenerator.Fill(key32);
 
-        // Encrypt + decrypt
-        var encrypted = (byte[])plain.Clone();
-        ZeroTierPacketCrypto.Armor(encrypted, key, encryptPayload: true);
-        Assert.True(ZeroTierPacketCrypto.Dearmor(encrypted, key));
-        Assert.True(encrypted.AsSpan(27).SequenceEqual(plain.AsSpan(27)));
+        var encrypted32 = (byte[])plain.Clone();
+        ZeroTierPacketCrypto.Armor(encrypted32, key32, encryptPayload: true);
+        Assert.Equal(1, (encrypted32[18] & 0x38) >> 3);
+        Assert.True(ZeroTierPacketCrypto.Dearmor(encrypted32, key32));
+        Assert.True(encrypted32.AsSpan(27).SequenceEqual(plain.AsSpan(27)));
 
-        // MAC-only + verify
+        // Encrypt + decrypt (AES-GMAC-SIV, 48-byte key)
+        var key48 = new byte[48];
+        RandomNumberGenerator.Fill(key48);
+
+        var encrypted48 = (byte[])plain.Clone();
+        ZeroTierPacketCrypto.Armor(encrypted48, key48, encryptPayload: true);
+        Assert.Equal(3, (encrypted48[18] & 0x38) >> 3);
+        Assert.True(ZeroTierPacketCrypto.Dearmor(encrypted48, key48));
+        Assert.True(encrypted48.AsSpan(27).SequenceEqual(plain.AsSpan(27)));
+
+        // MAC-only + verify (cipher suite 0, key length doesn't matter beyond 32 bytes)
         var macOnly = (byte[])plain.Clone();
-        ZeroTierPacketCrypto.Armor(macOnly, key, encryptPayload: false);
-        Assert.True(ZeroTierPacketCrypto.Dearmor(macOnly, key));
+        ZeroTierPacketCrypto.Armor(macOnly, key48, encryptPayload: false);
+        Assert.Equal(0, (macOnly[18] & 0x38) >> 3);
+        Assert.True(ZeroTierPacketCrypto.Dearmor(macOnly, key48));
         Assert.True(macOnly.AsSpan(27).SequenceEqual(plain.AsSpan(27)));
 
-        // Wrong key fails
-        var wrongKey = new byte[32];
-        RandomNumberGenerator.Fill(wrongKey);
-        var shouldFail = (byte[])plain.Clone();
-        ZeroTierPacketCrypto.Armor(shouldFail, key, encryptPayload: true);
-        Assert.False(ZeroTierPacketCrypto.Dearmor(shouldFail, wrongKey));
+        // Wrong key fails (Salsa)
+        var wrongKey32 = new byte[32];
+        RandomNumberGenerator.Fill(wrongKey32);
+        var shouldFail32 = (byte[])plain.Clone();
+        ZeroTierPacketCrypto.Armor(shouldFail32, key32, encryptPayload: true);
+        Assert.False(ZeroTierPacketCrypto.Dearmor(shouldFail32, wrongKey32));
+
+        // Wrong key fails (AES-GMAC-SIV)
+        var wrongKey48 = new byte[48];
+        RandomNumberGenerator.Fill(wrongKey48);
+        var shouldFail48 = (byte[])plain.Clone();
+        ZeroTierPacketCrypto.Armor(shouldFail48, key48, encryptPayload: true);
+        Assert.False(ZeroTierPacketCrypto.Dearmor(shouldFail48, wrongKey48));
     }
 
     private static byte[] ComputePoly1305(ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)
@@ -137,4 +156,3 @@ public sealed class ZeroTierPacketCryptoTests
         return tag;
     }
 }
-

@@ -160,6 +160,7 @@ internal static class ZeroTierNetworkConfigClient
 
         var whoisPacket = ZeroTierPacketCodec.Encode(whoisHeader, whoisPayload);
         ZeroTierPacketCrypto.Armor(whoisPacket, rootKey, encryptPayload: true);
+        whoisPacketId = BinaryPrimitives.ReadUInt64BigEndian(whoisPacket.AsSpan(0, 8));
 
         await udp.SendAsync(rootEndpoint, whoisPacket, cancellationToken).ConfigureAwait(false);
 
@@ -256,6 +257,7 @@ internal static class ZeroTierNetworkConfigClient
 
         var reqPacket = ZeroTierPacketCodec.Encode(reqHeader, reqPayload);
         ZeroTierPacketCrypto.Armor(reqPacket, controllerKey, encryptPayload: true);
+        reqPacketId = BinaryPrimitives.ReadUInt64BigEndian(reqPacket.AsSpan(0, 8));
 
         await udp.SendAsync(rootEndpoint, reqPacket, cancellationToken).ConfigureAwait(false);
 
