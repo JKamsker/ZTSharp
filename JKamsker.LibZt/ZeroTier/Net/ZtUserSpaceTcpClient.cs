@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Security.Cryptography;
@@ -33,6 +34,9 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
     private long _receiveBufferedBytes;
     private ushort _lastAdvertisedWindow = ushort.MaxValue;
     private int _windowUpdatePending;
+    private double? _srttMs;
+    private double _rttvarMs;
+    private TimeSpan _rto = TimeSpan.FromSeconds(1);
     private bool _connected;
     private bool _remoteClosed;
     private bool _disposed;
@@ -215,7 +219,6 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
                 remaining = remaining.Slice(chunk.Length);
 
                 var expectedAck = unchecked(_sendNext + (uint)chunk.Length);
-                _ackTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
                 await SendTcpWithRetriesAsync(
                         seq: _sendNext,
@@ -537,29 +540,67 @@ internal sealed class ZtUserSpaceTcpClient : IAsyncDisposable
         uint expectedAck,
         CancellationToken cancellationToken)
     {
-        const int retries = 5;
-        var delay = TimeSpan.FromSeconds(2);
+        const int retries = 8;
+        var delay = _rto;
+        var maxDelay = TimeSpan.FromSeconds(30);
 
         for (var attempt = 0; attempt < retries; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            _ackTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var sentAt = Stopwatch.GetTimestamp();
             await SendTcpAsync(seq, ack, flags, options, payload, cancellationToken).ConfigureAwait(false);
 
             try
             {
-                await _ackTcs!.Task.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
+                await _ackTcs.Task.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
                 if (SequenceGreaterThanOrEqual(_sendUna, expectedAck))
                 {
+                    if (attempt == 0)
+                    {
+                        UpdateRto(Stopwatch.GetElapsedTime(sentAt));
+                    }
+
                     return;
                 }
             }
             catch (TimeoutException)
             {
+                delay = delay < maxDelay ? delay + delay : maxDelay;
+                _rto = delay;
             }
         }
 
-        throw new IOException("TCP send timed out waiting for ACK.");
+        throw new IOException($"TCP send timed out waiting for ACK after {retries} attempts.");
+    }
+
+    private void UpdateRto(TimeSpan rtt)
+    {
+        var r = rtt.TotalMilliseconds;
+        if (r <= 0 || double.IsNaN(r) || double.IsInfinity(r))
+        {
+            return;
+        }
+
+        const double alpha = 1.0 / 8.0;
+        const double beta = 1.0 / 4.0;
+
+        if (_srttMs is null)
+        {
+            _srttMs = r;
+            _rttvarMs = r / 2.0;
+        }
+        else
+        {
+            var srtt = _srttMs.Value;
+            _rttvarMs = (1.0 - beta) * _rttvarMs + beta * Math.Abs(srtt - r);
+            _srttMs = (1.0 - alpha) * srtt + alpha * r;
+        }
+
+        var rtoMs = _srttMs.Value + Math.Max(1.0, 4.0 * _rttvarMs);
+        rtoMs = Math.Clamp(rtoMs, 200.0, 60_000.0);
+        _rto = TimeSpan.FromMilliseconds(rtoMs);
     }
 
     private async Task SendTcpAsync(
