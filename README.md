@@ -4,9 +4,10 @@ This repo contains `JKamsker.LibZt`: a fully managed (.NET 10) library with two 
 
 `JKamsker.LibZt` provides:
 
-- **Real ZeroTier stack (managed-only MVP)** (`JKamsker.LibZt.ZeroTier`)
+- **Real ZeroTier stack (managed-only)** (`JKamsker.LibZt.ZeroTier`)
   - Join existing controller-based ZeroTier networks (normal NWIDs) without installing the OS ZeroTier client.
-  - Dial outbound IPv4 TCP to peers by ZeroTier-managed IP via `HttpClient`.
+  - User-space TCP/UDP sockets to peers by ZeroTier-managed IP (IPv4/IPv6), including listeners.
+  - `HttpClient` support via `ZtZeroTierHttpMessageHandler` or `SocketsHttpHandler.ConnectCallback`.
 - **Managed overlay stack (legacy/experimentation)** (`ZtNode`, `ZtUdpClient`, `ZtOverlayTcpClient`, `InMemory`/`OsUdp`)
   - Managed nodes talk to each other using this library's transports (not protocol-compatible with the real ZeroTier network).
 
@@ -57,5 +58,6 @@ dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.cs
 - `docs/BENCHMARKS.md` – running BenchmarkDotNet benchmarks
 - `docs/AOT.md` – AOT/trimming notes
 - `docs/COMPATIBILITY.md` – tracked gaps vs upstream `libzt`
-- `docs/ZEROTIER_STACK.md` – real ZeroTier stack MVP notes
+- `docs/ZEROTIER_STACK.md` – real ZeroTier stack notes
+- `docs/ZEROTIER_SOCKETS.md` – managed socket-like API + OS socket differences
 - `THIRD_PARTY_NOTICES.md` – dependency/license pointers

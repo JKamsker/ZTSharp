@@ -120,4 +120,4 @@ These are “human runnable” smoke tests; automated variants live in the test 
   - TCP echo server/client
   - UDP request/response
   - `HttpClient` over managed TCP (already) + `SocketsHttpHandler.ConnectCallback` example
-- [ ] Document supported subset + known differences vs OS sockets.
+- [x] Document supported subset + known differences vs OS sockets.

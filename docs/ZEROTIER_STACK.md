@@ -1,4 +1,4 @@
-# Real ZeroTier stack (managed-only MVP)
+# Real ZeroTier stack (managed-only)
 
 This repo contains two networking stacks:
 
@@ -24,18 +24,21 @@ var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 
 ## Status
 
-MVP supports outbound IPv4 TCP connections to peers by their ZeroTier-managed IP, using a pure managed stack.
+Managed stack supports:
 
-Right now:
-
-- `ZtZeroTierSocket.JoinAsync()` joins a real network and persists assigned managed IPs.
-- `ZtZeroTierSocket.ConnectTcpAsync(...)` can dial `http://<zt-ip>:<port>` through `HttpClient` (via `ZtZeroTierHttpMessageHandler`).
+- Joining a real network (`ZtZeroTierSocket.JoinAsync()`), persisting assigned managed IPs (IPv4 + optional IPv6).
+- Outbound TCP (`ZtZeroTierSocket.ConnectTcpAsync(...)`) and `HttpClient` support (via `ZtZeroTierHttpMessageHandler` or `SocketsHttpHandler.ConnectCallback`).
+- TCP listeners (`ZtZeroTierSocket.ListenTcpAsync(...)`) that OS ZeroTier clients can connect to using managed IPv4/IPv6.
+- UDP bind/send/receive (`ZtZeroTierSocket.BindUdpAsync(...)` / `ZtZeroTierUdpSocket`).
 
 Current limitations:
 
-- Outbound client-only (no listeners/port forwards yet).
-- IPv4 only.
-- Uses a single upstream root as a relay for simplicity (no direct path negotiation yet).
+- **No OS adapter**: traffic is only visible to in-process callers using these APIs.
+- **Dataplane path selection is minimal**: no full peer path negotiation / NAT traversal yet (root-relayed for simplicity).
+- **Socket feature parity is incomplete**: no OS socket options (`NoDelay`, `KeepAlive`, `Poll`, etc.) and limited endpoint metadata for accepted sockets.
+- **Performance is not OS-parity**: the user-space TCP stack is correctness-oriented and may be significantly slower for large transfers.
+
+See `docs/ZEROTIER_SOCKETS.md` for the managed socket-like API surface and known differences vs OS sockets.
 
 ## CLI
 
@@ -45,4 +48,4 @@ The CLI accepts:
 - `--stack overlay` (legacy managed overlay stack; needed for `expose` and the tunnel demo)
 - `--stack zerotier` / `--stack libzt` (aliases for `managed`)
 
-MVP supports outbound `call` for the real ZeroTier stack (`managed`).
+Managed stack supports `call`, `listen`, `udp-listen`, and `udp-send`.

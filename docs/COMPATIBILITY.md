@@ -2,16 +2,16 @@
 
 This repo contains two networking stacks:
 
-- **Real ZeroTier stack (managed-only MVP)** (`JKamsker.LibZt.ZeroTier`): speaks enough of the real ZeroTier protocol to join existing controller-based networks (normal NWIDs) and dial outbound IPv4 TCP to peers by their ZeroTier-managed IP.
+- **Real ZeroTier stack (managed-only)** (`JKamsker.LibZt.ZeroTier`): speaks enough of the real ZeroTier protocol to join existing controller-based networks (normal NWIDs) and provide user-space TCP/UDP sockets over ZeroTier-managed IPs (IPv4/IPv6).
 - **Legacy managed overlay stack** (`JKamsker.LibZt`): managed nodes communicate over this library's transports (`InMemory`/`OsUdp`). This is *not* protocol-compatible with the real ZeroTier network.
 
 ## Real ZeroTier stack gaps (vs upstream `libzt`)
 
-- Outbound client-only (no listeners/port forwards yet).
-- IPv4 only.
-- Root-relayed dataplane only (no direct path negotiation / NAT traversal yet).
-- Limited verb/feature coverage (focused on join + outbound TCP MVP).
 - No OS-level virtual network adapter (traffic is handled in user space via `Stream`/`HttpClient`).
+- Root-relayed dataplane only (no full direct path negotiation / NAT traversal yet).
+- Limited verb/feature coverage (focused on join + IP dataplane + TCP/UDP sockets MVP).
+- Limited socket option/metadata parity (e.g., no `SocketOptionName` support; accepted connections don't currently expose a reliable `RemoteEndPoint`).
+- TCP performance/behavior is not OS-parity yet (no congestion control / high-throughput send pipelines).
 
 ## Legacy managed overlay stack gaps (non-exhaustive)
 

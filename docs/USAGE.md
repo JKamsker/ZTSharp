@@ -106,7 +106,7 @@ For `OsUdp` you can optionally pre-register peers explicitly:
 await node.AddPeerAsync(networkId, peerNodeId, peerUdpEndpoint);
 ```
 
-## Real ZeroTier stack (managed-only MVP)
+## Real ZeroTier stack (managed-only)
 
 Use `JKamsker.LibZt.ZeroTier` to join a real ZeroTier network (normal NWIDs) without installing the OS ZeroTier client:
 
@@ -124,6 +124,8 @@ var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 ```
 
 Notes:
-- MVP is outbound TCP client only and IPv4 only.
+- Supports TCP connect/listen and UDP sockets in-process (no OS adapter).
+- Supports IPv4 and IPv6 (if the network assigns IPv6 managed IPs).
 - The `ZtNode` / overlay APIs above are a separate legacy stack and are not protocol-compatible with the real ZeroTier network.
-- See `docs/ZEROTIER_STACK.md` for current limitations.
+- See `docs/ZEROTIER_STACK.md` and `docs/ZEROTIER_SOCKETS.md` for current limitations and the socket-like API surface.
+- Runnable sample: `samples/JKamsker.LibZt.Samples.ZeroTierSockets`
