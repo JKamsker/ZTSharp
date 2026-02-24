@@ -56,6 +56,48 @@ public sealed class ZtZeroTierHelloClientTests
         await serverTask;
     }
 
+    [Fact]
+    public async Task HelloAsync_SendsHello_AndCompletesOnOk()
+    {
+        Assert.True(ZtZeroTierIdentity.TryParse(KnownGoodIdentity, out var localIdentity));
+        Assert.NotNull(localIdentity.PrivateKey);
+
+        var remoteIdentity = new ZtZeroTierIdentity(
+            new ZtNodeId(0x1122334455),
+            (byte[])localIdentity.PublicKey.Clone(),
+            (byte[])localIdentity.PrivateKey.Clone());
+
+        await using var remoteUdp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+        var remoteEndpoint = remoteUdp.LocalEndpoint;
+
+        await using var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+
+        var planet = new ZtZeroTierWorld(
+            ZtZeroTierWorldType.Planet,
+            id: 1,
+            timestamp: 1,
+            updatesMustBeSignedBy: new byte[ZtZeroTierWorld.C25519PublicKeyLength],
+            signature: new byte[ZtZeroTierWorld.C25519SignatureLength],
+            roots: Array.Empty<ZtZeroTierWorldRoot>());
+
+        var sharedKey = new byte[48];
+        ZtZeroTierC25519.Agree(localIdentity.PrivateKey!, remoteIdentity.PublicKey, sharedKey);
+
+        var serverTask = RunHelloServerOnceAsync(remoteUdp, remoteIdentity, localIdentity);
+
+        await ZtZeroTierHelloClient.HelloAsync(
+            udp,
+            localIdentity,
+            planet,
+            destination: remoteIdentity.NodeId,
+            physicalDestination: remoteEndpoint,
+            sharedKey: sharedKey,
+            timeout: TimeSpan.FromSeconds(2),
+            cancellationToken: CancellationToken.None);
+
+        await serverTask;
+    }
+
     private static async Task RunHelloServerOnceAsync(
         ZtZeroTierUdpTransport transport,
         ZtZeroTierIdentity rootIdentity,
@@ -97,9 +139,8 @@ public sealed class ZtZeroTierHelloClientTests
             VerbRaw: (byte)ZtZeroTierVerb.Ok);
 
         var okPacket = ZtZeroTierPacketCodec.Encode(okHeader, okPayload);
-        ZtZeroTierPacketCrypto.Armor(okPacket, sharedKey, encryptPayload: false);
+        ZtZeroTierPacketCrypto.Armor(okPacket, sharedKey, encryptPayload: true);
 
         await transport.SendAsync(helloDatagram.RemoteEndPoint, okPacket).ConfigureAwait(false);
     }
 }
-
