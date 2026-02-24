@@ -84,6 +84,6 @@ Status legend:
 - [x] Use direct endpoint hints to send UDP hole-punch and prefer direct peer endpoints for `EXT_FRAME`.
 
 ## Milestone Z10 — Address resolution (ARP/multicast) for inbound traffic
-- [ ] Implement `MULTICAST_LIKE` and subscribe to our address-resolution group (so other peers can ARP for our managed IP).
-- [ ] Parse `MULTICAST_FRAME` and respond to inbound ARP requests for our managed IP.
-- [ ] Manual verification: `libzt call --stack managed --network 9ad07d01093a69e3 --url http://10.121.15.99:5380/` returns an HTTP response (after network authorization).
+- [x] Implement `MULTICAST_LIKE` and subscribe to our address-resolution group (so other peers can ARP for our managed IP).
+- [x] Parse `MULTICAST_FRAME` and respond to inbound ARP requests for our managed IP.
+- [x] Manual verification: `libzt call --stack managed --network 9ad07d01093a69e3 --url http://10.121.15.99:5380/` returns an HTTP response (after network authorization).
