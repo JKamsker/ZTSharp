@@ -89,8 +89,8 @@ Status legend:
 - [x] Manual verification: `libzt call --stack managed --network 9ad07d01093a69e3 --url http://10.121.15.99:5380/` returns an HTTP response (after network authorization).
 
 ## Milestone Z11 — Listening sockets (TCP passive-open)
-- [ ] Add a long-lived managed dataplane runtime (single UDP socket) that can RX/TX `EXT_FRAME` for multiple peers.
-- [ ] Implement TCP passive-open (listen/accept) on top of the user-space IPv4/TCP stack.
-- [ ] Expose a public API (`ZtZeroTierSocket.ListenTcpAsync` + `AcceptAsync`) that returns a `Stream`.
-- [ ] Update CLI `expose` to support `--stack managed` using the new listener.
+- [x] Add a long-lived managed dataplane runtime (single UDP socket) that can RX/TX `EXT_FRAME` for multiple peers.
+- [x] Implement TCP passive-open (listen/accept) on top of the user-space IPv4/TCP stack.
+- [x] Expose a public API (`ZtZeroTierSocket.ListenTcpAsync` + `AcceptAsync`) that returns a `Stream`.
+- [x] Update CLI `expose` to support `--stack managed` using the new listener.
 - [ ] Manual verification: start `libzt expose --stack managed` and connect from another ZeroTier network participant to `http://<managed-ip>:<port>/`.
