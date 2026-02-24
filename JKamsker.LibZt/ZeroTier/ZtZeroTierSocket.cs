@@ -298,6 +298,21 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             throw new InvalidOperationException("Network config does not contain a certificate of membership (key 'C').");
         }
 
+        if (!ZtZeroTierCertificateOfMembershipCodec.TryGetSerializedLength(comBytes, out var comLen))
+        {
+            throw new InvalidOperationException("Network config contains an invalid certificate of membership (key 'C').");
+        }
+
+        if (comLen != comBytes.Length)
+        {
+            if (ZtZeroTierTrace.Enabled)
+            {
+                ZtZeroTierTrace.WriteLine($"[zerotier] COM length mismatch: dictionary value has {comBytes.Length} bytes, certificate is {comLen} bytes. Truncating inline COM.");
+            }
+
+            comBytes = comBytes.AsSpan(0, comLen).ToArray();
+        }
+
             var udp = new ZtZeroTierUdpTransport(localPort: 0, enableIpv6: true);
             try
             {
@@ -324,13 +339,32 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     ZtZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
                 }
 
+                try
+                {
+                    await ZtZeroTierMulticastLikeClient
+                        .SendAsync(
+                            udp,
+                            helloOk.RootNodeId,
+                            helloOk.RootEndpoint,
+                            rootKey,
+                            _identity.NodeId,
+                            _options.NetworkId,
+                            groups: [ZtZeroTierMulticastGroup.DeriveForAddressResolution(localAddress)],
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (System.Net.Sockets.SocketException)
+                {
+                    // Best-effort. Some environments restrict certain outbound paths (IPv6, captive portals, etc.).
+                }
+
                 var group = ZtZeroTierMulticastGroup.DeriveForAddressResolution(remote.Address);
-                var (_, members) = await ZtZeroTierMulticastGatherClient
+                var (totalKnown, members) = await ZtZeroTierMulticastGatherClient
                     .GatherAsync(
                         udp,
-                    helloOk.RootNodeId,
-                    helloOk.RootEndpoint,
-                    rootKey,
+                        helloOk.RootNodeId,
+                        helloOk.RootEndpoint,
+                        rootKey,
                     _identity.NodeId,
                     _options.NetworkId,
                     group,
@@ -346,6 +380,12 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             }
 
             var remoteNodeId = members[0];
+            if (ZtZeroTierTrace.Enabled)
+            {
+                var list = string.Join(", ", members.Take(8).Select(member => member.ToString()));
+                var suffix = members.Length > 8 ? ", ..." : string.Empty;
+                ZtZeroTierTrace.WriteLine($"[zerotier] Resolve {remote.Address} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {helloOk.RootNodeId} via {helloOk.RootEndpoint}).");
+            }
 
             byte[] sharedKey;
             using (var keyCache = new ZtZeroTierPeerKeyCache(udp, helloOk.RootNodeId, helloOk.RootEndpoint, rootKey, _identity))
@@ -369,14 +409,21 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
             catch (TimeoutException)
             {
                 // Best-effort. Some peers may still be reachable (and able to WHOIS our identity) even if OK(HELLO) is not received.
+                if (ZtZeroTierTrace.Enabled)
+                {
+                    ZtZeroTierTrace.WriteLine($"[zerotier] HELLO to {remoteNodeId} timed out (best-effort).");
+                }
             }
 
             var link = new ZtZeroTierIpv4Link(
                 udp,
                 relayEndpoint: helloOk.RootEndpoint,
+                rootNodeId: helloOk.RootNodeId,
+                rootKey: rootKey,
                 localNodeId: _identity.NodeId,
                 remoteNodeId,
                 _options.NetworkId,
+                localManagedIp: localAddress,
                 comBytes,
                 sharedKey);
 

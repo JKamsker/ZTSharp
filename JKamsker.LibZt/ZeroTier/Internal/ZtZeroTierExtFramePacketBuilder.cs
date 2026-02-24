@@ -15,9 +15,10 @@ internal static class ZtZeroTierExtFramePacketBuilder
         ReadOnlySpan<byte> ipv4Packet,
         ReadOnlySpan<byte> sharedKey)
     {
+        var extFrameFlags = (byte)(0x01 | (ZtZeroTierTrace.Enabled ? 0x10 : 0x00));
         var payload = ZtZeroTierFrameCodec.EncodeExtFramePayload(
             networkId,
-            flags: 0x01,
+            flags: extFrameFlags,
             inlineCom: inlineCom,
             to,
             from,
@@ -37,4 +38,3 @@ internal static class ZtZeroTierExtFramePacketBuilder
         return packet;
     }
 }
-
