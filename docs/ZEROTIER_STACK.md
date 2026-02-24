@@ -1,11 +1,11 @@
-# Real ZeroTier stack (managed-only) — WIP
+# Real ZeroTier stack (managed-only MVP)
 
-This repo currently contains two networking stacks:
+This repo contains two networking stacks:
 
-- **Managed overlay stack** (`JKamsker.LibZt`): managed nodes talk to each other using this library's transport (`InMemory`/`OsUdp`). This is **not** protocol-compatible with the real ZeroTier network.
-- **Real ZeroTier stack** (`JKamsker.LibZt.ZeroTier`): planned managed-only implementation that can join existing ZeroTier networks (normal NWIDs) without installing the OS ZeroTier client and without native binaries.
+- **Legacy managed overlay stack** (`JKamsker.LibZt`): managed nodes talk to each other using this library's transport (`InMemory`/`OsUdp`). This is **not** protocol-compatible with the real ZeroTier network.
+- **Real ZeroTier stack** (`JKamsker.LibZt.ZeroTier`): managed-only implementation that can join existing controller-based ZeroTier networks (normal NWIDs) without installing the OS ZeroTier client and without native binaries.
 
-## Intended usage (MVP target)
+## Usage
 
 Join an existing network and issue an HTTP request to a peer by its ZeroTier-managed IP:
 
@@ -41,8 +41,8 @@ Current limitations:
 
 The CLI accepts:
 
-- `--stack managed` (current working managed overlay stack)
-- `--stack zerotier` (WIP real ZeroTier stack)
-- `--stack libzt` (alias for `zerotier`)
+- `--stack managed` (real ZeroTier stack)
+- `--stack overlay` (legacy managed overlay stack; needed for `expose` and the tunnel demo)
+- `--stack zerotier` / `--stack libzt` (aliases for `managed`)
 
-MVP is expected to support outbound `call` for the `zerotier` stack.
+MVP supports outbound `call` for the real ZeroTier stack (`managed`).

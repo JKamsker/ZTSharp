@@ -1,15 +1,16 @@
 # JKamsker.LibZt
 
-This repo contains `JKamsker.LibZt`: a fully managed (.NET 10) experimentation-focused replacement *surface* for `libzt` (not protocol-compatible with ZeroTier today).
+This repo contains `JKamsker.LibZt`: a fully managed (.NET 10) library with two networking stacks:
 
 `JKamsker.LibZt` provides:
 
-- `ZtNode` for identity + network membership
-- `ZtUdpClient` for UDP-like datagrams over the node-to-node transport
-- `InMemory` transport for deterministic/offline tests
-- `OsUdp` transport for real UDP packet exchange between managed nodes
+- **Real ZeroTier stack (managed-only MVP)** (`JKamsker.LibZt.ZeroTier`)
+  - Join existing controller-based ZeroTier networks (normal NWIDs) without installing the OS ZeroTier client.
+  - Dial outbound IPv4 TCP to peers by ZeroTier-managed IP via `HttpClient`.
+- **Managed overlay stack (legacy/experimentation)** (`ZtNode`, `ZtUdpClient`, `ZtOverlayTcpClient`, `InMemory`/`OsUdp`)
+  - Managed nodes talk to each other using this library's transports (not protocol-compatible with the real ZeroTier network).
 
-This repo currently **does not implement the upstream ZeroTier protocol stack** (planet/roots processing, crypto handshakes, virtual NIC / lwIP parity, etc.) for the managed stack. The `ztnet` integration is used as an external validation harness for network lifecycle operations and for E2E smoke tests.
+See `docs/ZEROTIER_STACK.md` for the current real ZeroTier MVP scope and limitations.
 
 ## Quick start
 
@@ -19,11 +20,20 @@ Run the unit tests:
 dotnet test -c Release
 ```
 
-Run the `ztnet` E2E test (requires working `ztnet` auth/session):
+Run the `ztnet` E2E test (managed overlay stack; requires working `ztnet` auth/session):
 
 ```powershell
 $env:LIBZT_RUN_E2E="true"
 dotnet test -c Release --filter "FullyQualifiedName~Ztnet_NetworkCreate_SpawnTwoClients_And_Communicate_E2E"
+```
+
+Run the real ZeroTier E2E test (managed-only; requires a configured NWID + reachable URL inside that network):
+
+```powershell
+$env:LIBZT_RUN_ZEROTIER_E2E="1"
+$env:LIBZT_ZEROTIER_NWID="9ad07d01093a69e3"
+$env:LIBZT_ZEROTIER_URL="http://10.121.15.99:5380/"
+dotnet test -c Release --filter "FullyQualifiedName~ZeroTier_JoinAndHttpGet_E2E"
 ```
 
 Run the sample that creates a network and performs a ping/pong between two managed nodes:
@@ -47,4 +57,5 @@ dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.cs
 - `docs/BENCHMARKS.md` – running BenchmarkDotNet benchmarks
 - `docs/AOT.md` – AOT/trimming notes
 - `docs/COMPATIBILITY.md` – tracked gaps vs upstream `libzt`
+- `docs/ZEROTIER_STACK.md` – real ZeroTier stack MVP notes
 - `THIRD_PARTY_NOTICES.md` – dependency/license pointers

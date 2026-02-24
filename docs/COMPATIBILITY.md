@@ -1,20 +1,25 @@
 # Compatibility gaps vs upstream `libzt`
 
-This repo contains:
+This repo contains two networking stacks:
 
-- A managed re-implementation of parts of the `libzt` *API surface* (`JKamsker.LibZt`) and a managed transport for deterministic testing/experiments.
+- **Real ZeroTier stack (managed-only MVP)** (`JKamsker.LibZt.ZeroTier`): speaks enough of the real ZeroTier protocol to join existing controller-based networks (normal NWIDs) and dial outbound IPv4 TCP to peers by their ZeroTier-managed IP.
+- **Legacy managed overlay stack** (`JKamsker.LibZt`): managed nodes communicate over this library's transports (`InMemory`/`OsUdp`). This is *not* protocol-compatible with the real ZeroTier network.
 
-The managed stack is **not** a protocol-compatible replacement for ZeroTier / `libzt` today.
+## Real ZeroTier stack gaps (vs upstream `libzt`)
 
-## Managed stack gaps (non-exhaustive)
+- Outbound client-only (no listeners/port forwards yet).
+- IPv4 only.
+- Root-relayed dataplane only (no direct path negotiation / NAT traversal yet).
+- Limited verb/feature coverage (focused on join + outbound TCP MVP).
+- No OS-level virtual network adapter (traffic is handled in user space via `Stream`/`HttpClient`).
 
-- ZeroTier protocol compatibility (wire format, crypto, packet verbs, paths, NAT traversal).
-- Planet/roots processing and controller interaction.
-- Virtual network interface / lwIP parity (no TUN/TAP device plumbing).
-- IP assignment, routes, multicast rules, flow rules, DNS config propagation.
-- Membership authorization enforcement (membership is not validated against controllers).
+## Legacy managed overlay stack gaps (non-exhaustive)
 
-## Managed stack implemented / partially implemented
+- Not protocol-compatible with the real ZeroTier network (wire format/crypto/verbs/paths/NAT traversal).
+- No planet/roots processing or controller interaction.
+- No OS virtual network interface / TUN/TAP plumbing.
+
+## Legacy managed overlay stack implemented / partially implemented
 
 - Deterministic identity persistence (`identity.secret` / `identity.public`) with a 40-bit node id.
 - Network membership tracking (`networks.d/*.conf`).

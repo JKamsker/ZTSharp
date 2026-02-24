@@ -106,6 +106,24 @@ For `OsUdp` you can optionally pre-register peers explicitly:
 await node.AddPeerAsync(networkId, peerNodeId, peerUdpEndpoint);
 ```
 
-## Real ZeroTier compatibility
+## Real ZeroTier stack (managed-only MVP)
 
-This library is currently a managed overlay transport and does not implement the upstream ZeroTier protocol stack. Joining real ZeroTier networks (via native `libzt`) is intentionally not supported in this repo.
+Use `JKamsker.LibZt.ZeroTier` to join a real ZeroTier network (normal NWIDs) without installing the OS ZeroTier client:
+
+```csharp
+using JKamsker.LibZt.ZeroTier;
+
+await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+{
+    StateRootPath = "path/to/state",
+    NetworkId = 0x9ad07d01093a69e3UL
+});
+
+using var http = zt.CreateHttpClient();
+var body = await http.GetStringAsync("http://10.121.15.99:5380/");
+```
+
+Notes:
+- MVP is outbound TCP client only and IPv4 only.
+- The `ZtNode` / overlay APIs above are a separate legacy stack and are not protocol-compatible with the real ZeroTier network.
+- See `docs/ZEROTIER_STACK.md` for current limitations.

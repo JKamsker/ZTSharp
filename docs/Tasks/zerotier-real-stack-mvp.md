@@ -58,4 +58,4 @@ Status legend:
 - [x] Make CLI `--stack managed` use the real ZeroTier managed stack; add `--stack overlay` for the legacy managed overlay stack (keep `zerotier`/`libzt` as aliases for `managed`).
 - [x] Update tunnel demo + ztnet scripts/docs to pass `--stack overlay` where they rely on the legacy overlay stack.
 - [x] Implement `join --stack managed` (one-shot join + print node id + assigned managed IPs).
-- [ ] Update docs (`README.md`, `docs/USAGE.md`, `docs/COMPATIBILITY.md`, `docs/E2E.md`, `docs/ZEROTIER_STACK.md`) to reflect the real ZeroTier stack MVP.
+- [x] Update docs (`README.md`, `docs/USAGE.md`, `docs/COMPATIBILITY.md`, `docs/E2E.md`, `docs/ZEROTIER_STACK.md`) to reflect the real ZeroTier stack MVP.
