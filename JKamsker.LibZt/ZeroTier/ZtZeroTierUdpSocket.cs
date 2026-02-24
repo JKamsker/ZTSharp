@@ -4,13 +4,14 @@ using System.Security.Cryptography;
 using System.Threading.Channels;
 using JKamsker.LibZt.ZeroTier.Internal;
 using JKamsker.LibZt.ZeroTier.Net;
+using JKamsker.LibZt.ZeroTier.Protocol;
 
 namespace JKamsker.LibZt.ZeroTier;
 
 public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
 {
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
-    private readonly Channel<ZtZeroTierRoutedIpv4Packet> _incoming = Channel.CreateUnbounded<ZtZeroTierRoutedIpv4Packet>();
+    private readonly Channel<ZtZeroTierRoutedIpPacket> _incoming = Channel.CreateUnbounded<ZtZeroTierRoutedIpPacket>();
     private readonly ZtZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
@@ -21,9 +22,10 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(localAddress);
 
-        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
         {
-            throw new NotSupportedException("Only IPv4 is supported in the UDP MVP.");
+            throw new NotSupportedException("Only IPv4 and IPv6 are supported.");
         }
 
         if (localPort == 0)
@@ -35,9 +37,9 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
         _localAddress = localAddress;
         _localPort = localPort;
 
-        if (!_runtime.TryRegisterUdpPort(localPort, _incoming.Writer))
+        if (!_runtime.TryRegisterUdpPort(localAddress.AddressFamily, localPort, _incoming.Writer))
         {
-            throw new InvalidOperationException($"A UDP socket is already bound to port {localPort}.");
+            throw new InvalidOperationException($"A UDP socket is already bound to {localAddress.AddressFamily} port {localPort}.");
         }
     }
 
@@ -57,9 +59,9 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(remoteEndPoint), remoteEndPoint.Port, "Remote port must be between 1 and 65535.");
         }
 
-        if (remoteEndPoint.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (remoteEndPoint.Address.AddressFamily != _localAddress.AddressFamily)
         {
-            throw new NotSupportedException("Only IPv4 is supported in the UDP MVP.");
+            throw new NotSupportedException("Remote address family must match the local binding.");
         }
 
         var remoteNodeId = await _runtime.ResolveNodeIdAsync(remoteEndPoint.Address, cancellationToken).ConfigureAwait(false);
@@ -71,14 +73,29 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
             destinationPort: (ushort)remoteEndPoint.Port,
             buffer.Span);
 
-        var ip = ZtIpv4Codec.Encode(
-            _localAddress,
-            remoteEndPoint.Address,
-            protocol: ZtUdpCodec.ProtocolNumber,
-            payload: udp,
-            identification: GenerateIpIdentification());
+        if (_localAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var ip = ZtIpv4Codec.Encode(
+                _localAddress,
+                remoteEndPoint.Address,
+                protocol: ZtUdpCodec.ProtocolNumber,
+                payload: udp,
+                identification: GenerateIpIdentification());
 
-        await _runtime.SendIpv4Async(remoteNodeId, ip, cancellationToken).ConfigureAwait(false);
+            await _runtime.SendIpv4Async(remoteNodeId, ip, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            var ip = ZtIpv6Codec.Encode(
+                _localAddress,
+                remoteEndPoint.Address,
+                nextHeader: ZtUdpCodec.ProtocolNumber,
+                udp,
+                hopLimit: 64);
+
+            await _runtime.SendEthernetFrameAsync(remoteNodeId, ZtZeroTierFrameCodec.EtherTypeIpv6, ip, cancellationToken).ConfigureAwait(false);
+        }
+
         return buffer.Length;
     }
 
@@ -91,7 +108,7 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
 
         while (true)
         {
-            ZtZeroTierRoutedIpv4Packet routed;
+            ZtZeroTierRoutedIpPacket routed;
             try
             {
                 routed = await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -101,17 +118,39 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
                 throw new ObjectDisposedException(nameof(ZtZeroTierUdpSocket));
             }
 
-            if (!ZtIpv4Codec.TryParse(routed.Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
+            IPAddress src;
+            IPAddress dst;
+            ReadOnlySpan<byte> ipPayload;
+            ushort srcPort;
+            ushort dstPort;
+            ReadOnlySpan<byte> udpPayload;
+
+            if (_localAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
-                continue;
+                if (!ZtIpv4Codec.TryParse(routed.Packet.Span, out src, out dst, out var protocol, out ipPayload))
+                {
+                    continue;
+                }
+
+                if (!dst.Equals(_localAddress) || protocol != ZtUdpCodec.ProtocolNumber)
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!ZtIpv6Codec.TryParse(routed.Packet.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+                {
+                    continue;
+                }
+
+                if (!dst.Equals(_localAddress) || nextHeader != ZtUdpCodec.ProtocolNumber)
+                {
+                    continue;
+                }
             }
 
-            if (!dst.Equals(_localAddress) || protocol != ZtUdpCodec.ProtocolNumber)
-            {
-                continue;
-            }
-
-            if (!ZtUdpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var udpPayload))
+            if (!ZtUdpCodec.TryParse(ipPayload, out srcPort, out dstPort, out udpPayload))
             {
                 continue;
             }
@@ -163,7 +202,7 @@ public sealed class ZtZeroTierUdpSocket : IAsyncDisposable
             }
 
             _disposed = true;
-            _runtime.UnregisterUdpPort(_localPort);
+            _runtime.UnregisterUdpPort(_localAddress.AddressFamily, _localPort);
             _incoming.Writer.TryComplete();
         }
         finally

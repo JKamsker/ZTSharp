@@ -48,7 +48,8 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
 
     private readonly ConcurrentDictionary<ZtZeroTierTcpRouteKey, ZtZeroTierRoutedIpv4Link> _routes = new();
     private readonly ConcurrentDictionary<ushort, Func<ZtNodeId, ReadOnlyMemory<byte>, CancellationToken, Task>> _tcpSynHandlers = new();
-    private readonly ConcurrentDictionary<ushort, ChannelWriter<ZtZeroTierRoutedIpv4Packet>> _udpHandlers = new();
+    private readonly ConcurrentDictionary<ushort, ChannelWriter<ZtZeroTierRoutedIpPacket>> _udpHandlersV4 = new();
+    private readonly ConcurrentDictionary<ushort, ChannelWriter<ZtZeroTierRoutedIpPacket>> _udpHandlersV6 = new();
 
     private int _traceRxRemaining = 200;
 
@@ -136,11 +137,30 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
     public void UnregisterTcpListener(ushort localPort)
         => _tcpSynHandlers.TryRemove(localPort, out _);
 
-    public bool TryRegisterUdpPort(ushort localPort, ChannelWriter<ZtZeroTierRoutedIpv4Packet> handler)
-        => _udpHandlers.TryAdd(localPort, handler);
+    public bool TryRegisterUdpPort(AddressFamily addressFamily, ushort localPort, ChannelWriter<ZtZeroTierRoutedIpPacket> handler)
+        => addressFamily switch
+        {
+            AddressFamily.InterNetwork => _udpHandlersV4.TryAdd(localPort, handler),
+            AddressFamily.InterNetworkV6 => _udpHandlersV6.TryAdd(localPort, handler),
+            _ => throw new ArgumentOutOfRangeException(nameof(addressFamily), addressFamily, "Unsupported address family.")
+        };
 
-    public void UnregisterUdpPort(ushort localPort)
-        => _udpHandlers.TryRemove(localPort, out _);
+    public void UnregisterUdpPort(AddressFamily addressFamily, ushort localPort)
+    {
+        if (addressFamily == AddressFamily.InterNetwork)
+        {
+            _udpHandlersV4.TryRemove(localPort, out _);
+            return;
+        }
+
+        if (addressFamily == AddressFamily.InterNetworkV6)
+        {
+            _udpHandlersV6.TryRemove(localPort, out _);
+            return;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(addressFamily), addressFamily, "Unsupported address family.");
+    }
 
     public async Task<ZtNodeId> ResolveNodeIdAsync(IPAddress managedIp, CancellationToken cancellationToken)
     {
@@ -598,20 +618,10 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
-        var isToUs = dst.IsIPv6Multicast;
-        if (!isToUs)
-        {
-            for (var i = 0; i < _localManagedIpsV6.Length; i++)
-            {
-                if (dst.Equals(_localManagedIpsV6[i]))
-                {
-                    isToUs = true;
-                    break;
-                }
-            }
-        }
+        var isUnicastToUs = TryGetLocalManagedIpv6(dst, out _);
+        var isMulticast = dst.IsIPv6Multicast;
 
-        if (!isToUs)
+        if (!isUnicastToUs && !isMulticast)
         {
             return;
         }
@@ -625,6 +635,20 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         {
             var icmpMessage = ipv6Packet.Slice(ZtIpv6Codec.HeaderLength, ipPayload.Length);
             await HandleIcmpv6Async(peerNodeId, src, dst, hopLimit, icmpMessage, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (nextHeader == ZtUdpCodec.ProtocolNumber && isUnicastToUs)
+        {
+            if (!ZtUdpCodec.TryParse(ipPayload, out _, out var dstPort, out _))
+            {
+                return;
+            }
+
+            if (_udpHandlersV6.TryGetValue(dstPort, out var handler))
+            {
+                handler.TryWrite(new ZtZeroTierRoutedIpPacket(peerNodeId, ipv6Packet));
+            }
         }
     }
 
@@ -649,9 +673,9 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
                 return;
             }
 
-            if (_udpHandlers.TryGetValue(udpDstPort, out var udpHandler))
+            if (_udpHandlersV4.TryGetValue(udpDstPort, out var udpHandler))
             {
-                udpHandler.TryWrite(new ZtZeroTierRoutedIpv4Packet(peerNodeId, ipv4Packet));
+                udpHandler.TryWrite(new ZtZeroTierRoutedIpPacket(peerNodeId, ipv4Packet));
             }
 
             return;

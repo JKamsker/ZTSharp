@@ -18,10 +18,15 @@ internal static class ZtUdpCodec
         ArgumentNullException.ThrowIfNull(sourceIp);
         ArgumentNullException.ThrowIfNull(destinationIp);
 
-        if (sourceIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
-            destinationIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        if (sourceIp.AddressFamily != destinationIp.AddressFamily)
         {
-            throw new ArgumentOutOfRangeException(nameof(sourceIp), "Only IPv4 is supported.");
+            throw new ArgumentOutOfRangeException(nameof(destinationIp), "Source and destination address families must match.");
+        }
+
+        if (sourceIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            sourceIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceIp), "Only IPv4 and IPv6 are supported.");
         }
 
         if (payload.Length > ushort.MaxValue - HeaderLength)
@@ -83,15 +88,38 @@ internal static class ZtUdpCodec
         var sum = 0u;
 
         // pseudo header
-        var src = sourceIp.GetAddressBytes();
-        var dst = destinationIp.GetAddressBytes();
+        if (sourceIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var src = sourceIp.GetAddressBytes();
+            var dst = destinationIp.GetAddressBytes();
 
-        sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(0, 2));
-        sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(2, 2));
-        sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(0, 2));
-        sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(2, 2));
-        sum += ProtocolNumber;
-        sum += (ushort)udpSegment.Length;
+            sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(0, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(2, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(0, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(2, 2));
+            sum += ProtocolNumber;
+            sum += (ushort)udpSegment.Length;
+        }
+        else if (sourceIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            var src = sourceIp.GetAddressBytes();
+            var dst = destinationIp.GetAddressBytes();
+
+            for (var i = 0; i < 16; i += 2)
+            {
+                sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(i, 2));
+                sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(i, 2));
+            }
+
+            var upperLayerLength = (uint)udpSegment.Length;
+            sum += (upperLayerLength >> 16) & 0xFFFF;
+            sum += upperLayerLength & 0xFFFF;
+            sum += ProtocolNumber;
+        }
+        else
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceIp), $"Unsupported address family: {sourceIp.AddressFamily}.");
+        }
 
         // udp header+payload
         for (var i = 0; i < udpSegment.Length; i += 2)
@@ -110,4 +138,3 @@ internal static class ZtUdpCodec
         return (ushort)~sum;
     }
 }
-

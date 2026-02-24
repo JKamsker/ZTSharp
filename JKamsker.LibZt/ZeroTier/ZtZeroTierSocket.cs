@@ -204,14 +204,44 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        await JoinAsync(cancellationToken).ConfigureAwait(false);
+        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+        if (localAddress is null)
+        {
+            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+
+        return await BindUdpAsync(localAddress, port, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<ZtZeroTierUdpSocket> BindUdpAsync(
+        IPAddress localAddress,
+        int port,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(localAddress);
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         if (port is < 0 or > ushort.MaxValue)
         {
             throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be between 0 and 65535.");
         }
 
+        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
+            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            throw new NotSupportedException($"Unsupported address family: {localAddress.AddressFamily}.");
+        }
+
         await JoinAsync(cancellationToken).ConfigureAwait(false);
-        var (localAddress, comBytes) = GetLocalIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localAddress, comBytes, cancellationToken).ConfigureAwait(false);
+        if (!ManagedIps.Contains(localAddress))
+        {
+            throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
+        }
+
+        var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
 
         if (port != 0)
         {
