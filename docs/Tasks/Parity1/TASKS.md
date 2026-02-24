@@ -111,7 +111,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
   - Verified 2026-02-24: remote OS `curl` downloaded a 2 MiB body from managed `listen --body-bytes 2097152` without stalling/timeouts.
 
 ## Milestone P5 — Socket-like managed API (drop-in ergonomics)
-- [ ] Define a minimal but practical socket API surface that matches common app usage:
+- [x] Define a minimal but practical socket API surface that matches common app usage:
   - TCP connect/listen/accept returning `Stream`
   - UDP datagrams with `ReceiveFromAsync`/`SendToAsync`
   - explicit local bind + cancellation + timeouts

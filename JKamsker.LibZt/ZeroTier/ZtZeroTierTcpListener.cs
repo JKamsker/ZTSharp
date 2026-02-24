@@ -46,6 +46,28 @@ public sealed class ZtZeroTierTcpListener : IAsyncDisposable
         return _acceptQueue.Reader.ReadAsync(cancellationToken);
     }
 
+    public async ValueTask<Stream> AcceptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
+        }
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            return await AcceptAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"TCP accept timed out after {timeout}.");
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _disposeLock.WaitAsync().ConfigureAwait(false);

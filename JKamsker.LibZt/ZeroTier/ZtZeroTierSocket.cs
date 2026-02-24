@@ -296,7 +296,61 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return ConnectTcpCoreAsync(remote, cancellationToken);
+        return ConnectTcpCoreAsync(local: null, remote, cancellationToken);
+    }
+
+    public ValueTask<Stream> ConnectTcpAsync(IPEndPoint local, IPEndPoint remote, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(local);
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return ConnectTcpCoreAsync(local, remote, cancellationToken);
+    }
+
+    public async ValueTask<Stream> ConnectTcpAsync(IPEndPoint remote, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
+        }
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            return await ConnectTcpAsync(remote, timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"TCP connect timed out after {timeout}.");
+        }
+    }
+
+    public async ValueTask<Stream> ConnectTcpAsync(IPEndPoint local, IPEndPoint remote, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
+        }
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+
+        try
+        {
+            return await ConnectTcpAsync(local, remote, timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"TCP connect timed out after {timeout}.");
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -397,7 +451,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Ownership transfers to the returned Stream (disposes ZtUserSpaceTcpClient, link, and UDP transport).")]
-    private async ValueTask<Stream> ConnectTcpCoreAsync(IPEndPoint remote, CancellationToken cancellationToken)
+    private async ValueTask<Stream> ConnectTcpCoreAsync(IPEndPoint? local, IPEndPoint remote, CancellationToken cancellationToken)
     {
         if (remote.Port is < 1 or > ushort.MaxValue)
         {
@@ -420,17 +474,53 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
         var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
         var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
 
-        var localAddress = remote.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+        if (local is not null && local.Address.AddressFamily != remote.Address.AddressFamily)
+        {
+            throw new NotSupportedException("Local and remote address families must match.");
+        }
+
+        if (local is not null && (local.Port < 0 || local.Port > ushort.MaxValue))
+        {
+            throw new ArgumentOutOfRangeException(nameof(local), "Local port must be between 0 and 65535.");
+        }
+
+        var localAddress = local?.Address ?? (remote.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
             ? localIpv4
             : ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-              ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+              ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network."));
+
+        if (!ManagedIps.Contains(localAddress))
+        {
+            throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
+        }
 
         var remoteNodeId = await runtime.ResolveNodeIdAsync(remote.Address, cancellationToken).ConfigureAwait(false);
 
-        var localPort = GenerateEphemeralPort();
-        var localEndpoint = new IPEndPoint(localAddress, localPort);
+        var fixedPort = local is not null && local.Port != 0;
+        var fixedLocalPort = fixedPort ? (ushort)local!.Port : (ushort)0;
 
-        var link = runtime.RegisterTcpRoute(remoteNodeId, localEndpoint, remote);
+        IZtUserSpaceIpLink? link = null;
+        ushort localPort = 0;
+        for (var attempt = 0; attempt < 32; attempt++)
+        {
+            localPort = fixedPort ? fixedLocalPort : GenerateEphemeralPort();
+            var localEndpoint = new IPEndPoint(localAddress, localPort);
+
+            try
+            {
+                link = runtime.RegisterTcpRoute(remoteNodeId, localEndpoint, remote);
+                break;
+            }
+            catch (InvalidOperationException) when (!fixedPort && attempt < 31)
+            {
+            }
+        }
+
+        if (link is null)
+        {
+            throw new InvalidOperationException("Failed to bind TCP to an ephemeral port (too many collisions).");
+        }
+
         var tcp = new ZtUserSpaceTcpClient(
             link,
             localAddress,
