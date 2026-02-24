@@ -218,10 +218,11 @@ static async Task RunJoinZeroTierAsync(string statePath, ulong networkId, bool o
 
     try
     {
-        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
-
         Console.WriteLine($"State: {statePath}");
         Console.WriteLine($"NodeId: {socket.NodeId}");
+
+        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
+
         if (socket.ManagedIps.Count != 0)
         {
             Console.WriteLine("Managed IPs:");
@@ -413,8 +414,9 @@ static async Task RunCallZeroTierAsync(string statePath, ulong networkId, Uri ur
 
     try
     {
-        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
         Console.WriteLine($"NodeId: {socket.NodeId}");
+
+        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
         if (socket.ManagedIps.Count != 0)
         {
             Console.WriteLine("Managed IPs:");

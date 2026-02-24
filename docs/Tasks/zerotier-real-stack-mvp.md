@@ -65,3 +65,4 @@ Status legend:
 - [x] Send `HELLO` to the controller before `NETWORK_CONFIG_REQUEST` (controller must learn the node identity before decrypting).
 - [x] Include request metadata dictionary in `NETWORK_CONFIG_REQUEST` (version/protocol/rules-engine).
 - [x] Surface `ERROR(NETWORK_CONFIG_REQUEST)` as a meaningful exception (e.g. not authorized) instead of timing out.
+- [x] Print node id before join errors in the CLI (so the node can be authorized).
