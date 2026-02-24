@@ -20,6 +20,7 @@ internal static class ZeroTierMulticastGatherClient
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         NodeId localNodeId,
         ulong networkId,
         ZeroTierMulticastGroup group,
@@ -31,6 +32,7 @@ internal static class ZeroTierMulticastGatherClient
                 rootNodeId,
                 rootEndpoint,
                 rootKey,
+                rootProtocolVersion,
                 localNodeId,
                 networkId,
                 group,
@@ -45,6 +47,7 @@ internal static class ZeroTierMulticastGatherClient
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         NodeId localNodeId,
         ulong networkId,
         ZeroTierMulticastGroup group,
@@ -73,7 +76,7 @@ internal static class ZeroTierMulticastGatherClient
             VerbRaw: (byte)ZeroTierVerb.MulticastGather);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, rootKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, rootProtocolVersion), encryptPayload: true);
         var requestPacketId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
         await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
 

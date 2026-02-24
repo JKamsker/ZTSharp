@@ -195,7 +195,7 @@ internal static class ZeroTierHelloClient
         }
     }
 
-    public static async Task HelloAsync(
+    public static async Task<byte> HelloAsync(
         ZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
@@ -297,7 +297,8 @@ internal static class ZeroTierHelloClient
                 continue;
             }
 
-            return;
+            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
+            return remoteProto;
         }
     }
 

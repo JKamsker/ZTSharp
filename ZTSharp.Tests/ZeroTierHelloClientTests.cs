@@ -85,7 +85,7 @@ public sealed class ZeroTierHelloClientTests
 
         var serverTask = RunHelloServerOnceAsync(remoteUdp, remoteIdentity, localIdentity);
 
-        await ZeroTierHelloClient.HelloAsync(
+        _ = await ZeroTierHelloClient.HelloAsync(
             udp,
             localIdentity,
             planet,

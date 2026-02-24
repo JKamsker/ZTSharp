@@ -13,6 +13,7 @@ internal static class ZeroTierMulticastLikeClient
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         NodeId localNodeId,
         ulong networkId,
         IReadOnlyList<ZeroTierMulticastGroup> groups,
@@ -52,7 +53,7 @@ internal static class ZeroTierMulticastLikeClient
             VerbRaw: (byte)ZeroTierVerb.MulticastLike);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, rootKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, rootProtocolVersion), encryptPayload: true);
         await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
     }
 
@@ -63,4 +64,3 @@ internal static class ZeroTierMulticastLikeClient
         return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
 }
-

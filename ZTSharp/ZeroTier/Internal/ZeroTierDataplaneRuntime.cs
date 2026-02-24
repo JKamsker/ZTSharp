@@ -25,6 +25,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
+    private readonly byte _rootProtocolVersion;
     private readonly ZeroTierIdentity _localIdentity;
     private readonly ulong _networkId;
     private readonly byte[] _inlineCom;
@@ -42,6 +43,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<ulong, TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>> _pendingGather = new();
 
     private readonly ConcurrentDictionary<NodeId, byte[]> _peerKeys = new();
+    private readonly ConcurrentDictionary<NodeId, byte> _peerProtocolVersions = new();
     private readonly SemaphoreSlim _peerKeyLock = new(1, 1);
 
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId = new();
@@ -62,6 +64,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         ZeroTierIdentity localIdentity,
         ulong networkId,
         IPAddress? localManagedIpV4,
@@ -102,6 +105,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _rootNodeId = rootNodeId;
         _rootEndpoint = rootEndpoint;
         _rootKey = rootKey;
+        _rootProtocolVersion = rootProtocolVersion;
         _localIdentity = localIdentity;
         _networkId = networkId;
         _inlineCom = inlineCom;
@@ -256,6 +260,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
+        var peerProtocolVersion = _peerProtocolVersions.TryGetValue(peerNodeId, out var protocolVersion) ? protocolVersion : (byte)0;
+        var outboundKey = ZeroTierPacketCrypto.SelectOutboundKey(key, peerProtocolVersion);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
         var packetId = GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
@@ -268,7 +274,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             from: _localMac,
             etherType: ZeroTierFrameCodec.EtherTypeIpv4,
             frame: ipv4Packet.Span,
-            sharedKey: key);
+            sharedKey: outboundKey);
 
         await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
     }
@@ -283,6 +289,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
+        var peerProtocolVersion = _peerProtocolVersions.TryGetValue(peerNodeId, out var protocolVersion) ? protocolVersion : (byte)0;
+        var outboundKey = ZeroTierPacketCrypto.SelectOutboundKey(key, peerProtocolVersion);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
         var packetId = GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
@@ -295,7 +303,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             from: _localMac,
             etherType: etherType,
             frame: frame.Span,
-            sharedKey: key);
+            sharedKey: outboundKey);
 
         await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
     }
@@ -638,6 +646,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         }
 
         _peerKeys[peerNodeId] = sharedKey;
+        var peerProtocolVersion = payload[0];
+        _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
 
         var okPacket = ZeroTierHelloOkPacketBuilder.BuildPacket(
             packetId: GeneratePacketId(),
@@ -646,7 +656,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             inRePacketId: helloPacketId,
             helloTimestampEcho: helloTimestamp,
             externalSurfaceAddress: remoteEndPoint,
-            sharedKey: sharedKey);
+            sharedKey: ZeroTierPacketCrypto.SelectOutboundKey(sharedKey, peerProtocolVersion));
 
         try
         {
@@ -1290,7 +1300,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             VerbRaw: (byte)ZeroTierVerb.Whois);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, _rootKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_rootKey, _rootProtocolVersion), encryptPayload: true);
         packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
 
         var tcs = new TaskCompletionSource<ZeroTierIdentity>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1338,7 +1348,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             VerbRaw: (byte)ZeroTierVerb.MulticastGather);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, _rootKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_rootKey, _rootProtocolVersion), encryptPayload: true);
         packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
 
         var tcs = new TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>(TaskCreationOptions.RunContinuationsAsynchronously);

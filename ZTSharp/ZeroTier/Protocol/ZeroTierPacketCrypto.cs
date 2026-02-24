@@ -22,6 +22,8 @@ internal static class ZeroTierPacketCrypto
     private const byte CipherC25519Poly1305Salsa2012 = 1;
     private const byte CipherAesGmacSiv = 3;
 
+    private const byte AesGmacSivMinProtocolVersion = 12;
+
     private const byte KbkdfLabelAesGmacSivK0 = (byte)'0';
     private const byte KbkdfLabelAesGmacSivK1 = (byte)'1';
 
@@ -66,6 +68,21 @@ internal static class ZeroTierPacketCrypto
         Span<byte> tag = stackalloc byte[16];
         ComputePoly1305Tag(packet.Slice(IndexVerb, payloadLength), keystream.AsSpan(0, MacKeyLength), tag);
         tag.Slice(0, MacLength).CopyTo(packet.Slice(IndexMac, MacLength));
+    }
+
+    public static ReadOnlySpan<byte> SelectOutboundKey(ReadOnlySpan<byte> key, byte remoteProtocolVersion)
+    {
+        if (remoteProtocolVersion >= AesGmacSivMinProtocolVersion && key.Length >= SymmetricKeyLength)
+        {
+            return key.Slice(0, SymmetricKeyLength);
+        }
+
+        if (key.Length >= KeyLength)
+        {
+            return key.Slice(0, KeyLength);
+        }
+
+        throw new ArgumentException($"Key must be at least {KeyLength} bytes.", nameof(key));
     }
 
     public static bool Dearmor(Span<byte> packet, ReadOnlySpan<byte> key)

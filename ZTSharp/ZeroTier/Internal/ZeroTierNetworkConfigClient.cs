@@ -76,6 +76,7 @@ internal static class ZeroTierNetworkConfigClient
                     rootNodeId: helloOk.RootNodeId,
                     rootEndpoint: helloOk.RootEndpoint,
                     rootKey: upstreamRootKey,
+                    rootProtocolVersion: helloOk.RemoteProtocolVersion,
                     localNodeId: localIdentity.NodeId,
                     controllerNodeId,
                     GetRemainingTimeout(deadline),
@@ -93,7 +94,7 @@ internal static class ZeroTierNetworkConfigClient
 
             keys[controllerNodeId] = controllerKey;
 
-            await ZeroTierHelloClient.HelloAsync(
+            var controllerProtocolVersion = await ZeroTierHelloClient.HelloAsync(
                     udp,
                     localIdentity,
                     planet,
@@ -110,6 +111,7 @@ internal static class ZeroTierNetworkConfigClient
                     rootEndpoint: helloOk.RootEndpoint,
                     localNodeId: localIdentity.NodeId,
                     controllerIdentity,
+                    controllerProtocolVersion,
                     networkId,
                     GetRemainingTimeout(deadline),
                     cancellationToken)
@@ -141,6 +143,7 @@ internal static class ZeroTierNetworkConfigClient
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         NodeId localNodeId,
         NodeId controllerNodeId,
         TimeSpan timeout,
@@ -159,7 +162,7 @@ internal static class ZeroTierNetworkConfigClient
             VerbRaw: (byte)ZeroTierVerb.Whois);
 
         var whoisPacket = ZeroTierPacketCodec.Encode(whoisHeader, whoisPayload);
-        ZeroTierPacketCrypto.Armor(whoisPacket, rootKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(whoisPacket, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, rootProtocolVersion), encryptPayload: true);
         whoisPacketId = BinaryPrimitives.ReadUInt64BigEndian(whoisPacket.AsSpan(0, 8));
 
         await udp.SendAsync(rootEndpoint, whoisPacket, cancellationToken).ConfigureAwait(false);
@@ -221,6 +224,7 @@ internal static class ZeroTierNetworkConfigClient
         IPEndPoint rootEndpoint,
         NodeId localNodeId,
         ZeroTierIdentity controllerIdentity,
+        byte controllerProtocolVersion,
         ulong networkId,
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -256,7 +260,7 @@ internal static class ZeroTierNetworkConfigClient
             VerbRaw: (byte)ZeroTierVerb.NetworkConfigRequest);
 
         var reqPacket = ZeroTierPacketCodec.Encode(reqHeader, reqPayload);
-        ZeroTierPacketCrypto.Armor(reqPacket, controllerKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(reqPacket, ZeroTierPacketCrypto.SelectOutboundKey(controllerKey, controllerProtocolVersion), encryptPayload: true);
         reqPacketId = BinaryPrimitives.ReadUInt64BigEndian(reqPacket.AsSpan(0, 8));
 
         await udp.SendAsync(rootEndpoint, reqPacket, cancellationToken).ConfigureAwait(false);
@@ -630,7 +634,7 @@ internal static class ZeroTierNetworkConfigClient
 
         AppendHexKeyValue(sb, "v", 7); // ZT_NETWORKCONFIG_VERSION
         AppendHexKeyValue(sb, "vend", 1); // ZT_VENDOR_ZEROTIER
-        AppendHexKeyValue(sb, "pv", 11); // Protocol (matches our HELLO advert)
+        AppendHexKeyValue(sb, "pv", ZeroTierHelloClient.AdvertisedProtocolVersion); // Protocol (matches our HELLO advert)
         AppendHexKeyValue(sb, "majv", 1); // ZEROTIER_ONE_VERSION_MAJOR
         AppendHexKeyValue(sb, "minv", 12); // ZEROTIER_ONE_VERSION_MINOR
         AppendHexKeyValue(sb, "revv", 0); // ZEROTIER_ONE_VERSION_REVISION

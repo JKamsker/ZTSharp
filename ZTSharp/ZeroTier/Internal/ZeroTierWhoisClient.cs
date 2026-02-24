@@ -19,6 +19,7 @@ internal static class ZeroTierWhoisClient
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         NodeId localNodeId,
         NodeId targetNodeId,
         TimeSpan timeout,
@@ -45,7 +46,7 @@ internal static class ZeroTierWhoisClient
             VerbRaw: (byte)ZeroTierVerb.Whois);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, rootKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, rootProtocolVersion), encryptPayload: true);
         var requestPacketId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
         await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
 
