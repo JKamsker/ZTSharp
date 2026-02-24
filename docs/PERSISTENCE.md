@@ -1,6 +1,6 @@
 # Persistence
 
-`ZtNode` persists state through `IZtStateStore` using logical keys.
+`Node` persists state through `IStateStore` using logical keys.
 
 ---
 

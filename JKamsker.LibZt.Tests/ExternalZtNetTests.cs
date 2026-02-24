@@ -12,7 +12,7 @@ public class ExternalZtNetTests
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromMinutes(1);
 
     [E2eFact]
-    public async Task Ztnet_NetworkCreate_And_Get_E2E()
+    public async Task net_NetworkCreate_And_Get_E2E()
     {
         var authCheck = await RunZtNetCommandAsync("auth test", TimeSpan.FromSeconds(20));
         Assert.Equal(0, authCheck.ExitCode);
@@ -30,7 +30,7 @@ public class ExternalZtNetTests
     }
 
     [E2eFact("LIBZT_E2E_NETWORK_ID")]
-    public async Task Ztnet_JoinActualNetwork_RequiresConfiguredEndpointE2E()
+    public async Task net_JoinActualNetwork_RequiresConfiguredEndpointE2E()
     {
         var networkId = Environment.GetEnvironmentVariable("LIBZT_E2E_NETWORK_ID");
         Assert.False(string.IsNullOrWhiteSpace(networkId));
@@ -41,7 +41,7 @@ public class ExternalZtNetTests
     }
 
     [E2eFact]
-    public async Task Ztnet_NetworkCreate_SpawnTwoClients_And_Communicate_E2E()
+    public async Task net_NetworkCreate_SpawnTwoClients_And_Communicate_E2E()
     {
         var authCheck = await RunZtNetCommandAsync("auth test", TimeSpan.FromSeconds(20));
         Assert.Equal(0, authCheck.ExitCode);
@@ -56,21 +56,21 @@ public class ExternalZtNetTests
 
         try
         {
-            var node1Store = new MemoryZtStateStore();
-            var node2Store = new MemoryZtStateStore();
+            var node1Store = new MemoryStateStore();
+            var node2Store = new MemoryStateStore();
 
-            await using var node1 = new ZtNode(new ZtNodeOptions
+            await using var node1 = new Node(new NodeOptions
             {
                 StateRootPath = Path.Combine(Path.GetTempPath(), "zt-e2e-node-" + Guid.NewGuid()),
                 StateStore = node1Store,
-                TransportMode = ZtTransportMode.OsUdp
+                TransportMode = TransportMode.OsUdp
             });
 
-            await using var node2 = new ZtNode(new ZtNodeOptions
+            await using var node2 = new Node(new NodeOptions
             {
                 StateRootPath = Path.Combine(Path.GetTempPath(), "zt-e2e-node-" + Guid.NewGuid()),
                 StateStore = node2Store,
-                TransportMode = ZtTransportMode.OsUdp
+                TransportMode = TransportMode.OsUdp
             });
 
             await node1.StartAsync();
@@ -93,7 +93,7 @@ public class ExternalZtNetTests
             await node1.AddPeerAsync(networkId, node2Identity.NodeId.Value, node2Endpoint);
             await node2.AddPeerAsync(networkId, node1Identity.NodeId.Value, node1Endpoint);
 
-            // Register + authorize members using ztnet (session auth).
+            // Register + authorize members using net (session auth).
             var add1 = await RunZtNetCommandAsync($"--yes --quiet network member add {networkIdText} {node1Id}");
             Assert.Equal(0, add1.ExitCode);
             var add2 = await RunZtNetCommandAsync($"--yes --quiet network member add {networkIdText} {node2Id}");
@@ -104,8 +104,8 @@ public class ExternalZtNetTests
             var auth2 = await RunZtNetCommandAsync($"--yes --quiet network member authorize {networkIdText} {node2Id}");
             Assert.Equal(0, auth2.ExitCode);
 
-            await using var udp1 = new ZtUdpClient(node1, networkId, 10001);
-            await using var udp2 = new ZtUdpClient(node2, networkId, 10002);
+            await using var udp1 = new UdpClient(node1, networkId, 10001);
+            await using var udp2 = new UdpClient(node2, networkId, 10002);
 
             await udp1.ConnectAsync(node2Identity.NodeId.Value, 10002);
             await udp2.ConnectAsync(node1Identity.NodeId.Value, 10001);
@@ -123,9 +123,9 @@ public class ExternalZtNetTests
             var datagramPong = await receivePong.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             Assert.True(datagramPong.Payload.Span.SequenceEqual(pong));
 
-            await using var listener = new ZtOverlayTcpListener(node2, networkId, 12002);
+            await using var listener = new OverlayTcpListener(node2, networkId, 12002);
             var acceptTask = listener.AcceptTcpClientAsync().AsTask();
-            await using var tcpClient = new ZtOverlayTcpClient(node1, networkId, 12001);
+            await using var tcpClient = new OverlayTcpClient(node1, networkId, 12001);
             await tcpClient.ConnectAsync(node2Identity.NodeId.Value, 12002);
             await using var serverConnection = await acceptTask.WaitAsync(TimeSpan.FromSeconds(3));
 
@@ -197,7 +197,7 @@ public class ExternalZtNetTests
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = "ztnet",
+            FileName = "net",
             Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

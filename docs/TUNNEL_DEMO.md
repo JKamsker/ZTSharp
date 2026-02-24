@@ -3,7 +3,7 @@
 End-to-end demonstration of the overlay reverse proxy:
 
 ```
-HttpClient (overlay TCP)  -->  ZtOverlayTcpPortForwarder  -->  Local OS TCP server
+HttpClient (overlay TCP)  -->  OverlayTcpPortForwarder  -->  Local OS TCP server
 ```
 
 > **Note:** This uses the **legacy managed overlay transport** over `OsUdp` (direct UDP between

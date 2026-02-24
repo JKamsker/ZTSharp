@@ -9,7 +9,7 @@ namespace JKamsker.LibZt.Transport;
 /// <summary>
 /// OS UDP transport adapter for external endpoint integration.
 /// </summary>
-internal sealed class OsUdpNodeTransport : IZtNodeTransport, IAsyncDisposable
+internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 {
     private const int WindowsSioUdpConnReset = unchecked((int)0x9800000C);
 

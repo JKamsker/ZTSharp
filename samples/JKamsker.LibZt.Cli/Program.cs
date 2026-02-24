@@ -92,7 +92,7 @@ static async Task RunJoinAsync(string[] commandArgs)
     string? statePath = null;
     string? networkText = null;
     var stack = "managed";
-    var transportMode = ZtTransportMode.OsUdp;
+    var transportMode = TransportMode.OsUdp;
     var udpListenPort = 0;
     IPEndPoint? advertisedEndpoint = null;
     var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
@@ -117,8 +117,8 @@ static async Task RunJoinAsync(string[] commandArgs)
                 var value = ReadOptionValue(commandArgs, ref i, "--transport");
                 transportMode = value switch
                 {
-                    "osudp" => ZtTransportMode.OsUdp,
-                    "inmem" => ZtTransportMode.InMemory,
+                    "osudp" => TransportMode.OsUdp,
+                    "inmem" => TransportMode.InMemory,
                     _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
                 };
                 break;
@@ -183,11 +183,11 @@ static async Task RunJoinAsync(string[] commandArgs)
         throw new InvalidOperationException("Invalid --stack value (expected managed|overlay).");
     }
 
-    var node = new ZtNode(new ZtNodeOptions
+    var node = new Node(new NodeOptions
     {
         StateRootPath = statePath,
         TransportMode = transportMode,
-        UdpListenPort = transportMode == ZtTransportMode.OsUdp ? udpListenPort : null,
+        UdpListenPort = transportMode == TransportMode.OsUdp ? udpListenPort : null,
         EnablePeerDiscovery = true,
         AdvertisedTransportEndpoint = advertisedEndpoint
     });
@@ -197,7 +197,7 @@ static async Task RunJoinAsync(string[] commandArgs)
         await node.StartAsync(cts.Token).ConfigureAwait(false);
         await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
 
-        if (transportMode == ZtTransportMode.OsUdp && peers.Count != 0)
+        if (transportMode == TransportMode.OsUdp && peers.Count != 0)
         {
             foreach (var peer in peers)
             {
@@ -228,7 +228,7 @@ static async Task RunJoinAsync(string[] commandArgs)
 
 static async Task RunJoinZeroTierAsync(string statePath, ulong networkId, bool once, CancellationToken cancellationToken)
 {
-    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
@@ -347,14 +347,14 @@ static async Task RunListenZeroTierAsync(
         throw new ArgumentOutOfRangeException(nameof(listenPort));
     }
 
-    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    ZtZeroTierTcpListener? listener4 = null;
-    ZtZeroTierTcpListener? listener6 = null;
+    ZeroTierTcpListener? listener4 = null;
+    ZeroTierTcpListener? listener6 = null;
     using var listenCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     var listenToken = listenCts.Token;
     List<Task>? acceptors = null;
@@ -454,7 +454,7 @@ static async Task RunListenZeroTierAsync(
     }
 }
 
-static async Task RunListenAcceptorAsync(ZtZeroTierTcpListener listener, long bodyBytes, CancellationToken cancellationToken)
+static async Task RunListenAcceptorAsync(ZeroTierTcpListener listener, long bodyBytes, CancellationToken cancellationToken)
 {
     while (!cancellationToken.IsCancellationRequested)
     {
@@ -631,7 +631,7 @@ static async Task RunCallAsync(string[] commandArgs)
     string? networkText = null;
     string? urlText = null;
     var stack = "managed";
-    var transportMode = ZtTransportMode.OsUdp;
+    var transportMode = TransportMode.OsUdp;
     var udpListenPort = 0;
     IPEndPoint? advertisedEndpoint = null;
     var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
@@ -670,8 +670,8 @@ static async Task RunCallAsync(string[] commandArgs)
                 var value = ReadOptionValue(commandArgs, ref i, "--transport");
                 transportMode = value switch
                 {
-                    "osudp" => ZtTransportMode.OsUdp,
-                    "inmem" => ZtTransportMode.InMemory,
+                    "osudp" => TransportMode.OsUdp,
+                    "inmem" => TransportMode.InMemory,
                     _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
                 };
                 break;
@@ -743,11 +743,11 @@ static async Task RunCallAsync(string[] commandArgs)
         throw new InvalidOperationException("Invalid --stack value (expected managed|overlay).");
     }
 
-    var node = new ZtNode(new ZtNodeOptions
+    var node = new Node(new NodeOptions
     {
         StateRootPath = statePath,
         TransportMode = transportMode,
-        UdpListenPort = transportMode == ZtTransportMode.OsUdp ? udpListenPort : null,
+        UdpListenPort = transportMode == TransportMode.OsUdp ? udpListenPort : null,
         EnablePeerDiscovery = true,
         AdvertisedTransportEndpoint = advertisedEndpoint
     });
@@ -757,7 +757,7 @@ static async Task RunCallAsync(string[] commandArgs)
         await node.StartAsync(cts.Token).ConfigureAwait(false);
         await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
 
-        if (transportMode == ZtTransportMode.OsUdp && peers.Count != 0)
+        if (transportMode == TransportMode.OsUdp && peers.Count != 0)
         {
             foreach (var peer in peers)
             {
@@ -786,7 +786,7 @@ static async Task RunCallAsync(string[] commandArgs)
 
 static async Task RunCallZeroTierAsync(string statePath, ulong networkId, Uri url, CancellationToken cancellationToken)
 {
-    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
@@ -823,7 +823,7 @@ static async Task RunCallZeroTierAsync(string statePath, ulong networkId, Uri ur
     "CA2000:Dispose objects before losing scope",
     Justification = "Handler ownership transfers to HttpClient, which is disposed by the caller.")]
 static HttpClient CreateHttpClient(
-    ZtNode node,
+    Node node,
     ulong networkId,
     string httpMode,
     IReadOnlyList<(IPAddress Address, ulong NodeId)> ipMappings)
@@ -838,20 +838,20 @@ static HttpClient CreateHttpClient(
         throw new InvalidOperationException("Invalid --http value (expected overlay|os).");
     }
 
-    ZtOverlayAddressBook? book = null;
+    OverlayAddressBook? book = null;
     if (ipMappings.Count != 0)
     {
-        book = new ZtOverlayAddressBook();
+        book = new OverlayAddressBook();
         foreach (var mapping in ipMappings)
         {
             book.Add(mapping.Address, mapping.NodeId);
         }
     }
 
-    var handler = new ZtOverlayHttpMessageHandler(
+    var handler = new OverlayHttpMessageHandler(
         node,
         networkId,
-        book is null ? null : new ZtOverlayHttpMessageHandlerOptions { AddressBook = book });
+        book is null ? null : new OverlayHttpMessageHandlerOptions { AddressBook = book });
 
     return new HttpClient(handler, disposeHandler: true);
 }
@@ -928,14 +928,14 @@ static async Task RunUdpListenZeroTierAsync(
         throw new ArgumentOutOfRangeException(nameof(listenPort));
     }
 
-    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    ZtZeroTierUdpSocket? udp4 = null;
-    ZtZeroTierUdpSocket? udp6 = null;
+    ZeroTierUdpSocket? udp4 = null;
+    ZeroTierUdpSocket? udp6 = null;
 
     try
     {
@@ -1014,13 +1014,13 @@ static async Task RunUdpListenZeroTierAsync(
     }
 }
 
-static async Task RunUdpEchoLoopAsync(ZtZeroTierUdpSocket udp, byte[] pongBytes, CancellationToken cancellationToken)
+static async Task RunUdpEchoLoopAsync(ZeroTierUdpSocket udp, byte[] pongBytes, CancellationToken cancellationToken)
 {
     var buffer = new byte[ushort.MaxValue];
 
     while (!cancellationToken.IsCancellationRequested)
     {
-        ZtZeroTierUdpReceiveResult received;
+        ZeroTierUdpReceiveResult received;
         try
         {
             received = await udp.ReceiveFromAsync(buffer, cancellationToken).ConfigureAwait(false);
@@ -1131,13 +1131,13 @@ static async Task RunUdpSendZeroTierAsync(
     string dataText,
     CancellationToken cancellationToken)
 {
-    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    ZtZeroTierUdpSocket? udp = null;
+    ZeroTierUdpSocket? udp = null;
 
     try
     {
@@ -1211,7 +1211,7 @@ static async Task RunExposeAsync(string[] commandArgs)
     var stack = "managed";
     int? overlayListenPort = null;
     (string Host, int Port)? target = null;
-    var transportMode = ZtTransportMode.OsUdp;
+    var transportMode = TransportMode.OsUdp;
     var udpListenPort = 0;
     IPEndPoint? advertisedEndpoint = null;
     var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
@@ -1253,8 +1253,8 @@ static async Task RunExposeAsync(string[] commandArgs)
                 var value = ReadOptionValue(commandArgs, ref i, "--transport");
                 transportMode = value switch
                 {
-                    "osudp" => ZtTransportMode.OsUdp,
-                    "inmem" => ZtTransportMode.InMemory,
+                    "osudp" => TransportMode.OsUdp,
+                    "inmem" => TransportMode.InMemory,
                     _ => throw new InvalidOperationException("Invalid --transport value (expected osudp|inmem).")
                 };
                 break;
@@ -1320,11 +1320,11 @@ static async Task RunExposeAsync(string[] commandArgs)
         throw new InvalidOperationException("Invalid --stack value (expected managed|overlay).");
     }
 
-    var node = new ZtNode(new ZtNodeOptions
+    var node = new Node(new NodeOptions
     {
         StateRootPath = statePath,
         TransportMode = transportMode,
-        UdpListenPort = transportMode == ZtTransportMode.OsUdp ? udpListenPort : null,
+        UdpListenPort = transportMode == TransportMode.OsUdp ? udpListenPort : null,
         EnablePeerDiscovery = true,
         AdvertisedTransportEndpoint = advertisedEndpoint
     });
@@ -1334,7 +1334,7 @@ static async Task RunExposeAsync(string[] commandArgs)
         await node.StartAsync(cts.Token).ConfigureAwait(false);
         await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
 
-        if (transportMode == ZtTransportMode.OsUdp && peers.Count != 0)
+        if (transportMode == TransportMode.OsUdp && peers.Count != 0)
         {
             foreach (var peer in peers)
             {
@@ -1355,7 +1355,7 @@ static async Task RunExposeAsync(string[] commandArgs)
 
         Console.WriteLine($"Expose: http://{node.NodeId}:{overlayListenPort}/ -> {target.Value.Host}:{target.Value.Port}");
 
-        var forwarder = new ZtOverlayTcpPortForwarder(
+        var forwarder = new OverlayTcpPortForwarder(
             node,
             networkId,
             overlayListenPort.Value,
@@ -1390,13 +1390,13 @@ static async Task RunExposeZeroTierAsync(
         throw new ArgumentOutOfRangeException(nameof(listenPort));
     }
 
-    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    ZtZeroTierTcpListener? listener = null;
+    ZeroTierTcpListener? listener = null;
     using var exposeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     var exposeToken = exposeCts.Token;
     Task[]? acceptors = null;
@@ -1472,7 +1472,7 @@ static async Task RunExposeZeroTierAsync(
 }
 
 static async Task RunExposeAcceptorAsync(
-    ZtZeroTierTcpListener listener,
+    ZeroTierTcpListener listener,
     string targetHost,
     int targetPort,
     CancellationToken cancellationToken)
@@ -1519,7 +1519,7 @@ static async Task RunExposeAcceptorAsync(
 static async Task HandleExposeConnectionAsync(Stream accepted, string targetHost, int targetPort, CancellationToken cancellationToken)
 {
     var overlayStream = accepted;
-    var localClient = new TcpClient { NoDelay = true };
+    var localClient = new System.Net.Sockets.TcpClient { NoDelay = true };
 
     try
     {
@@ -1773,7 +1773,7 @@ static ulong ParseNodeId(string text)
         }
 
         var parsed = ulong.Parse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-        if (parsed == 0 || parsed > ZtNodeId.MaxValue)
+        if (parsed == 0 || parsed > NodeId.MaxValue)
         {
             throw new InvalidOperationException("Invalid nodeId.");
         }
@@ -1782,7 +1782,7 @@ static ulong ParseNodeId(string text)
     }
 
     var parsedDec = ulong.Parse(span, NumberStyles.None, CultureInfo.InvariantCulture);
-    if (parsedDec == 0 || parsedDec > ZtNodeId.MaxValue)
+    if (parsedDec == 0 || parsedDec > NodeId.MaxValue)
     {
         throw new InvalidOperationException("Invalid nodeId.");
     }

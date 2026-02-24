@@ -61,7 +61,7 @@ static void PrintHelp()
 
         Notes:
           - This sample uses the managed-only real ZeroTier stack (no OS adapter required).
-          - For socket-like APIs, it uses ZtManagedSocket (compat wrapper over ZtZeroTierSocket).
+          - For socket-like APIs, it uses ManagedSocket (compat wrapper over ZeroTierSocket).
         """);
 }
 
@@ -115,7 +115,7 @@ static async Task RunTcpEchoServerAsync(string[] args)
     using var cts = SetupCancel();
     var token = cts.Token;
 
-    var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
@@ -139,7 +139,7 @@ static async Task RunTcpEchoServerAsync(string[] args)
 
             while (!token.IsCancellationRequested)
             {
-                ZtManagedSocket accepted;
+                ManagedSocket accepted;
                 try
                 {
                     accepted = await listener.AcceptAsync(token).ConfigureAwait(false);
@@ -243,7 +243,7 @@ static async Task RunTcpEchoClientAsync(string[] args)
     using var cts = SetupCancel();
     var token = cts.Token;
 
-    var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
@@ -334,7 +334,7 @@ static async Task RunUdpServerAsync(string[] args)
     using var cts = SetupCancel();
     var token = cts.Token;
 
-    var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
@@ -431,7 +431,7 @@ static async Task RunUdpClientAsync(string[] args)
     using var cts = SetupCancel();
     var token = cts.Token;
 
-    var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
@@ -504,7 +504,7 @@ static async Task RunHttpGetAsync(string[] args)
     using var cts = SetupCancel();
     var token = cts.Token;
 
-    var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId

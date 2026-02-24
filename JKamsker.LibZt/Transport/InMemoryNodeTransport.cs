@@ -7,7 +7,7 @@ namespace JKamsker.LibZt.Transport;
 /// <summary>
 /// In-process transport used as M2 offline implementation backbone.
 /// </summary>
-internal sealed class InMemoryNodeTransport : IZtNodeTransport, IDisposable
+internal sealed class InMemoryNodeTransport : INodeTransport, IDisposable
 {
     private sealed record Subscriber(
         Guid RegistrationId,

@@ -14,7 +14,7 @@ public class StoreAndNodeTests
         var path = Path.Combine(Path.GetTempPath(), "zt-store-alias-" + Guid.NewGuid());
         try
         {
-            var store = new FileZtStateStore(path);
+            var store = new FileStateStore(path);
             await store.WriteAsync("roots", new byte[] { 1, 2, 3, 4 });
             var readViaPlanet = await store.ReadAsync("planet");
             var listed = await store.ListAsync();
@@ -32,7 +32,7 @@ public class StoreAndNodeTests
     [Fact]
     public async Task MemoryStore_Roundtrip()
     {
-        var store = new MemoryZtStateStore();
+        var store = new MemoryStateStore();
         await store.WriteAsync("foo/bar", new byte[] { 42, 43, 44 });
         var exists = await store.ExistsAsync("foo/bar");
         var value = await store.ReadAsync("foo/bar");
@@ -52,7 +52,7 @@ public class StoreAndNodeTests
     [Fact]
     public async Task MemoryStore_UsesRootsAlias()
     {
-        var store = new MemoryZtStateStore();
+        var store = new MemoryStateStore();
         await store.WriteAsync("roots", new byte[] { 1, 2, 3, 4 });
         var readViaPlanet = await store.ReadAsync("planet");
         var listed = await store.ListAsync();
@@ -65,8 +65,8 @@ public class StoreAndNodeTests
     [Fact]
     public async Task Node_Start_JoinAndLeave_Workflow()
     {
-        var store = new MemoryZtStateStore();
-        var node = new ZtNode(new ZtNodeOptions
+        var store = new MemoryStateStore();
+        var node = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = store
@@ -88,15 +88,15 @@ public class StoreAndNodeTests
     [Fact]
     public async Task Node_Identity_IsStableAcrossRestart()
     {
-        var store = new MemoryZtStateStore();
-        ZtNodeId firstId;
-        var options = new ZtNodeOptions
+        var store = new MemoryStateStore();
+        NodeId firstId;
+        var options = new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = store
         };
 
-        await using (var first = new ZtNode(options))
+        await using (var first = new Node(options))
         {
             await first.StartAsync();
             var identity = await first.GetIdentityAsync();
@@ -104,7 +104,7 @@ public class StoreAndNodeTests
             await first.StopAsync();
         }
 
-        await using (var second = new ZtNode(options))
+        await using (var second = new Node(options))
         {
             await second.StartAsync();
             var secondId = (await second.GetIdentityAsync()).NodeId;
@@ -115,11 +115,11 @@ public class StoreAndNodeTests
     [Fact]
     public async Task Node_RecoversNetworksAcrossRestart()
     {
-        var store = new MemoryZtStateStore();
+        var store = new MemoryStateStore();
         var stateRoot = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid());
         var networkId = 1357911UL;
 
-        await using (var first = new ZtNode(new ZtNodeOptions
+        await using (var first = new Node(new NodeOptions
         {
             StateRootPath = stateRoot,
             StateStore = store
@@ -130,7 +130,7 @@ public class StoreAndNodeTests
             await first.StopAsync();
         }
 
-        await using (var second = new ZtNode(new ZtNodeOptions
+        await using (var second = new Node(new NodeOptions
         {
             StateRootPath = stateRoot,
             StateStore = store
@@ -145,8 +145,8 @@ public class StoreAndNodeTests
     [Fact]
     public async Task Node_EventStream_YieldsEvents_WhenSubscribed()
     {
-        var store = new MemoryZtStateStore();
-        await using var node = new ZtNode(new ZtNodeOptions
+        var store = new MemoryStateStore();
+        await using var node = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = store
@@ -162,8 +162,8 @@ public class StoreAndNodeTests
         for (var i = 0; i < 5; i++)
         {
             Assert.True(await enumerator.MoveNextAsync());
-            sawStarting |= enumerator.Current.Code == ZtEventCode.NodeStarting;
-            sawStarted |= enumerator.Current.Code == ZtEventCode.NodeStarted;
+            sawStarting |= enumerator.Current.Code == EventCode.NodeStarting;
+            sawStarted |= enumerator.Current.Code == EventCode.NodeStarted;
             if (sawStarting && sawStarted)
             {
                 break;
@@ -177,17 +177,17 @@ public class StoreAndNodeTests
     [Fact]
     public async Task InMemoryTransport_DeliversFramesBetweenNodes()
     {
-        var n1Store = new MemoryZtStateStore();
-        var n2Store = new MemoryZtStateStore();
+        var n1Store = new MemoryStateStore();
+        var n2Store = new MemoryStateStore();
         var networkId = 424242UL;
         var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        await using var node1 = new ZtNode(new ZtNodeOptions
+        await using var node1 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n1Store
         });
-        await using var node2 = new ZtNode(new ZtNodeOptions
+        await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n2Store
@@ -217,22 +217,22 @@ public class StoreAndNodeTests
     [Fact]
     public async Task OsUdpTransport_DeliversFramesBetweenNodes()
     {
-        var n1Store = new MemoryZtStateStore();
-        var n2Store = new MemoryZtStateStore();
+        var n1Store = new MemoryStateStore();
+        var n2Store = new MemoryStateStore();
         var networkId = 98765UL;
         var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        await using var node1 = new ZtNode(new ZtNodeOptions
+        await using var node1 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n1Store,
-            TransportMode = ZtTransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp
         });
-        await using var node2 = new ZtNode(new ZtNodeOptions
+        await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n2Store,
-            TransportMode = ZtTransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp
         });
 
         node2.FrameReceived += (_, frame) =>
@@ -273,22 +273,22 @@ public class StoreAndNodeTests
     [Fact]
     public async Task OsUdpTransport_AutoDiscoversPeersWithoutManualAdd()
     {
-        var n1Store = new MemoryZtStateStore();
-        var n2Store = new MemoryZtStateStore();
+        var n1Store = new MemoryStateStore();
+        var n2Store = new MemoryStateStore();
         var networkId = 54321UL;
         var tcs = new TaskCompletionSource<ReadOnlyMemory<byte>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        await using var node1 = new ZtNode(new ZtNodeOptions
+        await using var node1 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n1Store,
-            TransportMode = ZtTransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp
         });
-        await using var node2 = new ZtNode(new ZtNodeOptions
+        await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n2Store,
-            TransportMode = ZtTransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp
         });
 
         node2.FrameReceived += (_, frame) =>
@@ -319,16 +319,16 @@ public class StoreAndNodeTests
     [Fact]
     public async Task InMemoryUdpClient_EchoesDatagram()
     {
-        var n1Store = new MemoryZtStateStore();
-        var n2Store = new MemoryZtStateStore();
+        var n1Store = new MemoryStateStore();
+        var n2Store = new MemoryStateStore();
         var networkId = 9001UL;
 
-        await using var node1 = new ZtNode(new ZtNodeOptions
+        await using var node1 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n1Store
         });
-        await using var node2 = new ZtNode(new ZtNodeOptions
+        await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n2Store
@@ -339,8 +339,8 @@ public class StoreAndNodeTests
         await node1.JoinNetworkAsync(networkId);
         await node2.JoinNetworkAsync(networkId);
 
-        await using var node1Udp = new ZtUdpClient(node1, networkId, 10001);
-        await using var node2Udp = new ZtUdpClient(node2, networkId, 10002);
+        await using var node1Udp = new UdpClient(node1, networkId, 10001);
+        await using var node2Udp = new UdpClient(node2, networkId, 10002);
 
         await node2Udp.ConnectAsync((await node1.GetIdentityAsync()).NodeId.Value, 10001);
 
@@ -359,22 +359,22 @@ public class StoreAndNodeTests
     [Fact]
     public async Task OsUdpUdpClient_EchoesDatagram()
     {
-        var n1Store = new MemoryZtStateStore();
-        var n2Store = new MemoryZtStateStore();
+        var n1Store = new MemoryStateStore();
+        var n2Store = new MemoryStateStore();
         var networkId = 9002UL;
 
-        await using var node1 = new ZtNode(new ZtNodeOptions
+        await using var node1 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n1Store,
-            TransportMode = ZtTransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp
         });
 
-        await using var node2 = new ZtNode(new ZtNodeOptions
+        await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
             StateStore = n2Store,
-            TransportMode = ZtTransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp
         });
 
         await node1.StartAsync();
@@ -392,8 +392,8 @@ public class StoreAndNodeTests
         await node1.AddPeerAsync(networkId, node2Id, node2Endpoint);
         await node2.AddPeerAsync(networkId, node1Id, node1Endpoint);
 
-        await using var node1Udp = new ZtUdpClient(node1, networkId, 11001);
-        await using var node2Udp = new ZtUdpClient(node2, networkId, 11002);
+        await using var node1Udp = new UdpClient(node1, networkId, 11001);
+        await using var node2Udp = new UdpClient(node2, networkId, 11002);
 
         await node2Udp.ConnectAsync(node1Id, 11001);
 
@@ -413,12 +413,12 @@ public class StoreAndNodeTests
     [Fact]
     public async Task TcpListener_EchoesPayloadOffline()
     {
-        await using var listener = new ZtTcpListener(IPAddress.Loopback, 0);
+        await using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = listener.LocalEndpoint.Port;
         var acceptTask = listener.AcceptTcpClientAsync();
 
-        await using var client = new ZtTcpClient();
+        await using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
         await using var server = await acceptTask;
 

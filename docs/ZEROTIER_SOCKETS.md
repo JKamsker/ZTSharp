@@ -19,12 +19,12 @@ For an overview of the stack's capabilities and limitations, see [ZeroTier Stack
 
 ## Building Blocks
 
-**`ZtZeroTierSocket`** -- the main entry point.
+**`ZeroTierSocket`** -- the main entry point.
 Joins a ZeroTier network, resolves managed IPs, and creates TCP/UDP primitives.
 
-**`ZtZeroTierTcpListener`** / **`ZtZeroTierUdpSocket`** -- low-level async APIs using `Stream` and datagrams.
+**`ZeroTierTcpListener`** / **`ZeroTierUdpSocket`** -- low-level async APIs using `Stream` and datagrams.
 
-**`ZtManagedSocket`** -- a compatibility wrapper for porting `System.Net.Sockets.Socket`-style code.
+**`ManagedSocket`** -- a compatibility wrapper for porting `System.Net.Sockets.Socket`-style code.
 Implements: `Bind`, `Listen`, `Accept`, `Connect`, `Send`, `Receive`, `SendTo`, `ReceiveFrom`, `Shutdown`, `Close`, `Dispose`.
 
 ---
@@ -37,7 +37,7 @@ using System.Net.Sockets;
 using System.Text;
 using JKamsker.LibZt.ZeroTier;
 
-await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {
     StateRootPath = "path/to/state",
     NetworkId = 0x9ad07d01093a69e3UL
@@ -69,7 +69,7 @@ using System.Net;
 using System.Net.Http;
 using JKamsker.LibZt.ZeroTier;
 
-await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {
     StateRootPath = "path/to/state",
     NetworkId = 0x9ad07d01093a69e3UL
@@ -100,8 +100,8 @@ IPv4 and IPv6 (if the network assigns IPv6 managed IPs).
 
 | Operation | API |
 |:----------|:----|
-| Connect | `ZtZeroTierSocket.ConnectTcpAsync(...)` or `ZtManagedSocket.ConnectAsync(...)` |
-| Listen + Accept | `ZtZeroTierSocket.ListenTcpAsync(...)` or `ZtManagedSocket.ListenAsync(...)` + `AcceptAsync(...)` |
+| Connect | `ZeroTierSocket.ConnectTcpAsync(...)` or `ManagedSocket.ConnectAsync(...)` |
+| Listen + Accept | `ZeroTierSocket.ListenTcpAsync(...)` or `ManagedSocket.ListenAsync(...)` + `AcceptAsync(...)` |
 | Timeout overloads | `ConnectTcpAsync(..., TimeSpan timeout, ...)` and `AcceptAsync(TimeSpan timeout, ...)` |
 | Cancellation | Supported on both connect and accept |
 
@@ -109,8 +109,8 @@ IPv4 and IPv6 (if the network assigns IPv6 managed IPs).
 
 | Operation | API |
 |:----------|:----|
-| Bind | `ZtZeroTierSocket.BindUdpAsync(...)` |
-| Send / Receive | `ZtZeroTierUdpSocket.SendToAsync(...)` / `ReceiveFromAsync(...)` |
+| Bind | `ZeroTierSocket.BindUdpAsync(...)` |
+| Send / Receive | `ZeroTierUdpSocket.SendToAsync(...)` / `ReceiveFromAsync(...)` |
 | Timeout overload | `ReceiveFromAsync(..., TimeSpan timeout, ...)` |
 
 ---
@@ -126,9 +126,9 @@ There is no virtual network interface visible to the operating system.
 
 ### Bind Semantics
 
-- `ZtZeroTierSocket` binds to one of its managed IPs.
-- `ZtManagedSocket.BindAsync(IPAddress.Any, port)` maps to the node's first managed IPv4.
-- `ZtManagedSocket.BindAsync(IPAddress.IPv6Any, port)` maps to the node's first managed IPv6.
+- `ZeroTierSocket` binds to one of its managed IPs.
+- `ManagedSocket.BindAsync(IPAddress.Any, port)` maps to the node's first managed IPv4.
+- `ManagedSocket.BindAsync(IPAddress.IPv6Any, port)` maps to the node's first managed IPv6.
 - Port `0` (ephemeral) is **not supported** -- bind to a concrete port.
 
 ### Socket Options
@@ -138,7 +138,7 @@ No `Select` or `Poll`.
 
 ### Accepted Connection Metadata
 
-`ZtManagedSocket.RemoteEndPoint` is currently `null` for accepted sockets.
+`ManagedSocket.RemoteEndPoint` is currently `null` for accepted sockets.
 The underlying listener hands off a `Stream` without endpoint metadata.
 
 ### Performance

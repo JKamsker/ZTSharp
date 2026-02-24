@@ -9,7 +9,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 ## Milestone M0 — Repository scaffolding and API surface
 - [x] Record full implementation strategy and task plan in versioned docs.
 - [x] Create repository solution and projects (`JKamsker.LibZt`, tests).
-- [x] Add root API namespace and public types (`ZtNode`, `ZtNodeOptions`, events, logging contracts).
+- [x] Add root API namespace and public types (`Node`, `NodeOptions`, events, logging contracts).
 - [x] Add pluggable store interfaces and file/memory implementations.
 - [x] Add dependency constraints and package references (`.NET 10`, optional crypto and logging libraries).
 - [x] Add test project layout with baseline test fixtures.
@@ -34,24 +34,24 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 - [x] Add offline integration tests for join/leave and network membership transitions.
 
 ## Milestone M3 — Managed user-space stack MVP
-	- [x] Implement UDP-like datagrams over node transport (`ZtUdpClient`).
+	- [x] Implement UDP-like datagrams over node transport (`UdpClient`).
 	- [x] Implement overlay TCP stream/listener primitives over node transport.
-	- [x] Provide OS TCP wrapper APIs for local tests (`ZtTcpClient`, `ZtTcpListener`).
+	- [x] Provide OS TCP wrapper APIs for local tests (`TcpClient`, `TcpListener`).
 	- [x] Add IPv4/IPv6 overlay endpoint/address model support (virtual NIC / lwIP parity).
 	- [x] Add IPv4/IPv6 support in `OsUdp` transport.
-	- [x] Add `ZtUdpClient`, `ZtTcpClient`, `ZtTcpListener` public APIs.
+	- [x] Add `UdpClient`, `TcpClient`, `TcpListener` public APIs.
 	- [x] Add offline echo tests for UDP frames and OS TCP loopback.
 
-## Milestone M4 — Real interop via `ztnet` validation network
+## Milestone M4 — Real interop via `net` validation network
 - [x] Add OS UDP transport adapter and packet framing.
 - [x] Implement node-to-node handshake over real UDP path.
 - [x] Add peer endpoint registration API and OS UDP peer mapping.
 - [x] Add in-process peer discovery handshake over OS UDP (HELLO control frames).
 - [x] Add virtual network interface plumbing (in-managed interface + raw packet framing; OS TUN/TAP parity remains future/native).
-- [x] Validate network creation via local `ztnet` CLI.
-- [x] Run manual `ztnet network create` command with configured local credentials.
-- [x] Validate joining a `ztnet`-managed network (membership + authorization) using local `ztnet` CLI (does not join the ZeroTier overlay yet).
-- [x] Verify end-to-end socket communication between managed nodes in that network (`ZtUdpClient` + `ZtOverlayTcpClient`).
+- [x] Validate network creation via local `net` CLI.
+- [x] Run manual `net network create` command with configured local credentials.
+- [x] Validate joining a `net`-managed network (membership + authorization) using local `net` CLI (does not join the ZeroTier overlay yet).
+- [x] Verify end-to-end socket communication between managed nodes in that network (`UdpClient` + `OverlayTcpClient`).
 - [x] Add optional E2E test scaffold gated by `LIBZT_RUN_E2E` for external CLI smoke checks.
 
 ## Milestone M5 — Cross-platform and hardening

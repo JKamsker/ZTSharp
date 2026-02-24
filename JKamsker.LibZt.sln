@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -9,7 +9,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Tests", "JKa
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{5D20AA90-6969-D8BD-9DCD-8634F4692FDA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Samples.ZtNetE2E", "samples\JKamsker.LibZt.Samples.ZtNetE2E\JKamsker.LibZt.Samples.ZtNetE2E.csproj", "{5F42012C-E634-4AB7-B59A-5D3285F62635}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Samples.NetE2E", "samples\JKamsker.LibZt.Samples.NetE2E\JKamsker.LibZt.Samples.NetE2E.csproj", "{5F42012C-E634-4AB7-B59A-5D3285F62635}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JKamsker.LibZt.Cli", "samples\JKamsker.LibZt.Cli\JKamsker.LibZt.Cli.csproj", "{479C17D2-0665-4510-937D-6554E3F15092}"
 EndProject

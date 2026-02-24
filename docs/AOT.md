@@ -6,8 +6,8 @@ The library aims to stay friendly to Native AOT and trimming.
 
 ## Current Measures
 
-- **Source-generated JSON serialization** -- `System.Text.Json` usage in `ZtNode.JoinNetworkAsync`
-  uses source-generated metadata (`JKamsker.LibZt/ZtJsonContext.cs`) instead of reflection.
+- **Source-generated JSON serialization** -- `System.Text.Json` usage in `Node.JoinNetworkAsync`
+  uses source-generated metadata (`JKamsker.LibZt/JsonContext.cs`) instead of reflection.
 - **Trimming enabled** -- the library is marked `IsTrimmable=true` in
   `JKamsker.LibZt/JKamsker.LibZt.csproj`.
 
@@ -19,7 +19,7 @@ If you plan to publish with AOT or trimming, validate early with your target `do
 
 ```powershell
 dotnet publish -c Release `
-  samples/JKamsker.LibZt.Samples.ZtNetE2E/JKamsker.LibZt.Samples.ZtNetE2E.csproj `
+  samples/JKamsker.LibZt.Samples.NetE2E/JKamsker.LibZt.Samples.NetE2E.csproj `
   -p:PublishTrimmed=true
 ```
 

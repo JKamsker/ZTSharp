@@ -30,7 +30,7 @@ Join a real ZeroTier network and make an HTTP request:
 ```csharp
 using JKamsker.LibZt.ZeroTier;
 
-await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {
     StateRootPath = "path/to/state",
     NetworkId = 0x9ad07d01093a69e3UL

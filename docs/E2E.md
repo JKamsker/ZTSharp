@@ -21,19 +21,19 @@ dotnet test -c Release --filter "FullyQualifiedName~ZeroTier_JoinAndHttpGet_E2E"
 
 ---
 
-## Managed Overlay E2E (via ztnet)
+## Managed Overlay E2E (via net)
 
 Validates the legacy managed overlay stack (not the real ZeroTier protocol).
 
-**Prerequisites:** A working `ztnet` auth/session.
+**Prerequisites:** A working `net` auth/session.
 
 **What it does:**
 
-1. Creates a new ZeroTier network via `ztnet`
-2. Starts two managed overlay nodes (`ZtNode` with `OsUdp` transport)
-3. Authorizes both node IDs as network members via `ztnet`
-4. Runs a ping/pong over `ZtUdpClient`
-5. Runs a ping/pong over `ZtOverlayTcpClient` / `ZtOverlayTcpListener`
+1. Creates a new ZeroTier network via `net`
+2. Starts two managed overlay nodes (`Node` with `OsUdp` transport)
+3. Authorizes both node IDs as network members via `net`
+4. Runs a ping/pong over `UdpClient`
+5. Runs a ping/pong over `OverlayTcpClient` / `OverlayTcpListener`
 6. Deletes the network
 
 **Run the test:**
@@ -41,11 +41,11 @@ Validates the legacy managed overlay stack (not the real ZeroTier protocol).
 ```powershell
 $env:LIBZT_RUN_E2E = "true"
 
-dotnet test -c Release --filter "FullyQualifiedName~Ztnet_NetworkCreate_SpawnTwoClients_And_Communicate_E2E"
+dotnet test -c Release --filter "FullyQualifiedName~net_NetworkCreate_SpawnTwoClients_And_Communicate_E2E"
 ```
 
 **Run the sample:**
 
 ```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Samples.ZtNetE2E/JKamsker.LibZt.Samples.ZtNetE2E.csproj
+dotnet run -c Release --project samples/JKamsker.LibZt.Samples.NetE2E/JKamsker.LibZt.Samples.NetE2E.csproj
 ```

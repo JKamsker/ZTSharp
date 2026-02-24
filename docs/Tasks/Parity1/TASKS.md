@@ -73,7 +73,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Add UDP codec (header + pseudo-header checksum) and tests.
 - [x] Extend the routed IP demux to handle UDP alongside TCP.
 - [x] Implement a public managed API for UDP:
-  - `ZtZeroTierSocket.BindUdpAsync(...)`
+  - `ZeroTierSocket.BindUdpAsync(...)`
   - `SendToAsync(...)` / `ReceiveFromAsync(...)`
   - cancellation + timeouts + disposal semantics
 - [x] Implement basic UDP “port in use” and binding validation.

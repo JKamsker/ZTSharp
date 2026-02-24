@@ -13,7 +13,7 @@ internal static class NetworkAddressCodec
     private const int EntryV4Length = 1 + 1 + 4;
     private const int EntryV6Length = 1 + 1 + 16 + sizeof(long);
 
-    public static int GetEncodedLength(IReadOnlyList<ZtNetworkAddress> addresses)
+    public static int GetEncodedLength(IReadOnlyList<NetworkAddress> addresses)
     {
         var total = HeaderLength;
         for (var i = 0; i < addresses.Count; i++)
@@ -25,7 +25,7 @@ internal static class NetworkAddressCodec
     }
 
     public static bool TryEncode(
-        IReadOnlyList<ZtNetworkAddress> addresses,
+        IReadOnlyList<NetworkAddress> addresses,
         Span<byte> destination,
         out int bytesWritten)
     {
@@ -94,9 +94,9 @@ internal static class NetworkAddressCodec
         return true;
     }
 
-    public static bool TryDecode(ReadOnlySpan<byte> encoded, out ZtNetworkAddress[] addresses)
+    public static bool TryDecode(ReadOnlySpan<byte> encoded, out NetworkAddress[] addresses)
     {
-        addresses = Array.Empty<ZtNetworkAddress>();
+        addresses = Array.Empty<NetworkAddress>();
         if (encoded.Length < HeaderLength || encoded[0] != Version)
         {
             return false;
@@ -113,7 +113,7 @@ internal static class NetworkAddressCodec
             return true;
         }
 
-        var decoded = new ZtNetworkAddress[count];
+        var decoded = new NetworkAddress[count];
         var offset = HeaderLength;
 
         for (var i = 0; i < count; i++)
@@ -132,7 +132,7 @@ internal static class NetworkAddressCodec
                     return false;
                 }
 
-                decoded[i] = new ZtNetworkAddress(new IPAddress(encoded.Slice(offset + 2, 4)), prefix);
+                decoded[i] = new NetworkAddress(new IPAddress(encoded.Slice(offset + 2, 4)), prefix);
                 offset += EntryV4Length;
                 continue;
             }
@@ -151,7 +151,7 @@ internal static class NetworkAddressCodec
                     address.ScopeId = scopeId;
                 }
 
-                decoded[i] = new ZtNetworkAddress(address, prefix);
+                decoded[i] = new NetworkAddress(address, prefix);
                 offset += EntryV6Length;
                 continue;
             }

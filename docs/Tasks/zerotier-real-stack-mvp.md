@@ -10,8 +10,8 @@ Status legend:
 - [x] Add initial task breakdown (this file).
 
 ## Milestone Z1 — Public API + CLI wiring (scaffolding, no networking yet)
-- [x] Add `JKamsker.LibZt.ZeroTier` public API stubs (`ZtZeroTierSocketOptions`, `ZtZeroTierSocket`).
-- [x] Add `ZtZeroTierHttpMessageHandler` stub that plugs into `HttpClient`.
+- [x] Add `JKamsker.LibZt.ZeroTier` public API stubs (`ZeroTierSocketOptions`, `ZeroTierSocket`).
+- [x] Add `ZeroTierHttpMessageHandler` stub that plugs into `HttpClient`.
 - [x] Update CLI: accept `--stack zerotier` and `--stack libzt` (alias), route `call` through new API.
 - [x] Add docs: `docs/ZEROTIER_STACK.md` with intended usage and current limitations.
 - [x] Add minimal unit tests for API surface (compiles, basic argument validation).
@@ -38,7 +38,7 @@ Status legend:
   - [x] Implement NETWORK_CONFIG_REQUEST flow and parse responses.
 - [x] Persist assigned managed IPs to state and expose them via API.
   - [x] Persist network config + assigned IPs under `<state>/zerotier/`.
-  - [x] Expose assigned IPs via `ZtZeroTierSocket.ManagedIps`.
+  - [x] Expose assigned IPs via `ZeroTierSocket.ManagedIps`.
 
 ## Milestone Z5 — Outbound TCP + HttpClient “just works”
 - [x] Implement root-relayed dataplane (single-root MVP).
@@ -50,13 +50,13 @@ Status legend:
   - [x] Add IPv4 codec + checksum helpers.
   - [x] Add TCP codec + MSS option (small MSS to avoid ZT fragmentation).
   - [x] Add TCP active-open (client) with a `Stream` abstraction (basic retransmit).
-- [x] Wire `ZtZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
+- [x] Wire `ZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
   - [x] Implement `ConnectTcpAsync` to return a stream backed by user-space TCP.
 - [x] Add opt-in E2E test (`LIBZT_RUN_ZEROTIER_E2E`) with env-configured NWID + URL.
 
 ## Milestone Z6 — CLI + docs alignment
 - [x] Make CLI `--stack managed` use the real ZeroTier managed stack; add `--stack overlay` for the legacy managed overlay stack (keep `zerotier`/`libzt` as aliases for `managed`).
-- [x] Update tunnel demo + ztnet scripts/docs to pass `--stack overlay` where they rely on the legacy overlay stack.
+- [x] Update tunnel demo + net scripts/docs to pass `--stack overlay` where they rely on the legacy overlay stack.
 - [x] Implement `join --stack managed` (one-shot join + print node id + assigned managed IPs).
 - [x] Update docs (`README.md`, `docs/USAGE.md`, `docs/COMPATIBILITY.md`, `docs/E2E.md`, `docs/ZEROTIER_STACK.md`) to reflect the real ZeroTier stack MVP.
 
@@ -79,7 +79,7 @@ Status legend:
 
 ## Milestone Z9 — NAT traversal (RENDEZVOUS) for `EXT_FRAME`
 - [x] Implement `RENDEZVOUS` payload codec + unit tests.
-- [x] Handle upstream root control packets (`RENDEZVOUS`, `ERROR`) in `ZtZeroTierIpv4Link` using the root key.
+- [x] Handle upstream root control packets (`RENDEZVOUS`, `ERROR`) in `ZeroTierIpv4Link` using the root key.
 - [x] Handle peer `PUSH_DIRECT_PATHS` control packets and track direct endpoints for the session.
 - [x] Use direct endpoint hints to send UDP hole-punch and prefer direct peer endpoints for `EXT_FRAME`.
 
@@ -91,7 +91,7 @@ Status legend:
 ## Milestone Z11 — Listening sockets (TCP passive-open)
 - [x] Add a long-lived managed dataplane runtime (single UDP socket) that can RX/TX `EXT_FRAME` for multiple peers.
 - [x] Implement TCP passive-open (listen/accept) on top of the user-space IPv4/TCP stack.
-- [x] Expose a public API (`ZtZeroTierSocket.ListenTcpAsync` + `AcceptAsync`) that returns a `Stream`.
+- [x] Expose a public API (`ZeroTierSocket.ListenTcpAsync` + `AcceptAsync`) that returns a `Stream`.
 - [x] Update CLI `expose` to support `--stack managed` using the new listener.
 - [x] Manual verification: start `libzt expose --stack managed` and connect from another ZeroTier network participant to `http://<managed-ip>:<port>/`.
 
@@ -101,7 +101,7 @@ Status legend:
 - [x] Manual verification: `libzt listen` logs a request from `libzt call --stack managed --url http://<managed-ip>:<port>/`.
 
 ## Milestone Z13 — OS ZeroTier client can connect inbound
-- [x] Add trace logs in `ZtZeroTierDataplaneRuntime` for first inbound packets (`LIBZT_ZEROTIER_TRACE=true`).
-- [x] Handle peer `HELLO` and respond with `OK(HELLO)` in `ZtZeroTierDataplaneRuntime`.
-- [ ] Handle `RENDEZVOUS` (from root) and `PUSH_DIRECT_PATHS` (from peers) in `ZtZeroTierDataplaneRuntime` and send UDP hole punches.
+- [x] Add trace logs in `ZeroTierDataplaneRuntime` for first inbound packets (`LIBZT_ZEROTIER_TRACE=true`).
+- [x] Handle peer `HELLO` and respond with `OK(HELLO)` in `ZeroTierDataplaneRuntime`.
+- [ ] Handle `RENDEZVOUS` (from root) and `PUSH_DIRECT_PATHS` (from peers) in `ZeroTierDataplaneRuntime` and send UDP hole punches.
 - [x] Manual verification: from an OS ZeroTier client on `9ad07d01093a69e3`, `curl http://10.121.15.82:5380/` receives `ok` (via `ssh server@server`).

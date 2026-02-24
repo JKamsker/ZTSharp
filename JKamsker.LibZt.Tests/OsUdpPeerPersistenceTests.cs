@@ -13,11 +13,11 @@ public sealed class OsUdpPeerPersistenceTests
 
         try
         {
-            await using var nodeB = new ZtNode(new ZtNodeOptions
+            await using var nodeB = new Node(new NodeOptions
             {
                 StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
-                StateStore = new MemoryZtStateStore(),
-                TransportMode = ZtTransportMode.OsUdp,
+                StateStore = new MemoryStateStore(),
+                TransportMode = TransportMode.OsUdp,
                 EnablePeerDiscovery = false
             });
 
@@ -28,12 +28,12 @@ public sealed class OsUdpPeerPersistenceTests
             var nodeBEndpoint = nodeB.LocalTransportEndpoint;
             Assert.NotNull(nodeBEndpoint);
 
-            await using var udpB = new ZtUdpClient(nodeB, networkId, 14002);
+            await using var udpB = new UdpClient(nodeB, networkId, 14002);
 
-            await using (var nodeA = new ZtNode(new ZtNodeOptions
+            await using (var nodeA = new Node(new NodeOptions
             {
                 StateRootPath = nodeARoot,
-                TransportMode = ZtTransportMode.OsUdp,
+                TransportMode = TransportMode.OsUdp,
                 EnablePeerDiscovery = false
             }))
             {
@@ -42,7 +42,7 @@ public sealed class OsUdpPeerPersistenceTests
 
                 await nodeA.AddPeerAsync(networkId, nodeBId, nodeBEndpoint);
 
-                await using var udpA = new ZtUdpClient(nodeA, networkId, 14001);
+                await using var udpA = new UdpClient(nodeA, networkId, 14001);
                 await udpA.ConnectAsync(nodeBId, 14002);
 
                 var payload1 = Encoding.UTF8.GetBytes("one");
@@ -52,17 +52,17 @@ public sealed class OsUdpPeerPersistenceTests
                 Assert.True(datagram1.Payload.Span.SequenceEqual(payload1));
             }
 
-            await using var nodeA2 = new ZtNode(new ZtNodeOptions
+            await using var nodeA2 = new Node(new NodeOptions
             {
                 StateRootPath = nodeARoot,
-                TransportMode = ZtTransportMode.OsUdp,
+                TransportMode = TransportMode.OsUdp,
                 EnablePeerDiscovery = false
             });
 
             await nodeA2.StartAsync();
             await nodeA2.JoinNetworkAsync(networkId);
 
-            await using var udpA2 = new ZtUdpClient(nodeA2, networkId, 14003);
+            await using var udpA2 = new UdpClient(nodeA2, networkId, 14003);
             await udpA2.ConnectAsync(nodeBId, 14002);
 
             var payload2 = Encoding.UTF8.GetBytes("two");
