@@ -28,8 +28,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZeroTierIdentity _localIdentity;
     private readonly ulong _networkId;
     private readonly byte[] _inlineCom;
-    private readonly IPAddress _localManagedIpV4;
-    private readonly byte[] _localManagedIpV4Bytes;
+    private readonly IPAddress? _localManagedIpV4;
+    private readonly byte[]? _localManagedIpV4Bytes;
     private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZeroTierMac _localMac;
 
@@ -64,7 +64,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         byte[] rootKey,
         ZeroTierIdentity localIdentity,
         ulong networkId,
-        IPAddress localManagedIpV4,
+        IPAddress? localManagedIpV4,
         IReadOnlyList<IPAddress> localManagedIpsV6,
         byte[] inlineCom)
     {
@@ -72,7 +72,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(rootEndpoint);
         ArgumentNullException.ThrowIfNull(rootKey);
         ArgumentNullException.ThrowIfNull(localIdentity);
-        ArgumentNullException.ThrowIfNull(localManagedIpV4);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
@@ -81,9 +80,14 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             throw new InvalidOperationException("Local identity must contain a private key.");
         }
 
-        if (localManagedIpV4.AddressFamily != AddressFamily.InterNetwork)
+        if (localManagedIpV4 is null && localManagedIpsV6.Count == 0)
         {
-            throw new NotSupportedException("A managed IPv4 is required for the managed stack MVP.");
+            throw new ArgumentOutOfRangeException(nameof(localManagedIpV4), "At least one managed IP (IPv4 or IPv6) is required.");
+        }
+
+        if (localManagedIpV4 is not null && localManagedIpV4.AddressFamily != AddressFamily.InterNetwork)
+        {
+            throw new ArgumentOutOfRangeException(nameof(localManagedIpV4), "Managed IPv4 must be an IPv4 address.");
         }
 
         for (var i = 0; i < localManagedIpsV6.Count; i++)
@@ -102,7 +106,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _networkId = networkId;
         _inlineCom = inlineCom;
         _localManagedIpV4 = localManagedIpV4;
-        _localManagedIpV4Bytes = localManagedIpV4.GetAddressBytes();
+        _localManagedIpV4Bytes = localManagedIpV4?.GetAddressBytes();
         _localManagedIpsV6 = localManagedIpsV6.Count == 0 ? Array.Empty<IPAddress>() : localManagedIpsV6.ToArray();
         _localMac = ZeroTierMac.FromAddress(localIdentity.NodeId, networkId);
 
@@ -945,17 +949,23 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private ValueTask HandleArpFrameAsync(NodeId peerNodeId, ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
     {
+        var localManagedIpV4Bytes = _localManagedIpV4Bytes;
+        if (localManagedIpV4Bytes is null)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         if (!TryParseArpRequest(frame, out var senderMac, out var senderIp, out var targetIp))
         {
             return ValueTask.CompletedTask;
         }
 
-        if (!targetIp.SequenceEqual(_localManagedIpV4Bytes))
+        if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
         {
             return ValueTask.CompletedTask;
         }
 
-        var reply = BuildArpReply(senderMac, senderIp);
+        var reply = BuildArpReply(senderMac, senderIp, localManagedIpV4Bytes);
         return SendEthernetFrameAsync(peerNodeId, EtherTypeArp, reply, cancellationToken);
     }
 
@@ -991,8 +1001,16 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         return true;
     }
 
-    private byte[] BuildArpReply(ReadOnlySpan<byte> requesterMac, ReadOnlySpan<byte> requesterIp)
+    private byte[] BuildArpReply(
+        ReadOnlySpan<byte> requesterMac,
+        ReadOnlySpan<byte> requesterIp,
+        ReadOnlySpan<byte> localManagedIpV4Bytes)
     {
+        if (localManagedIpV4Bytes.Length != 4)
+        {
+            throw new ArgumentOutOfRangeException(nameof(localManagedIpV4Bytes), "Local IPv4 address bytes must be exactly 4 bytes.");
+        }
+
         var reply = new byte[28];
         var span = reply.AsSpan();
 
@@ -1006,7 +1024,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _localMac.CopyTo(localMac);
 
         localMac.CopyTo(span.Slice(8, 6)); // SHA
-        _localManagedIpV4Bytes.CopyTo(span.Slice(14, 4)); // SPA
+        localManagedIpV4Bytes.CopyTo(span.Slice(14, 4)); // SPA
         requesterMac.CopyTo(span.Slice(18, 6)); // THA
         requesterIp.CopyTo(span.Slice(24, 4)); // TPA
 

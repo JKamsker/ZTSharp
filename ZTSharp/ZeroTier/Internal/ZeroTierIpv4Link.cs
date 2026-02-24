@@ -52,7 +52,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         ArgumentNullException.ThrowIfNull(sharedKey);
         if (localManagedIp.AddressFamily != AddressFamily.InterNetwork)
         {
-            throw new ArgumentOutOfRangeException(nameof(localManagedIp), "Only IPv4 managed IPs are supported in the TCP MVP.");
+            throw new ArgumentOutOfRangeException(nameof(localManagedIp), "Local managed IP must be an IPv4 address.");
         }
 
         _udp = udp;

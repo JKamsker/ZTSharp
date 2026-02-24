@@ -195,10 +195,11 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
-        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ??
+                           ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
         if (localAddress is null)
         {
-            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+            throw new InvalidOperationException("No managed IP assigned for this network.");
         }
 
         return await ListenTcpAsync(localAddress, port, cancellationToken).ConfigureAwait(false);
@@ -227,8 +228,8 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
-        var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
+        var (localManagedIpV4, comBytes) = GetLocalManagedIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
         return new ZeroTierTcpListener(runtime, localAddress, (ushort)port);
     }
 
@@ -238,10 +239,11 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
-        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ??
+                           ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
         if (localAddress is null)
         {
-            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+            throw new InvalidOperationException("No managed IP assigned for this network.");
         }
 
         return await BindUdpAsync(localAddress, port, cancellationToken).ConfigureAwait(false);
@@ -273,8 +275,8 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
-        var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
+        var (localManagedIpV4, comBytes) = GetLocalManagedIpv4AndInlineCom();
+        var runtime = await GetOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
 
         if (port != 0)
         {
@@ -477,8 +479,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
 
-        var (localIpv4, comBytes) = GetLocalIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localIpv4, comBytes, cancellationToken).ConfigureAwait(false);
+        var (localManagedIpV4, comBytes) = GetLocalManagedIpv4AndInlineCom();
 
         if (local is not null && local.Address.AddressFamily != remote.Address.AddressFamily)
         {
@@ -491,7 +492,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         }
 
         var localAddress = local?.Address ?? (remote.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
-            ? localIpv4
+            ? localManagedIpV4 ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.")
             : ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
               ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network."));
 
@@ -500,6 +501,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
+        var runtime = await GetOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
         var remoteNodeId = await runtime.ResolveNodeIdAsync(remote.Address, cancellationToken).ConfigureAwait(false);
 
         var fixedPort = local is not null && local.Port != 0;
@@ -547,14 +549,15 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         return tcp.GetStream();
     }
 
-    private (IPAddress LocalAddress, byte[] InlineCom) GetLocalIpv4AndInlineCom()
+    private (IPAddress? LocalManagedIpV4, byte[] InlineCom) GetLocalManagedIpv4AndInlineCom()
     {
-        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
-        if (localAddress is null)
-        {
-            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
-        }
+        var localManagedIpV4 = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
+        var inlineCom = GetInlineCom();
+        return (localManagedIpV4, inlineCom);
+    }
 
+    private byte[] GetInlineCom()
+    {
         var dict = _networkConfigDictionaryBytes;
         if (dict is null)
         {
@@ -581,7 +584,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             comBytes = comBytes.AsSpan(0, comLen).ToArray();
         }
 
-        return (localAddress, comBytes);
+        return comBytes;
     }
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -589,7 +592,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         "CA2000:Dispose objects before losing scope",
         Justification = "UDP transport ownership transfers to ZeroTierDataplaneRuntime, which is disposed by ZeroTierSocket.DisposeAsync.")]
     private async Task<ZeroTierDataplaneRuntime> GetOrCreateRuntimeAsync(
-        IPAddress localAddress,
+        IPAddress? localManagedIpV4,
         byte[] inlineCom,
         CancellationToken cancellationToken)
     {
@@ -641,16 +644,17 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                     rootKey: rootKey,
                     localIdentity: _identity,
                     networkId: _options.NetworkId,
-                    localManagedIpV4: localAddress,
+                    localManagedIpV4: localManagedIpV4,
                     localManagedIpsV6: localManagedIpsV6,
                     inlineCom: inlineCom);
 
                 try
                 {
-                    var groups = new List<ZeroTierMulticastGroup>(1 + localManagedIpsV6.Length)
+                    var groups = new List<ZeroTierMulticastGroup>((localManagedIpV4 is not null ? 1 : 0) + localManagedIpsV6.Length);
+                    if (localManagedIpV4 is not null)
                     {
-                        ZeroTierMulticastGroup.DeriveForAddressResolution(localAddress)
-                    };
+                        groups.Add(ZeroTierMulticastGroup.DeriveForAddressResolution(localManagedIpV4));
+                    }
 
                     for (var i = 0; i < localManagedIpsV6.Length; i++)
                     {

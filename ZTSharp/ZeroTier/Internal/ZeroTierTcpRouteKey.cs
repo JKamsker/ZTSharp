@@ -17,7 +17,7 @@ internal readonly record struct ZeroTierTcpRouteKey(
         if (local.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork ||
             remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
         {
-            throw new NotSupportedException("Only IPv4 is supported in the TCP MVP.");
+            throw new NotSupportedException("Local and remote endpoints must be IPv4.");
         }
 
         return new ZeroTierTcpRouteKey(
@@ -37,4 +37,3 @@ internal readonly record struct ZeroTierTcpRouteKey(
         return new IPAddress(bytes).ToString();
     }
 }
-

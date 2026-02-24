@@ -19,7 +19,7 @@ internal readonly record struct ZeroTierHelloOk(
 
 internal static class ZeroTierHelloClient
 {
-    internal const byte AdvertisedProtocolVersion = 11; // <12 => avoid AES-GMAC-SIV for early MVP.
+    internal const byte AdvertisedProtocolVersion = 11; // <12 avoids AES-GMAC-SIV (v12+), which is not implemented.
     internal const byte AdvertisedMajorVersion = 1;
     internal const byte AdvertisedMinorVersion = 12;
     internal const ushort AdvertisedRevision = 0;
@@ -367,7 +367,7 @@ internal static class ZeroTierHelloClient
         BinaryPrimitives.WriteUInt64BigEndian(payload.AsSpan(p, 8), planet.Timestamp);
         p += 8;
 
-        // Encrypted portion: just moon count (0) for MVP.
+        // Encrypted portion: moon count (0) (no moons advertised).
         BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(p, 2), 0);
         p += 2;
 
