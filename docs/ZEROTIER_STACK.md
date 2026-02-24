@@ -10,7 +10,7 @@ For the managed socket API surface and code examples, see [ZeroTier Sockets](ZER
 ## Quick Example
 
 ```csharp
-using JKamsker.LibZt.ZeroTier;
+using ZTSharp.ZeroTier;
 
 await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {
@@ -69,7 +69,7 @@ This repo contains two independent networking stacks:
 
 | | Real ZeroTier Stack | Legacy Overlay Stack |
 |:--|:--------------------|:---------------------|
-| **Namespace** | `JKamsker.LibZt.ZeroTier` | `JKamsker.LibZt` |
+| **Namespace** | `ZTSharp.ZeroTier` | `ZTSharp` |
 | **Protocol** | Real ZeroTier (controller-based NWIDs) | Custom managed transport |
 | **Interop** | Talks to OS ZeroTier clients | Only talks to other managed nodes |
 | **Transport** | ZeroTier root servers | `InMemory` or `OsUdp` |

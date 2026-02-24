@@ -25,13 +25,13 @@ For ZeroTier-specific socket details, see [ZeroTier Sockets](ZEROTIER_SOCKETS.md
 
 ## Real ZeroTier Stack
 
-The `JKamsker.LibZt.ZeroTier` namespace provides managed-only access to real ZeroTier networks.
+The `ZTSharp.ZeroTier` namespace provides managed-only access to real ZeroTier networks.
 No OS client installation required.
 
 ### Join a Network
 
 ```csharp
-using JKamsker.LibZt.ZeroTier;
+using ZTSharp.ZeroTier;
 
 await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {
@@ -112,19 +112,19 @@ var result = await udp.ReceiveFromAsync(buffer);
 > **Note:** See [ZeroTier Stack](ZEROTIER_STACK.md) for current capabilities and limitations.
 > See [ZeroTier Sockets](ZEROTIER_SOCKETS.md) for the full API surface and known differences vs OS sockets.
 
-**Runnable sample:** `samples/JKamsker.LibZt.Samples.ZeroTierSockets`
+**Runnable sample:** `samples/ZTSharp.Samples.ZeroTierSockets`
 
 ---
 
 ## Legacy Overlay Stack
 
-The `JKamsker.LibZt` namespace provides a custom managed overlay transport.
+The `ZTSharp` namespace provides a custom managed overlay transport.
 This stack is **not** protocol-compatible with the real ZeroTier network.
 
 ### Create a Node
 
 ```csharp
-using JKamsker.LibZt;
+using ZTSharp;
 
 await using var node = new Node(new NodeOptions
 {
@@ -158,7 +158,7 @@ await node.SendFrameAsync(networkId, new byte[] { 1, 2, 3 });
 `ZtUdpClient` multiplexes datagrams by a managed port pair inside the node-to-node transport.
 
 ```csharp
-using JKamsker.LibZt.Sockets;
+using ZTSharp.Sockets;
 
 await using var udpA = new ZtUdpClient(nodeA, networkId, localPort: 10001);
 await using var udpB = new ZtUdpClient(nodeB, networkId, localPort: 10002);
@@ -175,7 +175,7 @@ var datagram = await udpB.ReceiveAsync();
 Accept overlay TCP connections and forward them to a local OS TCP endpoint (ngrok-like):
 
 ```csharp
-using JKamsker.LibZt.Sockets;
+using ZTSharp.Sockets;
 
 await using var forwarder = new OverlayTcpPortForwarder(
     node,
@@ -192,7 +192,7 @@ await forwarder.RunAsync();
 Use `HttpClient` over `OverlayTcpClient` (host can be a node id like `0x0123456789`):
 
 ```csharp
-using JKamsker.LibZt.Http;
+using ZTSharp.Http;
 
 using var http = new HttpClient(new OverlayHttpMessageHandler(node, networkId));
 var response = await http.GetStringAsync("http://0x0123456789:28080/hello");
@@ -201,7 +201,7 @@ var response = await http.GetStringAsync("http://0x0123456789:28080/hello");
 To use overlay IP/hostname addressing, provide an address book:
 
 ```csharp
-using JKamsker.LibZt.Http;
+using ZTSharp.Http;
 using System.Net;
 
 var book = new OverlayAddressBook();

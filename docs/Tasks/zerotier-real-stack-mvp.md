@@ -10,7 +10,7 @@ Status legend:
 - [x] Add initial task breakdown (this file).
 
 ## Milestone Z1 — Public API + CLI wiring (scaffolding, no networking yet)
-- [x] Add `JKamsker.LibZt.ZeroTier` public API stubs (`ZeroTierSocketOptions`, `ZeroTierSocket`).
+- [x] Add `ZTSharp.ZeroTier` public API stubs (`ZeroTierSocketOptions`, `ZeroTierSocket`).
 - [x] Add `ZeroTierHttpMessageHandler` stub that plugs into `HttpClient`.
 - [x] Update CLI: accept `--stack zerotier` and `--stack libzt` (alias), route `call` through new API.
 - [x] Add docs: `docs/ZEROTIER_STACK.md` with intended usage and current limitations.

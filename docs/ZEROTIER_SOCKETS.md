@@ -1,6 +1,6 @@
 # ZeroTier Sockets API
 
-The real ZeroTier managed stack (`JKamsker.LibZt.ZeroTier`) exposes in-process networking primitives
+The real ZeroTier managed stack (`ZTSharp.ZeroTier`) exposes in-process networking primitives
 that look and feel like sockets, but **do not create an OS-visible network adapter**.
 
 For an overview of the stack's capabilities and limitations, see [ZeroTier Stack](ZEROTIER_STACK.md).
@@ -35,7 +35,7 @@ Implements: `Bind`, `Listen`, `Accept`, `Connect`, `Send`, `Receive`, `SendTo`, 
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using JKamsker.LibZt.ZeroTier;
+using ZTSharp.ZeroTier;
 
 await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {
@@ -55,7 +55,7 @@ var buffer = new byte[5];
 var read = await socket.ReceiveAsync(buffer);
 ```
 
-**Runnable sample:** `samples/JKamsker.LibZt.Samples.ZeroTierSockets`
+**Runnable sample:** `samples/ZTSharp.Samples.ZeroTierSockets`
 
 ---
 
@@ -67,7 +67,7 @@ directly into .NET's standard HTTP stack:
 ```csharp
 using System.Net;
 using System.Net.Http;
-using JKamsker.LibZt.ZeroTier;
+using ZTSharp.ZeroTier;
 
 await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {

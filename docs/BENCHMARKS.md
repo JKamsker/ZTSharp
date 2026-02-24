@@ -1,6 +1,6 @@
 # Benchmarks
 
-Benchmark project: `JKamsker.LibZt.Benchmarks/JKamsker.LibZt.Benchmarks.csproj`
+Benchmark project: `ZTSharp.Benchmarks/ZTSharp.Benchmarks.csproj`
 
 Uses BenchmarkDotNet with `MemoryDiagnoser` to report allocations for hot encode/decode and dispatch paths.
 
@@ -9,7 +9,7 @@ Uses BenchmarkDotNet with `MemoryDiagnoser` to report allocations for hot encode
 ## Run All Benchmarks
 
 ```powershell
-dotnet run -c Release --project JKamsker.LibZt.Benchmarks/JKamsker.LibZt.Benchmarks.csproj
+dotnet run -c Release --project ZTSharp.Benchmarks/ZTSharp.Benchmarks.csproj
 ```
 
 ## Run a Specific Benchmark
@@ -17,6 +17,6 @@ dotnet run -c Release --project JKamsker.LibZt.Benchmarks/JKamsker.LibZt.Benchma
 Use BenchmarkDotNet's built-in `--filter` flag:
 
 ```powershell
-dotnet run -c Release --project JKamsker.LibZt.Benchmarks/JKamsker.LibZt.Benchmarks.csproj `
+dotnet run -c Release --project ZTSharp.Benchmarks/ZTSharp.Benchmarks.csproj `
   -- --filter *NodeFrameCodec*
 ```

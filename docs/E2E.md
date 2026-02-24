@@ -47,5 +47,5 @@ dotnet test -c Release --filter "FullyQualifiedName~net_NetworkCreate_SpawnTwoCl
 **Run the sample:**
 
 ```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Samples.NetE2E/JKamsker.LibZt.Samples.NetE2E.csproj
+dotnet run -c Release --project samples/ZTSharp.Samples.NetE2E/ZTSharp.Samples.NetE2E.csproj
 ```

@@ -8,7 +8,7 @@ This file tracks the full implementation of a fully managed .NET 10 replacement 
 
 ## Milestone M0 — Repository scaffolding and API surface
 - [x] Record full implementation strategy and task plan in versioned docs.
-- [x] Create repository solution and projects (`JKamsker.LibZt`, tests).
+- [x] Create repository solution and projects (`ZTSharp`, tests).
 - [x] Add root API namespace and public types (`Node`, `NodeOptions`, events, logging contracts).
 - [x] Add pluggable store interfaces and file/memory implementations.
 - [x] Add dependency constraints and package references (`.NET 10`, optional crypto and logging libraries).

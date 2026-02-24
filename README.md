@@ -1,4 +1,4 @@
-# JKamsker.LibZt
+# ZTSharp
 
 > **Warning**
 > This project is experimental. It has not been audited for security, optimized for performance,
@@ -13,11 +13,11 @@ A fully managed .NET library for ZeroTier networking -- no native binaries, no O
 
 This library provides two independent networking stacks:
 
-**Real ZeroTier Stack** (`JKamsker.LibZt.ZeroTier`)
+**Real ZeroTier Stack** (`ZTSharp.ZeroTier`)
 Join existing controller-based ZeroTier networks using normal NWIDs.
 User-space TCP/UDP sockets, `HttpClient` integration, IPv4/IPv6 -- all in pure managed code.
 
-**Legacy Overlay Stack** (`JKamsker.LibZt`)
+**Legacy Overlay Stack** (`ZTSharp`)
 A custom managed overlay transport for experimentation and testing.
 Not protocol-compatible with the real ZeroTier network.
 
@@ -28,7 +28,7 @@ Not protocol-compatible with the real ZeroTier network.
 Join a real ZeroTier network and make an HTTP request:
 
 ```csharp
-using JKamsker.LibZt.ZeroTier;
+using ZTSharp.ZeroTier;
 
 await using var zt = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
 {

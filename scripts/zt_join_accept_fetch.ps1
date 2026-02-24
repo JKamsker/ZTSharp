@@ -62,7 +62,7 @@ if (-not $SkipBuild) {
 
 Write-Step "Joining network $Network (state: $StateRootPath)..."
 & dotnet run -c $Configuration --no-build `
-    --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+    --project samples/ZTSharp.Cli/ZTSharp.Cli.csproj -- `
     join `
     --once `
     --network $Network `
@@ -84,7 +84,7 @@ ztnet --org $Org --yes network member authorize $Network $nodeIdForZtnet | Out-H
 
 Write-Step "Fetching $Url (call --http $HttpMode)..."
 & dotnet run -c $Configuration --no-build `
-    --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+    --project samples/ZTSharp.Cli/ZTSharp.Cli.csproj -- `
     call `
     --http $HttpMode `
     --network $Network `

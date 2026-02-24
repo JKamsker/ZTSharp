@@ -6,7 +6,7 @@ Known gaps between this library and upstream `libzt`.
 
 ## Real ZeroTier Stack
 
-The managed stack (`JKamsker.LibZt.ZeroTier`) speaks enough of the real ZeroTier protocol to join
+The managed stack (`ZTSharp.ZeroTier`) speaks enough of the real ZeroTier protocol to join
 controller-based networks and provide user-space TCP/UDP sockets. The following gaps remain:
 
 | Area | Gap |
@@ -21,7 +21,7 @@ controller-based networks and provide user-space TCP/UDP sockets. The following 
 
 ## Legacy Overlay Stack
 
-The legacy stack (`JKamsker.LibZt`) is **not** protocol-compatible with the real ZeroTier network.
+The legacy stack (`ZTSharp`) is **not** protocol-compatible with the real ZeroTier network.
 It uses a custom wire format and transport layer.
 
 **Not implemented:**

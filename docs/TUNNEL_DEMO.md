@@ -27,7 +27,7 @@ Terminal A:
 
 ```powershell
 dotnet run -c Release `
-  --project samples/JKamsker.LibZt.Samples.DemoApi/JKamsker.LibZt.Samples.DemoApi.csproj `
+  --project samples/ZTSharp.Samples.DemoApi/ZTSharp.Samples.DemoApi.csproj `
   -- --port 5005
 ```
 
@@ -37,7 +37,7 @@ Terminal B:
 
 ```powershell
 dotnet run -c Release `
-  --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+  --project samples/ZTSharp.Cli/ZTSharp.Cli.csproj -- `
   expose 5005 `
   --network 0xCAFE2001 `
   --stack overlay `
@@ -63,7 +63,7 @@ Terminal C (replace `<NODE_ID>` with the node ID from step 2):
 
 ```powershell
 dotnet run -c Release `
-  --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+  --project samples/ZTSharp.Cli/ZTSharp.Cli.csproj -- `
   call `
   --network 0xCAFE2001 `
   --stack overlay `

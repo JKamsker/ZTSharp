@@ -97,7 +97,7 @@ try {
         -FilePath "dotnet" `
         -ArgumentList @(
             "run", "-c", $Configuration, "--no-build",
-            "--project", "samples/JKamsker.LibZt.Samples.DemoApi/JKamsker.LibZt.Samples.DemoApi.csproj",
+            "--project", "samples/ZTSharp.Samples.DemoApi/ZTSharp.Samples.DemoApi.csproj",
             "--", "--port", $ApiPort
         ) `
         -WorkingDirectory $repoRoot `
@@ -114,7 +114,7 @@ try {
         -FilePath "dotnet" `
         -ArgumentList @(
             "run", "-c", $Configuration, "--no-build",
-            "--project", "samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj",
+            "--project", "samples/ZTSharp.Cli/ZTSharp.Cli.csproj",
             "--",
             "expose", $ApiPort,
             "--network", $Network,
@@ -137,7 +137,7 @@ try {
 
     Write-Step "Calling overlay URL via managed overlay TCP..."
     $callOutput = & dotnet run -c $Configuration --no-build `
-        --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+        --project samples/ZTSharp.Cli/ZTSharp.Cli.csproj -- `
         call `
         --network $Network `
         --stack overlay `
