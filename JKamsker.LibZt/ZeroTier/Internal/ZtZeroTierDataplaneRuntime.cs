@@ -45,6 +45,8 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<ZtZeroTierTcpRouteKey, ZtZeroTierRoutedIpv4Link> _routes = new();
     private readonly ConcurrentDictionary<ushort, Func<ZtNodeId, ReadOnlyMemory<byte>, CancellationToken, Task>> _tcpSynHandlers = new();
 
+    private int _traceRxRemaining = 200;
+
     private bool _disposed;
 
     public ZtZeroTierDataplaneRuntime(
@@ -259,6 +261,13 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             if (decoded.Header.Destination != _localIdentity.NodeId)
             {
                 continue;
+            }
+
+            if (ZtZeroTierTrace.Enabled && _traceRxRemaining > 0)
+            {
+                _traceRxRemaining--;
+                ZtZeroTierTrace.WriteLine(
+                    $"[zerotier] RX raw: src={decoded.Header.Source} dst={decoded.Header.Destination} cipher={decoded.Header.CipherSuite} flags=0x{decoded.Header.Flags:x2} verbRaw=0x{decoded.Header.VerbRaw:x2} via {datagram.RemoteEndPoint}.");
             }
 
             if (decoded.Header.Source == _rootNodeId)
