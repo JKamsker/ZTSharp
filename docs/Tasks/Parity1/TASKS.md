@@ -19,11 +19,55 @@ Status legend:
 ## Milestone P0 — Planning + acceptance criteria
 - [x] Create this Parity1 task list.
 - [x] Create `docs/Tasks/Future-Parity-Notes.md` and capture out-of-scope parity gaps.
-- [ ] Define Parity1 acceptance tests (commands + expected results) for:
+- [x] Define Parity1 acceptance tests (commands + expected results) for:
   - UDP IPv4
   - UDP IPv6
   - TCP stress (many conns + larger payloads)
   - “drop-in” socket API smoke tests
+
+### Parity1 acceptance tests
+
+These are “human runnable” smoke tests; automated variants live in the test suite where feasible.
+
+**UDP IPv4**
+- Start managed UDP echo:
+  - `libzt udp-listen 9999 --stack managed --state <state> --network <nwid>`
+- From an OS ZeroTier client on the same NWID:
+  - `echo -n ping | nc -u -w1 <managed-ipv4> 9999`
+- Expected:
+  - OS command prints `pong` (or receives a 4-byte reply).
+  - Listener logs the datagram source `<peer-ip>:<port>` and payload `ping`.
+
+**UDP IPv6**
+- Requires the network to assign IPv6 managed addresses.
+- Start managed UDP echo:
+  - `libzt udp-listen 9999 --stack managed --state <state> --network <nwid>`
+- From an OS ZeroTier client:
+  - `echo -n ping | nc -6 -u -w1 <managed-ipv6> 9999`
+- Expected:
+  - OS command prints `pong`.
+  - Listener logs the datagram source `[<peer-ipv6>]:<port>` and payload `ping`.
+
+**TCP stress**
+- Start managed HTTP logger:
+  - `libzt listen 5380 --stack managed --state <state> --network <nwid>`
+- From an OS ZeroTier client:
+  - 200 sequential requests:
+    - `for i in $(seq 1 200); do curl -fsS http://<managed-ip>:5380/ >/dev/null; done`
+  - 50 parallel requests:
+    - `seq 1 50 | xargs -n1 -P10 -I{} curl -fsS http://<managed-ip>:5380/ >/dev/null`
+- Expected:
+  - All requests succeed (`curl` exit code 0).
+  - Listener logs requests without stalling, and the process remains responsive.
+
+**Socket API smoke**
+- Start managed TCP echo sample (new sample added in P5):
+  - `dotnet run -c Release --project samples/<...> -- server --network <nwid> --state <state> --port 7777`
+- From another member:
+  - `dotnet run -c Release --project samples/<...> -- client --network <nwid> --state <state> --to http://<managed-ip>:7777 --message hello`
+- Expected:
+  - Client prints echoed payload.
+  - Server logs one accepted connection and the message.
 
 ## Milestone P1 — UDP (IPv4) user-space sockets
 - [ ] Add UDP codec (header + pseudo-header checksum) and tests.
@@ -76,4 +120,3 @@ Status legend:
   - UDP request/response
   - `HttpClient` over managed TCP (already) + `SocketsHttpHandler.ConnectCallback` example
 - [ ] Document supported subset + known differences vs OS sockets.
-
