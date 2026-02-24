@@ -70,7 +70,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
   - Server logs one accepted connection and the message.
 
 ## Milestone P1 — UDP (IPv4) user-space sockets
-- [ ] Add UDP codec (header + pseudo-header checksum) and tests.
+- [x] Add UDP codec (header + pseudo-header checksum) and tests.
 - [ ] Extend the routed IP demux to handle UDP alongside TCP.
 - [ ] Implement a public managed API for UDP:
   - `ZtZeroTierSocket.BindUdpAsync(...)`
