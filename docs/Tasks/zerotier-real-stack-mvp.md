@@ -53,3 +53,9 @@ Status legend:
 - [x] Wire `ZtZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
   - [x] Implement `ConnectTcpAsync` to return a stream backed by user-space TCP.
 - [x] Add opt-in E2E test (`LIBZT_RUN_ZEROTIER_E2E`) with env-configured NWID + URL.
+
+## Milestone Z6 — CLI + docs alignment
+- [x] Make CLI `--stack managed` use the real ZeroTier managed stack; add `--stack overlay` for the legacy managed overlay stack (keep `zerotier`/`libzt` as aliases for `managed`).
+- [ ] Update tunnel demo + ztnet scripts/docs to pass `--stack overlay` where they rely on the legacy overlay stack.
+- [ ] Implement `join --stack managed` (one-shot join + print node id + assigned managed IPs).
+- [ ] Update docs (`README.md`, `docs/USAGE.md`, `docs/COMPATIBILITY.md`, `docs/E2E.md`, `docs/ZEROTIER_STACK.md`) to reflect the real ZeroTier stack MVP.

@@ -58,7 +58,7 @@ static void PrintHelp()
           --listen <port>             Overlay listen port (default: <localPort>)
           --to <host:port>            Forward target (default: 127.0.0.1:<localPort>)
           --state <path>              State directory (default: temp folder)
-          --stack <managed|zerotier>  Node stack (default: managed; 'libzt' is an alias for 'zerotier')
+          --stack <managed|overlay>   Node stack (default: managed; 'zerotier' and 'libzt' are aliases for 'managed')
           --transport <osudp|inmem>   Transport mode (default: osudp)
           --udp-port <port>           OS UDP listen port (osudp only, default: 0)
           --advertise <ip[:port]>     Advertised UDP endpoint for peers (osudp only)
@@ -154,14 +154,15 @@ static async Task RunJoinAsync(string[] commandArgs)
         cts.Cancel();
     };
 
-    if (string.Equals(stack, "zerotier", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("The 'zerotier' stack is not implemented yet (MVP in progress).");
+        await RunJoinZeroTierAsync(statePath, networkId, once, cts.Token).ConfigureAwait(false);
+        return;
     }
 
-    if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    if (!string.Equals(stack, "overlay", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("Invalid --stack value (expected managed|zerotier).");
+        throw new InvalidOperationException("Invalid --stack value (expected managed|overlay).");
     }
 
     var node = new ZtNode(new ZtNodeOptions
@@ -204,6 +205,42 @@ static async Task RunJoinAsync(string[] commandArgs)
     finally
     {
         await node.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunJoinZeroTierAsync(string statePath, ulong networkId, bool once, CancellationToken cancellationToken)
+{
+    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    {
+        StateRootPath = statePath,
+        NetworkId = networkId
+    }, cancellationToken).ConfigureAwait(false);
+
+    try
+    {
+        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
+
+        Console.WriteLine($"State: {statePath}");
+        Console.WriteLine($"NodeId: {socket.NodeId}");
+        if (socket.ManagedIps.Count != 0)
+        {
+            Console.WriteLine("Managed IPs:");
+            foreach (var ip in socket.ManagedIps)
+            {
+                Console.WriteLine($"  {ip}");
+            }
+        }
+
+        if (once)
+        {
+            return;
+        }
+
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+    }
+    finally
+    {
+        await socket.DisposeAsync().ConfigureAwait(false);
     }
 }
 
@@ -307,23 +344,23 @@ static async Task RunCallAsync(string[] commandArgs)
         throw new InvalidOperationException("Invalid --url value.");
     }
 
-    if (string.Equals(stack, "zerotier", StringComparison.OrdinalIgnoreCase))
-    {
-        await RunCallZeroTierAsync(statePath, networkId, url, cts.Token).ConfigureAwait(false);
-        return;
-    }
-
-    if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
-    {
-        throw new InvalidOperationException("Invalid --stack value (expected managed|zerotier).");
-    }
-
-    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
     Console.CancelKeyPress += (_, e) =>
     {
         e.Cancel = true;
         cts.Cancel();
     };
+
+    if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunCallZeroTierAsync(statePath, networkId, url, cts.Token).ConfigureAwait(false);
+        return;
+    }
+
+    if (!string.Equals(stack, "overlay", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Invalid --stack value (expected managed|overlay).");
+    }
 
     var node = new ZtNode(new ZtNodeOptions
     {
@@ -368,17 +405,35 @@ static async Task RunCallAsync(string[] commandArgs)
 
 static async Task RunCallZeroTierAsync(string statePath, ulong networkId, Uri url, CancellationToken cancellationToken)
 {
-    await using var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
     {
         StateRootPath = statePath,
         NetworkId = networkId
     }, cancellationToken).ConfigureAwait(false);
 
-    using var httpClient = socket.CreateHttpClient();
-    var response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
-    var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-    Console.WriteLine($"HTTP {(int)response.StatusCode} {response.StatusCode}");
-    Console.WriteLine(body);
+    try
+    {
+        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
+        Console.WriteLine($"NodeId: {socket.NodeId}");
+        if (socket.ManagedIps.Count != 0)
+        {
+            Console.WriteLine("Managed IPs:");
+            foreach (var ip in socket.ManagedIps)
+            {
+                Console.WriteLine($"  {ip}");
+            }
+        }
+
+        using var httpClient = socket.CreateHttpClient();
+        var response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        Console.WriteLine($"HTTP {(int)response.StatusCode} {response.StatusCode}");
+        Console.WriteLine(body);
+    }
+    finally
+    {
+        await socket.DisposeAsync().ConfigureAwait(false);
+    }
 }
 
 [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -535,14 +590,14 @@ static async Task RunExposeAsync(string[] commandArgs)
 
     stack = NormalizeStack(stack);
 
-    if (string.Equals(stack, "zerotier", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("The 'zerotier' stack does not support 'expose' yet (MVP is outbound client only).");
+        throw new InvalidOperationException("The 'managed' stack does not support 'expose' yet (MVP is outbound client only). Use '--stack overlay' for the legacy overlay demo.");
     }
 
-    if (!string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    if (!string.Equals(stack, "overlay", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("Invalid --stack value (expected managed|zerotier).");
+        throw new InvalidOperationException("Invalid --stack value (expected managed|overlay).");
     }
 
     var node = new ZtNode(new ZtNodeOptions
@@ -604,9 +659,10 @@ static async Task RunExposeAsync(string[] commandArgs)
 
 static string NormalizeStack(string stack)
 {
-    if (string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(stack, "zerotier", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
     {
-        return "zerotier";
+        return "managed";
     }
 
     return stack;
