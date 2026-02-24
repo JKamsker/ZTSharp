@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Net.Sockets;
 using System.Net;
+using System.Threading.Channels;
 using JKamsker.LibZt.Http;
 using JKamsker.LibZt;
 using JKamsker.LibZt.Sockets;
@@ -55,7 +57,7 @@ static void PrintHelp()
           libzt call --network <nwid> --url <url> [options]
 
         Options:
-          --listen <port>             Overlay listen port (default: <localPort>)
+          --listen <port>             Listen port (default: <localPort>)
           --to <host:port>            Forward target (default: 127.0.0.1:<localPort>)
           --state <path>              State directory (default: temp folder)
           --stack <managed|overlay>   Node stack (default: managed; 'zerotier' and 'libzt' are aliases for 'managed')
@@ -594,7 +596,8 @@ static async Task RunExposeAsync(string[] commandArgs)
 
     if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
     {
-        throw new InvalidOperationException("The 'managed' stack does not support 'expose' yet (MVP is outbound client only). Use '--stack overlay' for the legacy overlay demo.");
+        await RunExposeZeroTierAsync(statePath, networkId, overlayListenPort.Value, target.Value.Host, target.Value.Port, cts.Token).ConfigureAwait(false);
+        return;
     }
 
     if (!string.Equals(stack, "overlay", StringComparison.OrdinalIgnoreCase))
@@ -656,6 +659,198 @@ static async Task RunExposeAsync(string[] commandArgs)
     finally
     {
         await node.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunExposeZeroTierAsync(
+    string statePath,
+    ulong networkId,
+    int listenPort,
+    string targetHost,
+    int targetPort,
+    CancellationToken cancellationToken)
+{
+    if (listenPort is < 1 or > ushort.MaxValue)
+    {
+        throw new ArgumentOutOfRangeException(nameof(listenPort));
+    }
+
+    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    {
+        StateRootPath = statePath,
+        NetworkId = networkId
+    }, cancellationToken).ConfigureAwait(false);
+
+    ZtZeroTierTcpListener? listener = null;
+    using var exposeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    var exposeToken = exposeCts.Token;
+
+    try
+    {
+        Console.WriteLine($"NodeId: {socket.NodeId}");
+
+        await socket.JoinAsync(exposeToken).ConfigureAwait(false);
+        if (socket.ManagedIps.Count != 0)
+        {
+            Console.WriteLine("Managed IPs:");
+            foreach (var ip in socket.ManagedIps)
+            {
+                Console.WriteLine($"  {ip}");
+            }
+        }
+
+        var managedIp = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+        if (managedIp is null)
+        {
+            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+
+        listener = await socket.ListenTcpAsync(listenPort, exposeToken).ConfigureAwait(false);
+
+        Console.WriteLine($"Expose: http://{managedIp}:{listenPort}/ -> {targetHost}:{targetPort}");
+
+        while (!exposeToken.IsCancellationRequested)
+        {
+            Stream accepted;
+            try
+            {
+                accepted = await listener.AcceptAsync(exposeToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (exposeToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (ChannelClosedException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+
+            await HandleExposeConnectionAsync(accepted, targetHost, targetPort, exposeToken).ConfigureAwait(false);
+        }
+    }
+    finally
+    {
+        try
+        {
+            await exposeCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        if (listener is not null)
+        {
+            try
+            {
+                await listener.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        await socket.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task HandleExposeConnectionAsync(Stream accepted, string targetHost, int targetPort, CancellationToken cancellationToken)
+{
+    var overlayStream = accepted;
+    var localClient = new TcpClient { NoDelay = true };
+
+    try
+    {
+        await localClient.ConnectAsync(targetHost, targetPort, cancellationToken).ConfigureAwait(false);
+        var localStream = localClient.GetStream();
+        try
+        {
+            using var bridgeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var token = bridgeCts.Token;
+
+            var overlayToLocal = CopyAsync(overlayStream, localStream, token);
+            var localToOverlay = CopyAsync(localStream, overlayStream, token);
+
+            try
+            {
+                _ = await Task.WhenAny(overlayToLocal, localToOverlay).ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    await bridgeCts.CancelAsync().ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+
+                try
+                {
+                    await Task.WhenAll(overlayToLocal, localToOverlay).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                }
+                catch (SocketException)
+                {
+                }
+                catch (IOException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                await localStream.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+    }
+    catch (SocketException)
+    {
+    }
+    finally
+    {
+        localClient.Dispose();
+
+        try
+        {
+            await overlayStream.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+}
+
+static async Task CopyAsync(Stream source, Stream destination, CancellationToken cancellationToken)
+{
+    try
+    {
+        await source.CopyToAsync(destination, bufferSize: 64 * 1024, cancellationToken).ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+    }
+    catch (IOException)
+    {
+    }
+    catch (ObjectDisposedException)
+    {
     }
 }
 
