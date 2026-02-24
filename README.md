@@ -1,63 +1,73 @@
 # JKamsker.LibZt
 
-This repo contains `JKamsker.LibZt`: a fully managed (.NET 10) library with two networking stacks:
+> **Warning**
+> This project is experimental. It has not been audited for security, optimized for performance,
+> or hardened for stability. Do not use it in production environments where any of these properties
+> are critical.
 
-`JKamsker.LibZt` provides:
+A fully managed .NET library for ZeroTier networking -- no native binaries, no OS client required.
 
-- **Real ZeroTier stack (managed-only)** (`JKamsker.LibZt.ZeroTier`)
-  - Join existing controller-based ZeroTier networks (normal NWIDs) without installing the OS ZeroTier client.
-  - User-space TCP/UDP sockets to peers by ZeroTier-managed IP (IPv4/IPv6), including listeners.
-  - `HttpClient` support via `ZtZeroTierHttpMessageHandler` or `SocketsHttpHandler.ConnectCallback`.
-- **Managed overlay stack (legacy/experimentation)** (`ZtNode`, `ZtUdpClient`, `ZtOverlayTcpClient`, `InMemory`/`OsUdp`)
-  - Managed nodes talk to each other using this library's transports (not protocol-compatible with the real ZeroTier network).
+---
 
-See `docs/ZEROTIER_STACK.md` for the current real ZeroTier MVP scope and limitations.
+## What is this?
 
-## Quick start
+This library provides two independent networking stacks:
 
-Run the unit tests:
+**Real ZeroTier Stack** (`JKamsker.LibZt.ZeroTier`)
+Join existing controller-based ZeroTier networks using normal NWIDs.
+User-space TCP/UDP sockets, `HttpClient` integration, IPv4/IPv6 -- all in pure managed code.
 
-```powershell
-dotnet test -c Release
+**Legacy Overlay Stack** (`JKamsker.LibZt`)
+A custom managed overlay transport for experimentation and testing.
+Not protocol-compatible with the real ZeroTier network.
+
+---
+
+## Quick Start
+
+Join a real ZeroTier network and make an HTTP request:
+
+```csharp
+using JKamsker.LibZt.ZeroTier;
+
+await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+{
+    StateRootPath = "path/to/state",
+    NetworkId = 0x9ad07d01093a69e3UL
+});
+
+using var http = zt.CreateHttpClient();
+var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 ```
 
-Run the `ztnet` E2E test (managed overlay stack; requires working `ztnet` auth/session):
+---
 
-```powershell
-$env:LIBZT_RUN_E2E="true"
-dotnet test -c Release --filter "FullyQualifiedName~Ztnet_NetworkCreate_SpawnTwoClients_And_Communicate_E2E"
+## Build and Test
+
+```sh
+dotnet build -c Release
+dotnet test  -c Release
 ```
 
-Run the real ZeroTier E2E test (managed-only; requires a configured NWID + reachable URL inside that network):
+---
 
-```powershell
-$env:LIBZT_RUN_ZEROTIER_E2E="1"
-$env:LIBZT_ZEROTIER_NWID="9ad07d01093a69e3"
-$env:LIBZT_ZEROTIER_URL="http://10.121.15.99:5380/"
-dotnet test -c Release --filter "FullyQualifiedName~ZeroTier_JoinAndHttpGet_E2E"
-```
+## Documentation
 
-Run the sample that creates a network and performs a ping/pong between two managed nodes:
+| Document | Description |
+|:---------|:------------|
+| [Usage Guide](docs/USAGE.md) | API reference with code examples for both stacks |
+| [ZeroTier Stack](docs/ZEROTIER_STACK.md) | Real ZeroTier stack -- status, capabilities, and limitations |
+| [ZeroTier Sockets](docs/ZEROTIER_SOCKETS.md) | Managed socket API surface and differences vs OS sockets |
+| [Persistence](docs/PERSISTENCE.md) | State store keys, planet/roots compatibility |
+| [E2E Testing](docs/E2E.md) | End-to-end validation instructions |
+| [Tunnel Demo](docs/TUNNEL_DEMO.md) | Local tunnel demo (reverse proxy over overlay transport) |
+| [Benchmarks](docs/BENCHMARKS.md) | Running BenchmarkDotNet benchmarks |
+| [AOT / Trimming](docs/AOT.md) | Native AOT and trimming notes |
+| [Compatibility](docs/COMPATIBILITY.md) | Known gaps vs upstream `libzt` |
+| [Third-Party Notices](THIRD_PARTY_NOTICES.md) | Dependency and license pointers |
 
-```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Samples.ZtNetE2E/JKamsker.LibZt.Samples.ZtNetE2E.csproj
-```
+---
 
-Run the tunnel CLI (ngrok-like overlay port forwarder):
+## License
 
-```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- --help
-```
-
-## Docs
-
-- `docs/USAGE.md` – public API usage guide
-- `docs/PERSISTENCE.md` – state store keys + planet/roots compatibility notes
-- `docs/E2E.md` – running the `ztnet` smoke test and sample
-- `docs/TUNNEL_DEMO.md` – local tunnel demo (reverse proxy + overlay `HttpClient`)
-- `docs/BENCHMARKS.md` – running BenchmarkDotNet benchmarks
-- `docs/AOT.md` – AOT/trimming notes
-- `docs/COMPATIBILITY.md` – tracked gaps vs upstream `libzt`
-- `docs/ZEROTIER_STACK.md` – real ZeroTier stack notes
-- `docs/ZEROTIER_SOCKETS.md` – managed socket-like API + OS socket differences
-- `THIRD_PARTY_NOTICES.md` – dependency/license pointers
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled source licenses and NuGet dependency information.

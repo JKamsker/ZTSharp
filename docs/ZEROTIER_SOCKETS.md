@@ -1,20 +1,35 @@
-# Managed ZeroTier socket API (userspace, no OS adapter)
+# ZeroTier Sockets API
 
-This repo’s **real ZeroTier managed stack** (`JKamsker.LibZt.ZeroTier`) exposes in-process networking primitives that look and feel like sockets, but **do not create an OS-visible network adapter**.
+The real ZeroTier managed stack (`JKamsker.LibZt.ZeroTier`) exposes in-process networking primitives
+that look and feel like sockets, but **do not create an OS-visible network adapter**.
 
-## Building blocks
+For an overview of the stack's capabilities and limitations, see [ZeroTier Stack](ZEROTIER_STACK.md).
 
-- `ZtZeroTierSocket`
-  - Joins an existing (controller-based) ZeroTier network by NWID.
-  - Resolves ZeroTier-managed IPs to peer node ids.
-  - Creates TCP listeners, TCP outbound connections, and UDP bindings.
-- `ZtZeroTierTcpListener` / `ZtZeroTierUdpSocket`
-  - Low-level async APIs using `Stream` and datagrams.
-- `ZtManagedSocket` (compat wrapper)
-  - A small compatibility wrapper to ease porting from `System.Net.Sockets.Socket`-style code.
-  - Implements a practical subset: `Bind`, `Listen`, `Accept`, `Connect`, `Send`, `Receive`, `SendTo`, `ReceiveFrom`, `Shutdown`, `Close`, `Dispose`.
+---
 
-## Example: TCP echo (socket-like)
+## Table of Contents
+
+- [Building Blocks](#building-blocks)
+- [TCP Example (Socket-like)](#tcp-example-socket-like)
+- [HttpClient via ConnectCallback](#httpclient-via-connectcallback)
+- [Supported API Surface](#supported-api-surface)
+- [Differences vs OS Sockets](#differences-vs-os-sockets)
+
+---
+
+## Building Blocks
+
+**`ZtZeroTierSocket`** -- the main entry point.
+Joins a ZeroTier network, resolves managed IPs, and creates TCP/UDP primitives.
+
+**`ZtZeroTierTcpListener`** / **`ZtZeroTierUdpSocket`** -- low-level async APIs using `Stream` and datagrams.
+
+**`ZtManagedSocket`** -- a compatibility wrapper for porting `System.Net.Sockets.Socket`-style code.
+Implements: `Bind`, `Listen`, `Accept`, `Connect`, `Send`, `Receive`, `SendTo`, `ReceiveFrom`, `Shutdown`, `Close`, `Dispose`.
+
+---
+
+## TCP Example (Socket-like)
 
 ```csharp
 using System.Net;
@@ -30,7 +45,9 @@ await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOpti
 
 await zt.JoinAsync();
 
-await using var socket = zt.CreateSocket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+await using var socket = zt.CreateSocket(
+    AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
 await socket.ConnectAsync(new IPEndPoint(IPAddress.Parse("10.121.15.99"), 7777));
 
 await socket.SendAsync(Encoding.UTF8.GetBytes("hello"));
@@ -38,11 +55,14 @@ var buffer = new byte[5];
 var read = await socket.ReceiveAsync(buffer);
 ```
 
-See `samples/JKamsker.LibZt.Samples.ZeroTierSockets` for runnable TCP/UDP/HTTP examples.
+**Runnable sample:** `samples/JKamsker.LibZt.Samples.ZeroTierSockets`
 
-## Example: HttpClient via ConnectCallback
+---
 
-This avoids a custom `HttpMessageHandler` and plugs the managed TCP stream into .NET’s standard HTTP stack:
+## HttpClient via ConnectCallback
+
+This approach avoids a custom `HttpMessageHandler` and plugs the managed TCP stream
+directly into .NET's standard HTTP stack:
 
 ```csharp
 using System.Net;
@@ -55,49 +75,74 @@ await using var zt = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOpti
     NetworkId = 0x9ad07d01093a69e3UL
 });
 
-using var sockets = new SocketsHttpHandler { UseProxy = false };
-sockets.ConnectCallback = async (ctx, ct) =>
+var handler = new SocketsHttpHandler { UseProxy = false };
+handler.ConnectCallback = async (ctx, ct) =>
 {
     if (!IPAddress.TryParse(ctx.DnsEndPoint.Host, out var ip))
-    {
         throw new InvalidOperationException("This example expects an IP literal host.");
-    }
 
     return await zt.ConnectTcpAsync(new IPEndPoint(ip, ctx.DnsEndPoint.Port), ct);
 };
 
-using var http = new HttpClient(sockets);
+using var http = new HttpClient(handler);
 var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 ```
 
-## Supported subset (practical)
+---
 
-- **Address families:** IPv4, IPv6
-- **Socket types:** TCP stream, UDP datagram
-- **TCP:**
-  - connect → `Stream` (direct) or `ZtManagedSocket.ConnectAsync(...)`
-  - listen/accept → `Stream` (direct) or `ZtManagedSocket.ListenAsync(...)` + `AcceptAsync(...)`
-  - connect/accept support cancellation; convenience timeout overloads exist on:
-    - `ZtZeroTierSocket.ConnectTcpAsync(..., TimeSpan timeout, ...)`
-    - `ZtZeroTierTcpListener.AcceptAsync(TimeSpan timeout, ...)`
-- **UDP:**
-  - bind + `SendToAsync(...)` / `ReceiveFromAsync(...)`
-  - `ReceiveFromAsync(..., TimeSpan timeout, ...)` exists on `ZtZeroTierUdpSocket`
+## Supported API Surface
 
-## Known differences vs OS sockets
+### Address Families
 
-This is intentionally **not** a drop-in OS networking implementation.
+IPv4 and IPv6 (if the network assigns IPv6 managed IPs).
 
-- **No OS adapter / no system routing**
-  - Only in-process code that uses these APIs will go over ZeroTier.
-- **Local bind semantics differ**
-  - `ZtZeroTierSocket` binds to one of its managed IPs.
-  - `ZtManagedSocket.BindAsync(IPAddress.Any/IPv6Any, port)` maps “any” to the node’s first managed IP of that family.
-  - Listening on port `0` is not supported (bind to a concrete port first).
-- **Limited socket option surface**
-  - No `SocketOptionName` support (e.g., `NoDelay`, `KeepAlive`, `Linger`, buffer sizes), no `Select`/`Poll`, etc.
-- **Accepted connection endpoint metadata**
-  - `ZtManagedSocket.RemoteEndPoint` is currently `null` for accepted sockets (the underlying listener hands off a `Stream`).
-- **Performance**
-  - This user-space TCP stack is correctness-oriented and currently lacks many OS optimizations (e.g., congestion control and high-throughput sender pipelines). Large transfers may be significantly slower than OS TCP.
+### TCP
 
+| Operation | API |
+|:----------|:----|
+| Connect | `ZtZeroTierSocket.ConnectTcpAsync(...)` or `ZtManagedSocket.ConnectAsync(...)` |
+| Listen + Accept | `ZtZeroTierSocket.ListenTcpAsync(...)` or `ZtManagedSocket.ListenAsync(...)` + `AcceptAsync(...)` |
+| Timeout overloads | `ConnectTcpAsync(..., TimeSpan timeout, ...)` and `AcceptAsync(TimeSpan timeout, ...)` |
+| Cancellation | Supported on both connect and accept |
+
+### UDP
+
+| Operation | API |
+|:----------|:----|
+| Bind | `ZtZeroTierSocket.BindUdpAsync(...)` |
+| Send / Receive | `ZtZeroTierUdpSocket.SendToAsync(...)` / `ReceiveFromAsync(...)` |
+| Timeout overload | `ReceiveFromAsync(..., TimeSpan timeout, ...)` |
+
+---
+
+## Differences vs OS Sockets
+
+This is intentionally **not** a drop-in OS networking replacement.
+
+### No OS Adapter
+
+Only in-process code using these APIs routes through ZeroTier.
+There is no virtual network interface visible to the operating system.
+
+### Bind Semantics
+
+- `ZtZeroTierSocket` binds to one of its managed IPs.
+- `ZtManagedSocket.BindAsync(IPAddress.Any, port)` maps to the node's first managed IPv4.
+- `ZtManagedSocket.BindAsync(IPAddress.IPv6Any, port)` maps to the node's first managed IPv6.
+- Port `0` (ephemeral) is **not supported** -- bind to a concrete port.
+
+### Socket Options
+
+No `SocketOptionName` support (`NoDelay`, `KeepAlive`, `Linger`, buffer sizes).
+No `Select` or `Poll`.
+
+### Accepted Connection Metadata
+
+`ZtManagedSocket.RemoteEndPoint` is currently `null` for accepted sockets.
+The underlying listener hands off a `Stream` without endpoint metadata.
+
+### Performance
+
+The user-space TCP stack is correctness-oriented.
+It currently lacks OS optimizations like congestion control and high-throughput sender pipelines.
+Large transfers may be significantly slower than OS TCP.

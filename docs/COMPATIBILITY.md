@@ -1,33 +1,44 @@
-# Compatibility gaps vs upstream `libzt`
+# Compatibility
 
-This repo contains two networking stacks:
+Known gaps between this library and upstream `libzt`.
 
-- **Real ZeroTier stack (managed-only)** (`JKamsker.LibZt.ZeroTier`): speaks enough of the real ZeroTier protocol to join existing controller-based networks (normal NWIDs) and provide user-space TCP/UDP sockets over ZeroTier-managed IPs (IPv4/IPv6).
-- **Legacy managed overlay stack** (`JKamsker.LibZt`): managed nodes communicate over this library's transports (`InMemory`/`OsUdp`). This is *not* protocol-compatible with the real ZeroTier network.
+---
 
-## Real ZeroTier stack gaps (vs upstream `libzt`)
+## Real ZeroTier Stack
 
-- No OS-level virtual network adapter (traffic is handled in user space via `Stream`/`HttpClient`).
-- Root-relayed dataplane only (no full direct path negotiation / NAT traversal yet).
-- Limited verb/feature coverage (focused on join + IP dataplane + TCP/UDP sockets MVP).
-- Limited socket option/metadata parity (e.g., no `SocketOptionName` support; accepted connections don't currently expose a reliable `RemoteEndPoint`).
-- TCP performance/behavior is not OS-parity yet (no congestion control / high-throughput send pipelines).
+The managed stack (`JKamsker.LibZt.ZeroTier`) speaks enough of the real ZeroTier protocol to join
+controller-based networks and provide user-space TCP/UDP sockets. The following gaps remain:
 
-## Legacy managed overlay stack gaps (non-exhaustive)
+| Area | Gap |
+|:-----|:----|
+| OS adapter | No virtual network interface -- traffic is in-process only |
+| Dataplane | Root-relayed only; no direct path negotiation or NAT traversal |
+| Protocol coverage | Focused on join + IP dataplane + TCP/UDP socket MVP |
+| Socket options | No `SocketOptionName` support; accepted sockets lack reliable `RemoteEndPoint` |
+| TCP performance | No congestion control or high-throughput send pipelines |
 
-- Not protocol-compatible with the real ZeroTier network (wire format/crypto/verbs/paths/NAT traversal).
-- No planet/roots processing or controller interaction.
-- No OS virtual network interface / TUN/TAP plumbing.
+---
 
-## Legacy managed overlay stack implemented / partially implemented
+## Legacy Overlay Stack
 
-- Deterministic identity persistence (`identity.secret` / `identity.public`) with a 40-bit node id.
-- Network membership tracking (`networks.d/*.conf`).
-- Overlay address model persistence (`networks.d/*.addr`).
-- Managed node-to-node frame delivery:
-  - `InMemory` transport (single-process)
-  - `OsUdp` transport (real UDP sockets between managed nodes)
-- Persisted OS UDP peer directory (`peers.d/<NETWORK_ID>/*.peer`).
-- UDP-like application datagrams over the managed transport (`ZtUdpClient`).
-- TCP-like overlay streams over the managed transport (`ZtOverlayTcpClient` / `ZtOverlayTcpListener`).
-- Internal event loop/scheduling primitives (`ZtEventLoop`) for future protocol state machines.
+The legacy stack (`JKamsker.LibZt`) is **not** protocol-compatible with the real ZeroTier network.
+It uses a custom wire format and transport layer.
+
+**Not implemented:**
+
+- Real ZeroTier wire format, crypto, verbs, paths, NAT traversal
+- Planet/roots processing or controller interaction
+- OS virtual network interface (TUN/TAP)
+
+**Implemented / partially implemented:**
+
+| Feature | Notes |
+|:--------|:------|
+| Identity persistence | `identity.secret` / `identity.public` with 40-bit node ID |
+| Network membership | `networks.d/*.conf` tracking |
+| Overlay addressing | `networks.d/*.addr` persistence |
+| Frame delivery | `InMemory` (single-process) and `OsUdp` (real UDP) transports |
+| Peer directory | `peers.d/<NWID>/*.peer` persistence |
+| UDP datagrams | `ZtUdpClient` over managed transport |
+| TCP streams | `ZtOverlayTcpClient` / `ZtOverlayTcpListener` |
+| Event loop | `ZtEventLoop` scheduling primitives for future protocol state machines |

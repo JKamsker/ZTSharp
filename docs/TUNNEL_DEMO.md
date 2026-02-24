@@ -1,31 +1,43 @@
-# Tunnel demo (local API + overlay reverse proxy + overlay HttpClient)
+# Tunnel Demo
 
-This demo proves the end-to-end path:
+End-to-end demonstration of the overlay reverse proxy:
 
-`HttpClient (overlay TCP)` → `ZtOverlayTcpPortForwarder` → `local OS TCP API server`
+```
+HttpClient (overlay TCP)  -->  ZtOverlayTcpPortForwarder  -->  Local OS TCP server
+```
 
-Important: this uses the library's **managed overlay transport** over `OsUdp` (direct UDP between managed nodes). It does **not** join the real ZeroTier overlay/protocol stack.
+> **Note:** This uses the **legacy managed overlay transport** over `OsUdp` (direct UDP between
+> managed nodes). It does **not** join the real ZeroTier network.
 
-## Quick run (PowerShell)
+---
+
+## One-Liner
 
 ```powershell
 pwsh -File scripts/tunnel_demo.ps1
 ```
 
-## 1) Start a local demo API (OS TCP)
+---
 
-In terminal A:
+## Step-by-Step
+
+### 1. Start a Local Demo API
+
+Terminal A:
 
 ```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Samples.DemoApi/JKamsker.LibZt.Samples.DemoApi.csproj -- --port 5005
+dotnet run -c Release `
+  --project samples/JKamsker.LibZt.Samples.DemoApi/JKamsker.LibZt.Samples.DemoApi.csproj `
+  -- --port 5005
 ```
 
-## 2) Start the overlay reverse proxy (expose)
+### 2. Start the Overlay Reverse Proxy
 
-In terminal B:
+Terminal B:
 
 ```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+dotnet run -c Release `
+  --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
   expose 5005 `
   --network 0xCAFE2001 `
   --stack overlay `
@@ -35,20 +47,23 @@ dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.cs
   --to 127.0.0.1:5005
 ```
 
-It prints something like:
+It will print something like:
 
-- `NodeId: 0x..........\n`
-- `Local UDP: [::1]:49001`
-- `Expose: http://0x..........\n:28080/ -> 127.0.0.1:5005`
+```
+NodeId: 0x..........
+Local UDP: [::1]:49001
+Expose: http://0x..........:28080/ -> 127.0.0.1:5005
+```
 
 Keep this running.
 
-## 3) Call the API through the overlay (call)
+### 3. Call Through the Overlay
 
-In terminal C (replace `<NODE_ID>` with the node id from step 2):
+Terminal C (replace `<NODE_ID>` with the node ID from step 2):
 
 ```powershell
-dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
+dotnet run -c Release `
+  --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.csproj -- `
   call `
   --network 0xCAFE2001 `
   --stack overlay `
@@ -58,9 +73,4 @@ dotnet run -c Release --project samples/JKamsker.LibZt.Cli/JKamsker.LibZt.Cli.cs
   --url http://<NODE_ID>:28080/hello
 ```
 
-Expected output:
-
-- `HTTP 200 OK`
-- JSON body from the demo API.
-
-Note: the native upstream `libzt` variant is intentionally not supported in this repo (managed-only).
+**Expected output:** `HTTP 200 OK` with the JSON body from the demo API.
