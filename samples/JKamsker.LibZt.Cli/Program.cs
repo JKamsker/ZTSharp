@@ -29,6 +29,12 @@ try
         case "listen":
             await RunListenAsync(commandArgs).ConfigureAwait(false);
             break;
+        case "udp-listen":
+            await RunUdpListenAsync(commandArgs).ConfigureAwait(false);
+            break;
+        case "udp-send":
+            await RunUdpSendAsync(commandArgs).ConfigureAwait(false);
+            break;
         case "expose":
             await RunExposeAsync(commandArgs).ConfigureAwait(false);
             break;
@@ -59,12 +65,15 @@ static void PrintHelp()
         Usage:
           libzt join --network <nwid> [options]
           libzt listen <localPort> --network <nwid> [options]
+          libzt udp-listen <localPort> --network <nwid> [options]
+          libzt udp-send --network <nwid> --to <ip:port> --data <text> [options]
           libzt expose <localPort> --network <nwid> [options]
           libzt call --network <nwid> --url <url> [options]
 
         Options:
           --listen <port>             Listen port (default: <localPort>)
-          --to <host:port>            Forward target (default: 127.0.0.1:<localPort>)
+          --to <host:port>            Forward target (default: 127.0.0.1:<localPort>) or UDP target (udp-send)
+          --data <text>               UDP payload (udp-send)
           --state <path>              State directory (default: temp folder)
           --stack <managed|overlay>   Node stack (default: managed; 'zerotier' and 'libzt' are aliases for 'managed')
           --transport <osudp|inmem>   Transport mode (default: osudp)
@@ -782,6 +791,287 @@ static HttpClient CreateHttpClient(
         book is null ? null : new ZtOverlayHttpMessageHandlerOptions { AddressBook = book });
 
     return new HttpClient(handler, disposeHandler: true);
+}
+
+static async Task RunUdpListenAsync(string[] commandArgs)
+{
+    if (commandArgs.Length == 0 || commandArgs[0].StartsWith('-'))
+    {
+        throw new InvalidOperationException("Missing <localPort>.");
+    }
+
+    if (!int.TryParse(commandArgs[0], NumberStyles.None, CultureInfo.InvariantCulture, out var localPort) ||
+        localPort is < 1 or > ushort.MaxValue)
+    {
+        throw new InvalidOperationException("Invalid <localPort>.");
+    }
+
+    string? statePath = null;
+    string? networkText = null;
+    var stack = "managed";
+
+    for (var i = 1; i < commandArgs.Length; i++)
+    {
+        var arg = commandArgs[i];
+        switch (arg)
+        {
+            case "--state":
+                statePath = ReadOptionValue(commandArgs, ref i, "--state");
+                break;
+            case "--network":
+                networkText = ReadOptionValue(commandArgs, ref i, "--network");
+                break;
+            case "--stack":
+                stack = ReadOptionValue(commandArgs, ref i, "--stack");
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown option '{arg}'.");
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(networkText))
+    {
+        throw new InvalidOperationException("Missing --network <nwid>.");
+    }
+
+    statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+    var networkId = ParseNetworkId(networkText);
+    stack = NormalizeStack(stack);
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunUdpListenZeroTierAsync(statePath, networkId, localPort, cts.Token).ConfigureAwait(false);
+        return;
+    }
+
+    throw new InvalidOperationException("Invalid --stack value (expected managed).");
+}
+
+static async Task RunUdpListenZeroTierAsync(
+    string statePath,
+    ulong networkId,
+    int listenPort,
+    CancellationToken cancellationToken)
+{
+    if (listenPort is < 1 or > ushort.MaxValue)
+    {
+        throw new ArgumentOutOfRangeException(nameof(listenPort));
+    }
+
+    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    {
+        StateRootPath = statePath,
+        NetworkId = networkId
+    }, cancellationToken).ConfigureAwait(false);
+
+    ZtZeroTierUdpSocket? udp = null;
+
+    try
+    {
+        Console.WriteLine($"NodeId: {socket.NodeId}");
+
+        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
+        if (socket.ManagedIps.Count != 0)
+        {
+            Console.WriteLine("Managed IPs:");
+            foreach (var ip in socket.ManagedIps)
+            {
+                Console.WriteLine($"  {ip}");
+            }
+        }
+
+        var managedIp = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
+        if (managedIp is null)
+        {
+            throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+
+        udp = await socket.BindUdpAsync(listenPort, cancellationToken).ConfigureAwait(false);
+
+        Console.WriteLine($"UDP Listen: {managedIp}:{listenPort}");
+
+        var buffer = new byte[ushort.MaxValue];
+        var pongBytes = Encoding.UTF8.GetBytes("pong");
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            ZtZeroTierUdpReceiveResult received;
+            try
+            {
+                received = await udp.ReceiveFromAsync(buffer, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+
+            var text = Encoding.UTF8.GetString(buffer, 0, received.ReceivedBytes);
+            Console.WriteLine($"UDP RX {received.RemoteEndPoint}: {text}");
+
+            if (received.ReceivedBytes == 4 &&
+                buffer[0] == (byte)'p' &&
+                buffer[1] == (byte)'i' &&
+                buffer[2] == (byte)'n' &&
+                buffer[3] == (byte)'g')
+            {
+                try
+                {
+                    await udp.SendToAsync(pongBytes, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                }
+                catch (SocketException)
+                {
+                }
+            }
+        }
+    }
+    finally
+    {
+        if (udp is not null)
+        {
+            try
+            {
+                await udp.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        await socket.DisposeAsync().ConfigureAwait(false);
+    }
+}
+
+static async Task RunUdpSendAsync(string[] commandArgs)
+{
+    string? statePath = null;
+    string? networkText = null;
+    var stack = "managed";
+    IPEndPoint? destination = null;
+    string? dataText = null;
+
+    for (var i = 0; i < commandArgs.Length; i++)
+    {
+        var arg = commandArgs[i];
+        switch (arg)
+        {
+            case "--state":
+                statePath = ReadOptionValue(commandArgs, ref i, "--state");
+                break;
+            case "--network":
+                networkText = ReadOptionValue(commandArgs, ref i, "--network");
+                break;
+            case "--stack":
+                stack = ReadOptionValue(commandArgs, ref i, "--stack");
+                break;
+            case "--to":
+            {
+                var value = ReadOptionValue(commandArgs, ref i, "--to");
+                destination = ParseIpEndpoint(value);
+                break;
+            }
+            case "--data":
+                dataText = ReadOptionValue(commandArgs, ref i, "--data");
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown option '{arg}'.");
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(networkText))
+    {
+        throw new InvalidOperationException("Missing --network <nwid>.");
+    }
+
+    if (destination is null)
+    {
+        throw new InvalidOperationException("Missing --to <ip:port>.");
+    }
+
+    if (string.IsNullOrWhiteSpace(dataText))
+    {
+        throw new InvalidOperationException("Missing --data <text>.");
+    }
+
+    statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+    var networkId = ParseNetworkId(networkText);
+    stack = NormalizeStack(stack);
+
+    using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
+    {
+        await RunUdpSendZeroTierAsync(statePath, networkId, destination, dataText, cts.Token).ConfigureAwait(false);
+        return;
+    }
+
+    throw new InvalidOperationException("Invalid --stack value (expected managed).");
+}
+
+static async Task RunUdpSendZeroTierAsync(
+    string statePath,
+    ulong networkId,
+    IPEndPoint destination,
+    string dataText,
+    CancellationToken cancellationToken)
+{
+    var socket = await ZtZeroTierSocket.CreateAsync(new ZtZeroTierSocketOptions
+    {
+        StateRootPath = statePath,
+        NetworkId = networkId
+    }, cancellationToken).ConfigureAwait(false);
+
+    ZtZeroTierUdpSocket? udp = null;
+
+    try
+    {
+        Console.WriteLine($"NodeId: {socket.NodeId}");
+
+        await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
+        if (socket.ManagedIps.Count != 0)
+        {
+            Console.WriteLine("Managed IPs:");
+            foreach (var ip in socket.ManagedIps)
+            {
+                Console.WriteLine($"  {ip}");
+            }
+        }
+
+        udp = await socket.BindUdpAsync(0, cancellationToken).ConfigureAwait(false);
+
+        var bytes = Encoding.UTF8.GetBytes(dataText);
+        var sent = await udp.SendToAsync(bytes, destination, cancellationToken).ConfigureAwait(false);
+        Console.WriteLine($"UDP Send: {udp.LocalEndpoint} -> {destination} ({sent} bytes)");
+    }
+    finally
+    {
+        if (udp is not null)
+        {
+            try
+            {
+                await udp.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        await socket.DisposeAsync().ConfigureAwait(false);
+    }
 }
 
 static async Task RunExposeAsync(string[] commandArgs)
