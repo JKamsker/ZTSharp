@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using JKamsker.LibZt.ZeroTier;
 using JKamsker.LibZt.ZeroTier.Internal;
 using JKamsker.LibZt.ZeroTier.Protocol;
@@ -67,5 +68,45 @@ public sealed class ZtZeroTierWorldCodecTests
             File.Delete(planetPath);
         }
     }
-}
 
+    [Fact]
+    public void EmbeddedDefault_PrefersPlanetFromLibztState_WhenPresent()
+    {
+        var stateRoot = Path.Combine(Path.GetTempPath(), "zt-zero-tier-planet-test-" + Guid.NewGuid());
+        var libztDir = Path.Combine(stateRoot, "libzt");
+        var libztRootsPath = Path.Combine(libztDir, "roots");
+
+        try
+        {
+            Directory.CreateDirectory(libztDir);
+
+            var customPlanetId = 123456789UL;
+            var bytes = ZtZeroTierDefaultPlanet.World.ToArray();
+            BinaryPrimitives.WriteUInt64BigEndian(bytes.AsSpan(1, 8), customPlanetId);
+            File.WriteAllBytes(libztRootsPath, bytes);
+
+            var options = new ZtZeroTierSocketOptions
+            {
+                StateRootPath = stateRoot,
+                NetworkId = 1,
+                PlanetSource = ZtZeroTierPlanetSource.EmbeddedDefault
+            };
+
+            var world = ZtZeroTierPlanetLoader.Load(options, CancellationToken.None);
+            Assert.Equal(customPlanetId, world.Id);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(stateRoot, recursive: true);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+}

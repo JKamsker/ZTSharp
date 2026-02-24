@@ -9,6 +9,12 @@ internal static class ZtZeroTierPlanetLoader
         ArgumentNullException.ThrowIfNull(options);
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (options.PlanetSource == ZtZeroTierPlanetSource.EmbeddedDefault &&
+            TryLoadPlanetFromState(options.StateRootPath, cancellationToken, out var fromState))
+        {
+            return fromState;
+        }
+
         var world = options.PlanetSource switch
         {
             ZtZeroTierPlanetSource.EmbeddedDefault => ZtZeroTierWorldCodec.Decode(ZtZeroTierDefaultPlanet.World),
@@ -29,6 +35,83 @@ internal static class ZtZeroTierPlanetLoader
         return world;
     }
 
+    private static bool TryLoadPlanetFromState(string stateRootPath, CancellationToken cancellationToken, out ZtZeroTierWorld world)
+    {
+        world = default!;
+        ArgumentException.ThrowIfNullOrWhiteSpace(stateRootPath);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var candidates = new[]
+        {
+            Path.Combine(stateRootPath, "libzt", "roots"),
+            Path.Combine(stateRootPath, "planet"),
+            Path.Combine(stateRootPath, "roots")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (!File.Exists(candidate))
+            {
+                continue;
+            }
+
+            FileInfo info;
+            try
+            {
+                info = new FileInfo(candidate);
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            if (info.Length == 0)
+            {
+                continue;
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = File.ReadAllBytes(candidate);
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var decoded = ZtZeroTierWorldCodec.Decode(bytes);
+                if (decoded.Type != ZtZeroTierWorldType.Planet || decoded.Roots.Count == 0)
+                {
+                    continue;
+                }
+
+                world = decoded;
+                return true;
+            }
+            catch (FormatException)
+            {
+            }
+            catch (ArgumentException)
+            {
+            }
+        }
+
+        return false;
+    }
+
     private static ZtZeroTierWorld LoadFromFile(ZtZeroTierSocketOptions options, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(options.PlanetFilePath);
@@ -40,4 +123,3 @@ internal static class ZtZeroTierPlanetLoader
         return ZtZeroTierWorldCodec.Decode(bytes);
     }
 }
-

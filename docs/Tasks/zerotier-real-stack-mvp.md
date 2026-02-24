@@ -69,6 +69,7 @@ Status legend:
 
 ## Milestone Z8 — libzt parity for “dial by managed IP”
 - [x] Import existing `libzt` state identity (`<state>/libzt/identity.secret`) into the managed identity store when present.
+- [x] Prefer a planet/roots file from state when present (`<state>/libzt/roots`, `<state>/planet`) and fall back to the embedded planet.
 - [x] Include inline COM in `MULTICAST_GATHER` requests and surface `ERROR(MULTICAST_GATHER)` as a meaningful exception.
 - [x] Send `HELLO` to the remote peer before starting `EXT_FRAME` TCP traffic (introduce our identity).
 - [x] Retransmit TCP SYN during `ConnectAsync` (avoid single-shot SYN and brittle 10s connect wait).
