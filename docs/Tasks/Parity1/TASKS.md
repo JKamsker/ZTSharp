@@ -99,7 +99,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 ## Milestone P3 — IPv6 sockets (TCP + UDP)
 - [x] Add IPv6 support to the user-space TCP stack (active-open + passive-open).
 - [x] Add UDP-over-IPv6 support (SendTo/ReceiveFrom).
-- [ ] Add E2E tests for IPv6 TCP and UDP (gated by env vars like the existing E2E tests).
+- [x] Add E2E tests for IPv6 TCP and UDP (gated by env vars like the existing E2E tests).
 
 ## Milestone P4 — TCP robustness (toward libzt expectations)
 - [ ] Implement out-of-order segment handling + reassembly.
