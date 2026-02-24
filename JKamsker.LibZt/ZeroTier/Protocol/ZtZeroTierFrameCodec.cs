@@ -5,6 +5,7 @@ namespace JKamsker.LibZt.ZeroTier.Protocol;
 internal static class ZtZeroTierFrameCodec
 {
     public const ushort EtherTypeIpv4 = 0x0800;
+    public const ushort EtherTypeIpv6 = 0x86DD;
 
     public static byte[] EncodeFramePayload(ulong networkId, ushort etherType, ReadOnlySpan<byte> frame)
     {
@@ -125,4 +126,3 @@ internal static class ZtZeroTierFrameCodec
         return true;
     }
 }
-

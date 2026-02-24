@@ -473,7 +473,8 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     rootKey: rootKey,
                     localIdentity: _identity,
                     networkId: _options.NetworkId,
-                    localManagedIp: localAddress,
+                    localManagedIpV4: localAddress,
+                    localManagedIpsV6: ManagedIps.Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6).ToArray(),
                     inlineCom: inlineCom);
 
                 try

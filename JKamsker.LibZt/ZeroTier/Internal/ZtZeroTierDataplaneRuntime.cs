@@ -28,8 +28,9 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZtZeroTierIdentity _localIdentity;
     private readonly ulong _networkId;
     private readonly byte[] _inlineCom;
-    private readonly IPAddress _localManagedIp;
-    private readonly byte[] _localManagedIpV4;
+    private readonly IPAddress _localManagedIpV4;
+    private readonly byte[] _localManagedIpV4Bytes;
+    private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZtZeroTierMac _localMac;
 
     private readonly Channel<ZtZeroTierUdpDatagram> _peerQueue = Channel.CreateUnbounded<ZtZeroTierUdpDatagram>();
@@ -60,14 +61,16 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         byte[] rootKey,
         ZtZeroTierIdentity localIdentity,
         ulong networkId,
-        IPAddress localManagedIp,
+        IPAddress localManagedIpV4,
+        IReadOnlyList<IPAddress> localManagedIpsV6,
         byte[] inlineCom)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
         ArgumentNullException.ThrowIfNull(rootKey);
         ArgumentNullException.ThrowIfNull(localIdentity);
-        ArgumentNullException.ThrowIfNull(localManagedIp);
+        ArgumentNullException.ThrowIfNull(localManagedIpV4);
+        ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
         if (localIdentity.PrivateKey is null)
@@ -75,9 +78,17 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             throw new InvalidOperationException("Local identity must contain a private key.");
         }
 
-        if (localManagedIp.AddressFamily != AddressFamily.InterNetwork)
+        if (localManagedIpV4.AddressFamily != AddressFamily.InterNetwork)
         {
-            throw new NotSupportedException("Only IPv4 is supported in the TCP MVP.");
+            throw new NotSupportedException("A managed IPv4 is required for the managed stack MVP.");
+        }
+
+        for (var i = 0; i < localManagedIpsV6.Count; i++)
+        {
+            if (localManagedIpsV6[i].AddressFamily != AddressFamily.InterNetworkV6)
+            {
+                throw new ArgumentOutOfRangeException(nameof(localManagedIpsV6), "All IPv6 managed IPs must be IPv6.");
+            }
         }
 
         _udp = udp;
@@ -87,8 +98,9 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         _localIdentity = localIdentity;
         _networkId = networkId;
         _inlineCom = inlineCom;
-        _localManagedIp = localManagedIp;
-        _localManagedIpV4 = localManagedIp.GetAddressBytes();
+        _localManagedIpV4 = localManagedIpV4;
+        _localManagedIpV4Bytes = localManagedIpV4.GetAddressBytes();
+        _localManagedIpsV6 = localManagedIpsV6.Count == 0 ? Array.Empty<IPAddress>() : localManagedIpsV6.ToArray();
         _localMac = ZtZeroTierMac.FromAddress(localIdentity.NodeId, networkId);
 
         _dispatcherLoop = Task.Run(DispatcherLoopAsync, CancellationToken.None);
@@ -406,6 +418,13 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
                 if (etherType == EtherTypeArp)
                 {
                     await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                if (etherType == ZtZeroTierFrameCodec.EtherTypeIpv6)
+                {
+                    var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                    await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
                 }
 
                 return;
@@ -432,6 +451,13 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
                 {
                     var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
                     await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                if (etherType == ZtZeroTierFrameCodec.EtherTypeIpv6)
+                {
+                    var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                    await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
                 }
 
                 return;
@@ -471,6 +497,13 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
                 {
                     var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
                     await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                if (etherType == ZtZeroTierFrameCodec.EtherTypeIpv6)
+                {
+                    var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
+                    await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
                 }
 
                 return;
@@ -553,6 +586,44 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         }
     }
 
+    private ValueTask HandleIpv6PacketAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipv6Packet, CancellationToken cancellationToken)
+    {
+        if (_localManagedIpsV6.Length == 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        if (!ZtIpv6Codec.TryParse(ipv6Packet.Span, out var src, out var dst, out _, out _, out _))
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        var isToUs = dst.IsIPv6Multicast;
+        if (!isToUs)
+        {
+            for (var i = 0; i < _localManagedIpsV6.Length; i++)
+            {
+                if (dst.Equals(_localManagedIpsV6[i]))
+                {
+                    isToUs = true;
+                    break;
+                }
+            }
+        }
+
+        if (!isToUs)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        if (!IsUnspecifiedIpv6(src))
+        {
+            _managedIpToNodeId[src] = peerNodeId;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     private async Task HandleIpv4PacketAsync(ZtNodeId peerNodeId, ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken)
     {
         if (!ZtIpv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
@@ -560,7 +631,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
-        if (!dst.Equals(_localManagedIp))
+        if (!dst.Equals(_localManagedIpV4))
         {
             return;
         }
@@ -612,6 +683,30 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         }
     }
 
+    private static bool IsUnspecifiedIpv6(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return false;
+        }
+
+        var bytes = address.GetAddressBytes();
+        if (bytes.Length != 16)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            if (bytes[i] != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private ValueTask HandleArpFrameAsync(ZtNodeId peerNodeId, ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
     {
         if (!TryParseArpRequest(frame, out var senderMac, out var senderIp, out var targetIp))
@@ -619,7 +714,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
             return ValueTask.CompletedTask;
         }
 
-        if (!targetIp.SequenceEqual(_localManagedIpV4))
+        if (!targetIp.SequenceEqual(_localManagedIpV4Bytes))
         {
             return ValueTask.CompletedTask;
         }
@@ -675,7 +770,7 @@ internal sealed class ZtZeroTierDataplaneRuntime : IAsyncDisposable
         _localMac.CopyTo(localMac);
 
         localMac.CopyTo(span.Slice(8, 6)); // SHA
-        _localManagedIpV4.CopyTo(span.Slice(14, 4)); // SPA
+        _localManagedIpV4Bytes.CopyTo(span.Slice(14, 4)); // SPA
         requesterMac.CopyTo(span.Slice(18, 6)); // THA
         requesterIp.CopyTo(span.Slice(24, 4)); // TPA
 

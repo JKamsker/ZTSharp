@@ -86,8 +86,8 @@ These are “human runnable” smoke tests; automated variants live in the test 
 
 ## Milestone P2 — IPv6 dataplane (frames + address resolution)
 - [x] Ensure we persist/print assigned IPv6 managed IPs (already parsed, but verify state + CLI output).
-- [ ] Handle IPv6 in `FRAME`/`EXT_FRAME` (EtherType `0x86DD`) and route to an IPv6 handler.
-- [ ] Implement minimal IPv6 parsing/serialization utilities + tests.
+- [x] Handle IPv6 in `FRAME`/`EXT_FRAME` (EtherType `0x86DD`) and route to an IPv6 handler.
+- [x] Implement minimal IPv6 parsing/serialization utilities + tests.
 - [ ] Implement ICMPv6 Neighbor Discovery (NDP) responder so OS ZeroTier clients can reach us by IPv6:
   - respond to Neighbor Solicitation for our managed IPv6
   - send Neighbor Advertisement (correct flags/target LL address)
