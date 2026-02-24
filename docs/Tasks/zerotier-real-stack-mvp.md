@@ -42,8 +42,8 @@ Status legend:
 
 ## Milestone Z5 — Outbound TCP + HttpClient “just works”
 - [ ] Implement root-relayed dataplane (single-root MVP).
-  - [ ] Implement managed `MAC` + `MulticastGroup` primitives (address resolution groups).
-  - [ ] Resolve ZeroTier managed IPs to node ids via `MULTICAST_GATHER`.
+  - [x] Implement managed `MAC` + `MulticastGroup` primitives (address resolution groups).
+  - [x] Resolve ZeroTier managed IPs to node ids via `MULTICAST_GATHER`.
   - [ ] Implement `WHOIS` peer identity cache + C25519 shared keys.
   - [ ] Implement `FRAME`/`EXT_FRAME` TX/RX for IPv4 payloads (include inline COM for MVP).
 - [ ] Implement minimal user-space IPv4 + TCP active-open (client only).
