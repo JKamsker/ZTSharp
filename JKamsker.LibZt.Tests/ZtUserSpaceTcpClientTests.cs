@@ -235,6 +235,85 @@ public sealed class ZtUserSpaceTcpClientTests
         Assert.Equal("helloworld", System.Text.Encoding.ASCII.GetString(buffer));
     }
 
+    [Fact]
+    public async Task ReadAsync_SendsWindowUpdate_WhenReceiveWindowOpens()
+    {
+        await using var link = new InMemoryIpv4Link();
+        var localIp = IPAddress.Parse("10.0.0.1");
+        var remoteIp = IPAddress.Parse("10.0.0.2");
+        const ushort remotePort = 80;
+        const ushort localPort = 50000;
+
+        await using var client = new ZtUserSpaceTcpClient(link, localIp, remoteIp, remotePort, localPort: localPort, mss: 1200);
+
+        var connectTask = client.ConnectAsync();
+
+        var syn = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(ZtIpv4Codec.TryParse(syn.Span, out _, out _, out _, out var synPayload));
+        Assert.True(ZtTcpCodec.TryParse(synPayload, out _, out _, out var synSeq, out _, out _, out _, out _));
+
+        var synAckTcp = ZtTcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: 1000,
+            acknowledgmentNumber: unchecked(synSeq + 1),
+            flags: ZtTcpCodec.Flags.Syn | ZtTcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(ZtIpv4Codec.Encode(remoteIp, localIp, ZtTcpCodec.ProtocolNumber, synAckTcp, identification: 1));
+
+        await connectTask.WaitAsync(TimeSpan.FromSeconds(2));
+        _ = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)); // final ACK
+
+        var payload = new byte[4096];
+        Array.Fill(payload, (byte)'a');
+
+        var clientSeq = unchecked(synSeq + 1);
+        var serverSeqStart = 1001u;
+
+        ushort lastWindow = 65535;
+        for (var i = 0; i < 64; i++)
+        {
+            var dataTcp = ZtTcpCodec.Encode(
+                sourceIp: remoteIp,
+                destinationIp: localIp,
+                sourcePort: remotePort,
+                destinationPort: localPort,
+                sequenceNumber: unchecked(serverSeqStart + (uint)(i * payload.Length)),
+                acknowledgmentNumber: clientSeq,
+                flags: ZtTcpCodec.Flags.Ack | ZtTcpCodec.Flags.Psh,
+                windowSize: 65535,
+                options: ReadOnlySpan<byte>.Empty,
+                payload: payload);
+
+            link.Incoming.Writer.TryWrite(ZtIpv4Codec.Encode(remoteIp, localIp, ZtTcpCodec.ProtocolNumber, dataTcp, identification: (ushort)(2 + i)));
+
+            var ackPacket = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(ZtIpv4Codec.TryParse(ackPacket.Span, out _, out _, out _, out var ackPayload));
+            Assert.True(ZtTcpCodec.TryParse(ackPayload, out _, out _, out _, out _, out var ackFlags, out lastWindow, out var ackTcpPayload));
+            Assert.Equal(ZtTcpCodec.Flags.Ack, ackFlags);
+            Assert.True(ackTcpPayload.IsEmpty);
+        }
+
+        Assert.Equal((ushort)0, lastWindow);
+
+        var readBuffer = new byte[4096];
+        using var readCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var read = await client.ReadAsync(readBuffer, readCts.Token);
+        Assert.Equal(readBuffer.Length, read);
+
+        var update = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(ZtIpv4Codec.TryParse(update.Span, out _, out _, out _, out var updatePayload));
+        Assert.True(ZtTcpCodec.TryParse(updatePayload, out _, out _, out _, out _, out var updateFlags, out var updateWindow, out var updateTcpPayload));
+        Assert.Equal(ZtTcpCodec.Flags.Ack, updateFlags);
+        Assert.True(updateTcpPayload.IsEmpty);
+        Assert.NotEqual((ushort)0, updateWindow);
+    }
+
     private static async Task<int> ReadExactAsync(ZtUserSpaceTcpClient client, byte[] buffer, int length, CancellationToken cancellationToken)
     {
         var readTotal = 0;

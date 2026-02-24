@@ -9,7 +9,7 @@ namespace JKamsker.LibZt.ZeroTier.Net;
 internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
 {
     private const ushort DefaultMss = 1200;
-    private const ushort DefaultWindow = 65535;
+    private const int MaxReceiveBufferBytes = 256 * 1024;
 
     private readonly IZtUserSpaceIpLink _link;
     private readonly IPAddress _localAddress;
@@ -30,6 +30,9 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
     private uint _recvNext;
     private readonly Dictionary<uint, byte[]> _outOfOrder = new();
     private uint? _pendingFinSeq;
+    private long _receiveBufferedBytes;
+    private ushort _lastAdvertisedWindow = ushort.MaxValue;
+    private int _windowUpdatePending;
     private bool _handshakeStarted;
     private bool _connected;
     private bool _remoteClosed;
@@ -119,6 +122,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                     _incoming.Writer.TryWrite(readSegment.Slice(toCopy));
                 }
 
+                ConsumeReceiveBuffer(toCopy);
                 return toCopy;
             }
 
@@ -137,6 +141,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                     _incoming.Writer.TryWrite(segmentFromChannel.Slice(toCopy));
                 }
 
+                ConsumeReceiveBuffer(toCopy);
                 return toCopy;
             }
             catch (ChannelClosedException)
@@ -426,16 +431,35 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 {
                     if (segmentSeq == _recvNext)
                     {
-                        _incoming.Writer.TryWrite(tcpPayload.ToArray());
-                        _recvNext = unchecked(_recvNext + (uint)tcpPayload.Length);
-
-                        while (_outOfOrder.Remove(_recvNext, out var buffered))
+                        var accepted = false;
+                        if (TryReserveReceiveBuffer(tcpPayload.Length))
                         {
-                            _incoming.Writer.TryWrite(buffered);
-                            _recvNext = unchecked(_recvNext + (uint)buffered.Length);
+                            var bytes = tcpPayload.ToArray();
+                            if (_incoming.Writer.TryWrite(bytes))
+                            {
+                                _recvNext = unchecked(_recvNext + (uint)tcpPayload.Length);
+                                accepted = true;
+                            }
+                            else
+                            {
+                                ReleaseReceiveBuffer(bytes.Length);
+                            }
                         }
 
-                        if (_pendingFinSeq is { } pending && pending == _recvNext)
+                        while (accepted && _outOfOrder.Remove(_recvNext, out var buffered))
+                        {
+                            if (_incoming.Writer.TryWrite(buffered))
+                            {
+                                _recvNext = unchecked(_recvNext + (uint)buffered.Length);
+                            }
+                            else
+                            {
+                                ReleaseReceiveBuffer(buffered.Length);
+                                break;
+                            }
+                        }
+
+                        if (accepted && _pendingFinSeq is { } pending && pending == _recvNext)
                         {
                             _pendingFinSeq = null;
                             _recvNext = unchecked(_recvNext + 1);
@@ -445,7 +469,14 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                     }
                     else if (SequenceGreaterThan(segmentSeq, _recvNext))
                     {
-                        _outOfOrder.TryAdd(segmentSeq, tcpPayload.ToArray());
+                        if (!_outOfOrder.ContainsKey(segmentSeq) && TryReserveReceiveBuffer(tcpPayload.Length))
+                        {
+                            var bytes = tcpPayload.ToArray();
+                            if (!_outOfOrder.TryAdd(segmentSeq, bytes))
+                            {
+                                ReleaseReceiveBuffer(bytes.Length);
+                            }
+                        }
                     }
                 }
             }
@@ -521,6 +552,9 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
         ReadOnlyMemory<byte> payload,
         CancellationToken cancellationToken)
     {
+        var window = GetReceiveWindow();
+        _lastAdvertisedWindow = window;
+
         var tcp = ZtTcpCodec.Encode(
             _localAddress,
             _remoteAddress,
@@ -529,7 +563,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
             sequenceNumber: seq,
             acknowledgmentNumber: ack,
             flags,
-            windowSize: DefaultWindow,
+            windowSize: window,
             options: options.Span,
             payload.Span);
 
@@ -554,6 +588,119 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
         }
 
         await _link.SendAsync(ip, cancellationToken).ConfigureAwait(false);
+    }
+
+    private ushort GetReceiveWindow()
+    {
+        var buffered = Volatile.Read(ref _receiveBufferedBytes);
+        var available = MaxReceiveBufferBytes - buffered;
+        if (available <= 0)
+        {
+            return 0;
+        }
+
+        if (available >= ushort.MaxValue)
+        {
+            return ushort.MaxValue;
+        }
+
+        return (ushort)available;
+    }
+
+    private bool TryReserveReceiveBuffer(int bytes)
+    {
+        if (bytes <= 0)
+        {
+            return true;
+        }
+
+        while (true)
+        {
+            var current = Volatile.Read(ref _receiveBufferedBytes);
+            var next = current + bytes;
+            if (next > MaxReceiveBufferBytes)
+            {
+                return false;
+            }
+
+            if (Interlocked.CompareExchange(ref _receiveBufferedBytes, next, current) == current)
+            {
+                return true;
+            }
+        }
+    }
+
+    private void ReleaseReceiveBuffer(int bytes)
+    {
+        if (bytes <= 0)
+        {
+            return;
+        }
+
+        Interlocked.Add(ref _receiveBufferedBytes, -bytes);
+    }
+
+    private void ConsumeReceiveBuffer(int bytes)
+    {
+        if (bytes <= 0)
+        {
+            return;
+        }
+
+        Interlocked.Add(ref _receiveBufferedBytes, -bytes);
+        TrySendWindowUpdate();
+    }
+
+    private void TrySendWindowUpdate()
+    {
+        if (!_connected || _disposed || _remoteClosed)
+        {
+            return;
+        }
+
+        if (_lastAdvertisedWindow != 0)
+        {
+            return;
+        }
+
+        var window = GetReceiveWindow();
+        if (window == 0)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _windowUpdatePending, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await SendTcpAsync(
+                        seq: _sendNext,
+                        ack: _recvNext,
+                        flags: ZtTcpCodec.Flags.Ack,
+                        options: ReadOnlyMemory<byte>.Empty,
+                        payload: ReadOnlyMemory<byte>.Empty,
+                        cancellationToken: CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _windowUpdatePending, 0);
+            }
+        });
     }
 
     private static uint GenerateInitialSequenceNumber()

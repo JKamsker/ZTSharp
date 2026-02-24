@@ -103,7 +103,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 
 ## Milestone P4 — TCP robustness (toward libzt expectations)
 - [x] Implement out-of-order segment handling + reassembly.
-- [ ] Implement receive-window / flow control + backpressure (avoid unbounded buffering).
+- [x] Implement receive-window / flow control + backpressure (avoid unbounded buffering).
 - [ ] Improve retransmission behavior (RTO/backoff) and loss recovery for real internet paths.
 - [ ] Improve close semantics (FIN/half-close/TIME_WAIT-ish behavior) and error mapping (RST).
 - [ ] Add stress tests (many concurrent conns, larger payloads, slow reader/writer).
