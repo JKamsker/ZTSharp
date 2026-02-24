@@ -47,9 +47,9 @@ Status legend:
   - [x] Implement `WHOIS` peer identity cache + C25519 shared keys.
   - [x] Implement `FRAME`/`EXT_FRAME` TX/RX for IPv4 payloads (include inline COM for MVP).
 - [ ] Implement minimal user-space IPv4 + TCP active-open (client only).
-  - [ ] Add IPv4 codec + checksum helpers.
-  - [ ] Add TCP codec + MSS option (small MSS to avoid ZT fragmentation).
-  - [ ] Add TCP active-open (client) with a `Stream` abstraction (basic retransmit).
+  - [x] Add IPv4 codec + checksum helpers.
+  - [x] Add TCP codec + MSS option (small MSS to avoid ZT fragmentation).
+  - [x] Add TCP active-open (client) with a `Stream` abstraction (basic retransmit).
 - [ ] Wire `ZtZeroTierHttpMessageHandler` to dial `http://<zt-ip>:<port>` via user-space TCP.
   - [ ] Implement `ConnectTcpAsync` to return a stream backed by user-space TCP.
 - [ ] Add opt-in E2E test (`LIBZT_RUN_ZEROTIER_E2E`) with env-configured NWID + URL.
