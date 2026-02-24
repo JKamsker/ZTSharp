@@ -80,7 +80,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Add a CLI command for UDP (for manual verification + CI-friendly smoke):
   - `libzt udp-listen <port> --stack managed ...`
   - `libzt udp-send --to <ip:port> --data <...> ...`
-- [ ] E2E manual verification (OS ZeroTier client -> managed UDP and managed -> OS):
+- [x] E2E manual verification (OS ZeroTier client -> managed UDP and managed -> OS):
   - OS: `echo -n ping | nc -u -w1 10.121.15.82 9999`
   - managed logs + replies (`pong`)
 
