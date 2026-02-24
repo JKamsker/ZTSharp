@@ -3,6 +3,7 @@
 **/bin/
 **/obj/
 BenchmarkDotNet.Artifacts/
+artifacts/
 TestResults/
 **/TestResults/
 *.user
