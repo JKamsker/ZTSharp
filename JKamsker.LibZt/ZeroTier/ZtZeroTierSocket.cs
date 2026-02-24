@@ -321,6 +321,7 @@ public sealed class ZtZeroTierSocket : IAsyncDisposable
                     _options.NetworkId,
                     group,
                     gatherLimit: 32,
+                    inlineCom: comBytes,
                     timeout: TimeSpan.FromSeconds(5),
                     cancellationToken)
                 .ConfigureAwait(false);

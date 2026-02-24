@@ -9,6 +9,7 @@ namespace JKamsker.LibZt.ZeroTier.Internal;
 internal static class ZtZeroTierMulticastGatherClient
 {
     private const int IndexVerb = 27;
+    private const int IndexPayload = ZtZeroTierPacketHeader.Length;
 
     private const int OkIndexInReVerb = ZtZeroTierPacketHeader.Length;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
@@ -25,6 +26,32 @@ internal static class ZtZeroTierMulticastGatherClient
         uint gatherLimit,
         TimeSpan timeout,
         CancellationToken cancellationToken)
+        => await GatherAsync(
+                udp,
+                rootNodeId,
+                rootEndpoint,
+                rootKey,
+                localNodeId,
+                networkId,
+                group,
+                gatherLimit,
+                inlineCom: default,
+                timeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    public static async Task<(uint TotalKnown, ZtNodeId[] Members)> GatherAsync(
+        ZtZeroTierUdpTransport udp,
+        ZtNodeId rootNodeId,
+        IPEndPoint rootEndpoint,
+        byte[] rootKey,
+        ZtNodeId localNodeId,
+        ulong networkId,
+        ZtZeroTierMulticastGroup group,
+        uint gatherLimit,
+        ReadOnlyMemory<byte> inlineCom,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
@@ -34,7 +61,7 @@ internal static class ZtZeroTierMulticastGatherClient
             throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be positive.");
         }
 
-        var payload = ZtZeroTierMulticastGatherCodec.EncodeRequestPayload(networkId, group, gatherLimit);
+        var payload = ZtZeroTierMulticastGatherCodec.EncodeRequestPayload(networkId, group, gatherLimit, inlineCom.Span);
 
         var packetId = GeneratePacketId();
         var header = new ZtZeroTierPacketHeader(
@@ -91,6 +118,35 @@ internal static class ZtZeroTierMulticastGatherClient
             }
 
             var verb = (ZtZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
+            if (verb == ZtZeroTierVerb.Error)
+            {
+                if (packetBytes.Length < IndexPayload + 1 + 8 + 1)
+                {
+                    continue;
+                }
+
+                var errorInReVerb = (ZtZeroTierVerb)(packetBytes[IndexPayload] & 0x1F);
+                if (errorInReVerb != ZtZeroTierVerb.MulticastGather)
+                {
+                    continue;
+                }
+
+                var errorInRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
+                if (errorInRePacketId != packetId)
+                {
+                    continue;
+                }
+
+                var errorCode = packetBytes[IndexPayload + 1 + 8];
+                ulong? errorNetworkId = null;
+                if (packetBytes.Length >= IndexPayload + 1 + 8 + 1 + 8)
+                {
+                    errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
+                }
+
+                throw new InvalidOperationException(FormatMulticastGatherError(errorCode, errorNetworkId));
+            }
+
             if (verb != ZtZeroTierVerb.Ok)
             {
                 continue;
@@ -128,6 +184,27 @@ internal static class ZtZeroTierMulticastGatherClient
         }
     }
 
+    private static string FormatMulticastGatherError(byte errorCode, ulong? networkId)
+    {
+        var message = errorCode switch
+        {
+            0x01 => "Invalid MULTICAST_GATHER request.",
+            0x02 => "Bad/unsupported protocol version for MULTICAST_GATHER.",
+            0x03 => "Object not found for MULTICAST_GATHER.",
+            0x04 => "Identity collision reported by peer.",
+            0x05 => "Peer does not support MULTICAST_GATHER.",
+            0x06 => "Network membership certificate required (COM update needed).",
+            0x07 => "Network access denied (not authorized).",
+            0x08 => "Unwanted multicast.",
+            0x09 => "Network authentication required (external/2FA).",
+            _ => $"Unknown error for MULTICAST_GATHER (0x{errorCode:x2})."
+        };
+
+        return networkId is null
+            ? $"{message}"
+            : $"{message} (network: 0x{networkId:x16})";
+    }
+
     private static ulong GeneratePacketId()
     {
         Span<byte> buffer = stackalloc byte[8];
@@ -135,4 +212,3 @@ internal static class ZtZeroTierMulticastGatherClient
         return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
 }
-
