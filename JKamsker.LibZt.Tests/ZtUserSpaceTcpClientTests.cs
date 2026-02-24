@@ -164,6 +164,94 @@ public sealed class ZtUserSpaceTcpClientTests
         await writeTask.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
+    [Fact]
+    public async Task ReadAsync_ReassemblesOutOfOrderSegments()
+    {
+        await using var link = new InMemoryIpv4Link();
+        var localIp = IPAddress.Parse("10.0.0.1");
+        var remoteIp = IPAddress.Parse("10.0.0.2");
+        const ushort remotePort = 80;
+        const ushort localPort = 50000;
+
+        await using var client = new ZtUserSpaceTcpClient(link, localIp, remoteIp, remotePort, localPort: localPort, mss: 1200);
+
+        var connectTask = client.ConnectAsync();
+
+        var syn = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(ZtIpv4Codec.TryParse(syn.Span, out _, out _, out _, out var synPayload));
+        Assert.True(ZtTcpCodec.TryParse(synPayload, out _, out _, out var synSeq, out _, out _, out _, out _));
+
+        var synAckTcp = ZtTcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: 1000,
+            acknowledgmentNumber: unchecked(synSeq + 1),
+            flags: ZtTcpCodec.Flags.Syn | ZtTcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(ZtIpv4Codec.Encode(remoteIp, localIp, ZtTcpCodec.ProtocolNumber, synAckTcp, identification: 1));
+
+        await connectTask.WaitAsync(TimeSpan.FromSeconds(2));
+        _ = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)); // final ACK
+
+        var clientSeq = unchecked(synSeq + 1);
+        var serverSeqStart = 1001u;
+
+        var worldTcp = ZtTcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: unchecked(serverSeqStart + 5),
+            acknowledgmentNumber: clientSeq,
+            flags: ZtTcpCodec.Flags.Ack | ZtTcpCodec.Flags.Psh,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: "world"u8);
+
+        var helloTcp = ZtTcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: serverSeqStart,
+            acknowledgmentNumber: clientSeq,
+            flags: ZtTcpCodec.Flags.Ack | ZtTcpCodec.Flags.Psh,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: "hello"u8);
+
+        link.Incoming.Writer.TryWrite(ZtIpv4Codec.Encode(remoteIp, localIp, ZtTcpCodec.ProtocolNumber, worldTcp, identification: 2));
+        link.Incoming.Writer.TryWrite(ZtIpv4Codec.Encode(remoteIp, localIp, ZtTcpCodec.ProtocolNumber, helloTcp, identification: 3));
+
+        var buffer = new byte[10];
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var read = await ReadExactAsync(client, buffer, buffer.Length, cts.Token);
+        Assert.Equal(buffer.Length, read);
+        Assert.Equal("helloworld", System.Text.Encoding.ASCII.GetString(buffer));
+    }
+
+    private static async Task<int> ReadExactAsync(ZtUserSpaceTcpClient client, byte[] buffer, int length, CancellationToken cancellationToken)
+    {
+        var readTotal = 0;
+        while (readTotal < length)
+        {
+            var read = await client.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return readTotal;
+            }
+
+            readTotal += read;
+        }
+
+        return readTotal;
+    }
+
     private sealed class InMemoryIpv4Link : IZtUserSpaceIpLink
     {
         public Channel<ReadOnlyMemory<byte>> Incoming { get; } = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();

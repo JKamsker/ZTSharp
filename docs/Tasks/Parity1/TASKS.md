@@ -102,7 +102,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Add E2E tests for IPv6 TCP and UDP (gated by env vars like the existing E2E tests).
 
 ## Milestone P4 — TCP robustness (toward libzt expectations)
-- [ ] Implement out-of-order segment handling + reassembly.
+- [x] Implement out-of-order segment handling + reassembly.
 - [ ] Implement receive-window / flow control + backpressure (avoid unbounded buffering).
 - [ ] Improve retransmission behavior (RTO/backoff) and loss recovery for real internet paths.
 - [ ] Improve close semantics (FIN/half-close/TIME_WAIT-ish behavior) and error mapping (RST).

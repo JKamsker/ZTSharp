@@ -28,6 +28,8 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
     private uint _sendUna;
     private uint _sendNext;
     private uint _recvNext;
+    private readonly Dictionary<uint, byte[]> _outOfOrder = new();
+    private uint? _pendingFinSeq;
     private bool _handshakeStarted;
     private bool _connected;
     private bool _remoteClosed;
@@ -398,31 +400,73 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 }
             }
 
+            var hasFin = (flags & ZtTcpCodec.Flags.Fin) != 0;
+            var shouldAck = hasFin || !tcpPayload.IsEmpty;
+            var originalPayloadLength = tcpPayload.Length;
+
             if (!tcpPayload.IsEmpty)
             {
-                if (seq == _recvNext)
+                var segmentSeq = seq;
+
+                if (SequenceGreaterThanOrEqual(_recvNext, segmentSeq))
                 {
-                    _incoming.Writer.TryWrite(tcpPayload.ToArray());
-                    _recvNext = unchecked(_recvNext + (uint)tcpPayload.Length);
+                    var alreadyReceived = (int)(_recvNext - segmentSeq);
+                    if (alreadyReceived < tcpPayload.Length)
+                    {
+                        tcpPayload = tcpPayload.Slice(alreadyReceived);
+                        segmentSeq = _recvNext;
+                    }
+                    else
+                    {
+                        tcpPayload = ReadOnlySpan<byte>.Empty;
+                    }
                 }
 
-                await SendTcpAsync(
-                        seq: _sendNext,
-                        ack: _recvNext,
-                        flags: ZtTcpCodec.Flags.Ack,
-                        options: ReadOnlyMemory<byte>.Empty,
-                        payload: ReadOnlyMemory<byte>.Empty,
-                        cancellationToken: token)
-                    .ConfigureAwait(false);
+                if (!tcpPayload.IsEmpty)
+                {
+                    if (segmentSeq == _recvNext)
+                    {
+                        _incoming.Writer.TryWrite(tcpPayload.ToArray());
+                        _recvNext = unchecked(_recvNext + (uint)tcpPayload.Length);
+
+                        while (_outOfOrder.Remove(_recvNext, out var buffered))
+                        {
+                            _incoming.Writer.TryWrite(buffered);
+                            _recvNext = unchecked(_recvNext + (uint)buffered.Length);
+                        }
+
+                        if (_pendingFinSeq is { } pending && pending == _recvNext)
+                        {
+                            _pendingFinSeq = null;
+                            _recvNext = unchecked(_recvNext + 1);
+                            _remoteClosed = true;
+                            _incoming.Writer.TryComplete();
+                        }
+                    }
+                    else if (SequenceGreaterThan(segmentSeq, _recvNext))
+                    {
+                        _outOfOrder.TryAdd(segmentSeq, tcpPayload.ToArray());
+                    }
+                }
             }
 
-            if ((flags & ZtTcpCodec.Flags.Fin) != 0)
+            if (hasFin)
             {
-                if (seq == _recvNext)
+                var finSeq = unchecked(seq + (uint)originalPayloadLength);
+                if (finSeq == _recvNext)
                 {
                     _recvNext = unchecked(_recvNext + 1);
+                    _remoteClosed = true;
+                    _incoming.Writer.TryComplete();
                 }
+                else if (SequenceGreaterThan(finSeq, _recvNext))
+                {
+                    _pendingFinSeq = finSeq;
+                }
+            }
 
+            if (shouldAck)
+            {
                 await SendTcpAsync(
                         seq: _sendNext,
                         ack: _recvNext,
@@ -431,9 +475,6 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                         payload: ReadOnlyMemory<byte>.Empty,
                         cancellationToken: token)
                     .ConfigureAwait(false);
-
-                _remoteClosed = true;
-                _incoming.Writer.TryComplete();
             }
         }
     }
