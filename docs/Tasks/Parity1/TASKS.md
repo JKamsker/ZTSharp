@@ -106,7 +106,7 @@ These are “human runnable” smoke tests; automated variants live in the test 
 - [x] Implement receive-window / flow control + backpressure (avoid unbounded buffering).
 - [x] Improve retransmission behavior (RTO/backoff) and loss recovery for real internet paths.
 - [x] Improve close semantics (FIN/half-close/TIME_WAIT-ish behavior) and error mapping (RST).
-- [ ] Add stress tests (many concurrent conns, larger payloads, slow reader/writer).
+- [x] Add stress tests (many concurrent conns, larger payloads, slow reader/writer).
 - [ ] Manual verification: sustained HTTP download over managed stack without stalls/timeouts.
 
 ## Milestone P5 — Socket-like managed API (drop-in ergonomics)

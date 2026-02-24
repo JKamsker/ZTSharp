@@ -37,6 +37,9 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
     private double? _srttMs;
     private double _rttvarMs;
     private TimeSpan _rto = TimeSpan.FromSeconds(1);
+    private ushort _remoteWindow = ushort.MaxValue;
+    private TaskCompletionSource<bool>? _remoteWindowTcs;
+    private readonly object _remoteWindowLock = new();
     private bool _handshakeStarted;
     private bool _connected;
     private bool _remoteClosed;
@@ -181,7 +184,16 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
             var offset = 0;
             while (offset < buffer.Length)
             {
-                var segmentLength = Math.Min(_mss, buffer.Length - offset);
+                await WaitForRemoteSendWindowAsync(cancellationToken).ConfigureAwait(false);
+
+                var remoteWindow = _remoteWindow;
+                var maxSegmentLength = Math.Min((int)_mss, buffer.Length - offset);
+                var segmentLength = Math.Min(maxSegmentLength, (int)remoteWindow);
+                if (segmentLength == 0)
+                {
+                    continue;
+                }
+
                 var segment = buffer.Slice(offset, segmentLength);
 
                 var seq = _sendNext;
@@ -224,6 +236,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
 
             _disposed = true;
             _incoming.Writer.TryComplete();
+            SignalRemoteSendWindowWaiters(new ObjectDisposedException(nameof(ZtUserSpaceTcpServerConnection)));
 
             if (_connected && !_remoteClosed)
             {
@@ -318,6 +331,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 _incoming.Writer.TryComplete(ex);
                 _acceptTcs?.TrySetException(ex);
                 _ackTcs?.TrySetException(ex);
+                SignalRemoteSendWindowWaiters(ex);
                 return;
             }
             catch (IOException ex)
@@ -326,6 +340,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 _incoming.Writer.TryComplete(ex);
                 _acceptTcs?.TrySetException(ex);
                 _ackTcs?.TrySetException(ex);
+                SignalRemoteSendWindowWaiters(ex);
                 return;
             }
 
@@ -357,7 +372,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 }
             }
 
-            if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out var ack, out var flags, out _, out var tcpPayload))
+            if (!ZtTcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out var ack, out var flags, out var windowSize, out var tcpPayload))
             {
                 continue;
             }
@@ -367,12 +382,15 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 continue;
             }
 
+            UpdateRemoteSendWindow(windowSize);
+
             if ((flags & ZtTcpCodec.Flags.Rst) != 0)
             {
                 _remoteClosed = true;
                 _incoming.Writer.TryComplete();
                 _acceptTcs?.TrySetException(new IOException("Remote reset the connection."));
                 _ackTcs?.TrySetException(new IOException("Remote reset the connection."));
+                SignalRemoteSendWindowWaiters(new IOException("Remote reset the connection."));
                 continue;
             }
 
@@ -485,6 +503,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                             _recvNext = unchecked(_recvNext + 1);
                             _remoteClosed = true;
                             _incoming.Writer.TryComplete();
+                            SignalRemoteSendWindowWaiters(new IOException("Remote has closed the connection."));
                         }
                     }
                     else if (SequenceGreaterThan(segmentSeq, _recvNext))
@@ -509,6 +528,7 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                     _recvNext = unchecked(_recvNext + 1);
                     _remoteClosed = true;
                     _incoming.Writer.TryComplete();
+                    SignalRemoteSendWindowWaiters(new IOException("Remote has closed the connection."));
                 }
                 else if (SequenceGreaterThan(finSeq, _recvNext))
                 {
@@ -759,6 +779,64 @@ internal sealed class ZtUserSpaceTcpServerConnection : IAsyncDisposable
                 Interlocked.Exchange(ref _windowUpdatePending, 0);
             }
         });
+    }
+
+    private void UpdateRemoteSendWindow(ushort windowSize)
+    {
+        TaskCompletionSource<bool>? toRelease = null;
+        lock (_remoteWindowLock)
+        {
+            _remoteWindow = windowSize;
+            if (windowSize != 0 && _remoteWindowTcs is not null)
+            {
+                toRelease = _remoteWindowTcs;
+                _remoteWindowTcs = null;
+            }
+        }
+
+        toRelease?.TrySetResult(true);
+    }
+
+    private void SignalRemoteSendWindowWaiters(Exception exception)
+    {
+        TaskCompletionSource<bool>? toRelease = null;
+        lock (_remoteWindowLock)
+        {
+            if (_remoteWindowTcs is not null)
+            {
+                toRelease = _remoteWindowTcs;
+                _remoteWindowTcs = null;
+            }
+        }
+
+        toRelease?.TrySetException(exception);
+    }
+
+    private async Task WaitForRemoteSendWindowAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_remoteClosed)
+            {
+                throw new IOException("Remote has closed the connection.");
+            }
+
+            TaskCompletionSource<bool> tcs;
+            lock (_remoteWindowLock)
+            {
+                if (_remoteWindow != 0)
+                {
+                    return;
+                }
+
+                tcs = _remoteWindowTcs ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
+            await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static uint GenerateInitialSequenceNumber()
