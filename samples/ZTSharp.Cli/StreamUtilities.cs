@@ -11,12 +11,8 @@ internal static class StreamUtilities
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (IOException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
         }
     }
 }
-
