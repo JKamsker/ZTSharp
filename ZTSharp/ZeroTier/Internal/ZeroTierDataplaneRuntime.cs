@@ -35,6 +35,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId = new();
     private readonly ZeroTierDataplaneRouteRegistry _routes;
     private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
+    private readonly ZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
 
     private int _traceRxRemaining = 200;
     private bool _disposed;
@@ -113,6 +114,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localManagedIpV4Bytes: _localManagedIpV4Bytes,
             localManagedIpsV6: _localManagedIpsV6);
         _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip);
+        _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets);
 
         _dispatcherLoop = Task.Run(DispatcherLoopAsync, CancellationToken.None);
         _peerLoop = Task.Run(PeerLoopAsync, CancellationToken.None);
@@ -337,49 +339,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 return;
             }
 
-            await ProcessPeerDatagramAsync(datagram, token).ConfigureAwait(false);
+            await _peerDatagrams.ProcessAsync(datagram, token).ConfigureAwait(false);
         }
-    }
-
-    private async Task ProcessPeerDatagramAsync(ZeroTierUdpDatagram datagram, CancellationToken cancellationToken)
-    {
-        var packetBytes = datagram.Payload.ToArray();
-        if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
-        {
-            return;
-        }
-
-        if (decoded.Header.Destination != _localIdentity.NodeId)
-        {
-            return;
-        }
-
-        var peerNodeId = decoded.Header.Source;
-
-        if (decoded.Header.CipherSuite == 0 && decoded.Header.Verb == ZeroTierVerb.Hello)
-        {
-            await _peerSecurity.HandleHelloAsync(peerNodeId, decoded.Header.PacketId, packetBytes, datagram.RemoteEndPoint, cancellationToken)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
-        if (!ZeroTierPacketCrypto.Dearmor(packetBytes, key))
-        {
-            return;
-        }
-
-        if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-        {
-            if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
-            {
-                return;
-            }
-
-            packetBytes = uncompressed;
-        }
-
-        await _peerPackets.HandleAsync(peerNodeId, packetBytes, cancellationToken).ConfigureAwait(false);
     }
 
     private Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
