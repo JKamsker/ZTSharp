@@ -155,14 +155,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
-        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ??
-                           ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
-        if (localAddress is null)
-        {
-            throw new InvalidOperationException("No managed IP assigned for this network.");
-        }
-
-        return await ListenTcpAsync(localAddress, port, cancellationToken).ConfigureAwait(false);
+        return await ListenTcpAsync(GetDefaultLocalManagedAddressOrThrow(), port, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<ZeroTierTcpListener> ListenTcpAsync(IPAddress localAddress, int port, CancellationToken cancellationToken = default)
@@ -199,14 +192,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
-        var localAddress = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ??
-                           ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
-        if (localAddress is null)
-        {
-            throw new InvalidOperationException("No managed IP assigned for this network.");
-        }
-
-        return await BindUdpAsync(localAddress, port, cancellationToken).ConfigureAwait(false);
+        return await BindUdpAsync(GetDefaultLocalManagedAddressOrThrow(), port, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<ZeroTierUdpSocket> BindUdpAsync(
@@ -443,16 +429,14 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
     private (IPAddress? LocalManagedIpV4, byte[] InlineCom) GetLocalManagedIpv4AndInlineCom()
     {
-        var localManagedIpV4 = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
-        var dict = _networkConfigDictionaryBytes;
-        if (dict is null)
-        {
-            throw new InvalidOperationException("Missing network config dictionary (join not completed?).");
-        }
-
-        var inlineCom = ZeroTierInlineCom.GetInlineCom(dict);
-        return (localManagedIpV4, inlineCom);
+        var dict = _networkConfigDictionaryBytes ?? throw new InvalidOperationException("Missing network config dictionary (join not completed?).");
+        return (ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork), ZeroTierInlineCom.GetInlineCom(dict));
     }
+
+    private IPAddress GetDefaultLocalManagedAddressOrThrow()
+        => ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ??
+           ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6) ??
+           throw new InvalidOperationException("No managed IP assigned for this network.");
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Reliability",
@@ -477,75 +461,26 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
             try
             {
-                ZeroTierHelloOk helloOk;
-                byte[] rootKey;
-                if (_upstreamRoot is { } cachedRoot && _upstreamRootKey is not null)
-                {
-                    helloOk = cachedRoot;
-                    rootKey = _upstreamRootKey;
-                }
-                else
-                {
-                    helloOk = await ZeroTierHelloClient
-                        .HelloRootsAsync(udp, _identity, _planet, timeout: TimeSpan.FromSeconds(10), cancellationToken)
-                        .ConfigureAwait(false);
-
-                    var root = _planet.Roots.FirstOrDefault(r => r.Identity.NodeId == helloOk.RootNodeId);
-                    if (root is null)
-                    {
-                        throw new InvalidOperationException($"Root identity not found for {helloOk.RootNodeId}.");
-                    }
-
-                    rootKey = new byte[48];
-                    ZeroTierC25519.Agree(_identity.PrivateKey!, root.Identity.PublicKey, rootKey);
-                }
-
                 var localManagedIpsV6 = ManagedIps
                     .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
                     .ToArray();
 
-                var runtime = new ZeroTierDataplaneRuntime(
-                    udp,
-                    rootNodeId: helloOk.RootNodeId,
-                    rootEndpoint: helloOk.RootEndpoint,
-                    rootKey: rootKey,
-                    rootProtocolVersion: helloOk.RemoteProtocolVersion,
-                    localIdentity: _identity,
-                    networkId: _options.NetworkId,
-                    localManagedIpV4: localManagedIpV4,
-                    localManagedIpsV6: localManagedIpsV6,
-                    inlineCom: inlineCom);
+                var (runtime, helloOk, rootKey) = await ZeroTierDataplaneRuntimeFactory
+                    .CreateAsync(
+                        udp,
+                        localIdentity: _identity,
+                        planet: _planet,
+                        networkId: _options.NetworkId,
+                        localManagedIpV4: localManagedIpV4,
+                        localManagedIpsV6: localManagedIpsV6,
+                        inlineCom: inlineCom,
+                        cachedRoot: _upstreamRoot,
+                        cachedRootKey: _upstreamRootKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
-                try
-                {
-                    var groups = new List<ZeroTierMulticastGroup>((localManagedIpV4 is not null ? 1 : 0) + localManagedIpsV6.Length);
-                    if (localManagedIpV4 is not null)
-                    {
-                        groups.Add(ZeroTierMulticastGroup.DeriveForAddressResolution(localManagedIpV4));
-                    }
-
-                    for (var i = 0; i < localManagedIpsV6.Length; i++)
-                    {
-                        groups.Add(ZeroTierMulticastGroup.DeriveForAddressResolution(localManagedIpsV6[i]));
-                    }
-
-                    await ZeroTierMulticastLikeClient
-                        .SendAsync(
-                            udp,
-                            helloOk.RootNodeId,
-                            helloOk.RootEndpoint,
-                            rootKey,
-                            rootProtocolVersion: helloOk.RemoteProtocolVersion,
-                            _identity.NodeId,
-                            _options.NetworkId,
-                            groups: groups,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (System.Net.Sockets.SocketException)
-                {
-                    // Best-effort. Some environments restrict certain outbound paths (IPv6, captive portals, etc.).
-                }
+                _upstreamRoot ??= helloOk;
+                _upstreamRootKey ??= rootKey;
 
                 _runtime = runtime;
                 return runtime;
@@ -561,5 +496,4 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             _runtimeLock.Release();
         }
     }
-
 }
