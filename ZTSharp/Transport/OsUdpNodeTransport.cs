@@ -19,6 +19,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Guid, Subscriber>> _networkSubscribers = new();
     private readonly OsUdpPeerRegistry _peers;
+    private readonly OsUdpReceiveLoop _receiver;
     private readonly CancellationTokenSource _receiverCts = new();
     private readonly Task _receiverLoop;
     private readonly bool _enablePeerDiscovery;
@@ -29,7 +30,14 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         _udp = OsUdpSocketFactory.Create(localPort, enableIpv6);
         _peers = new OsUdpPeerRegistry(enablePeerDiscovery, NormalizeEndpoint);
 
-        _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
+        _receiver = new OsUdpReceiveLoop(
+            _udp,
+            enablePeerDiscovery,
+            _peers,
+            DispatchFrameAsync,
+            SendDiscoveryFrameAsync);
+
+        _receiverLoop = Task.Run(() => _receiver.RunAsync(_receiverCts.Token));
     }
 
     public IPEndPoint LocalEndpoint
@@ -207,75 +215,18 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         _gate.Dispose();
     }
 
-    private async Task ProcessReceiveLoopAsync()
+    private async Task DispatchFrameAsync(ulong sourceNodeId, ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
     {
-        var token = _receiverCts.Token;
-        while (!token.IsCancellationRequested)
+        if (!_networkSubscribers.TryGetValue(networkId, out var subscribers))
         {
-            UdpReceiveResult result;
-            try
-            {
-                result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (ObjectDisposedException)
-            {
-                return;
-            }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.ConnectionReset)
-            {
-                continue;
-            }
+            return;
+        }
 
-            if (!NodeFrameCodec.TryDecode(result.Buffer.AsMemory(), out var networkId, out var sourceNodeId, out var payload))
-            {
-                continue;
-            }
-
-            if (OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
-            {
-                if (_enablePeerDiscovery && discoveredNodeId != 0)
-                {
-                    _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
-                    if (_peers.TryGetLocalNodeId(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
-                    {
-                        if (controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello)
-                        {
-                            await SendDiscoveryFrameAsync(
-                                networkId,
-                                localNodeId,
-                                result.RemoteEndPoint,
-                                OsUdpPeerDiscoveryProtocol.FrameType.PeerHelloResponse,
-                                token).ConfigureAwait(false);
-                        }
-                    }
-                }
-
-                continue;
-            }
-
-            if (_enablePeerDiscovery &&
-                sourceNodeId != 0 &&
-                _peers.TryGetLocalNodeId(networkId, out var localNodeIdForDiscovery) &&
-                localNodeIdForDiscovery != sourceNodeId)
-            {
-                _peers.RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
-            }
-
-            if (!_networkSubscribers.TryGetValue(networkId, out var subscribers))
-            {
-                continue;
-            }
-
-            foreach (var callback in subscribers.Values)
-            {
-                await callback
-                    .OnFrameReceived(sourceNodeId, networkId, payload, token)
-                    .ConfigureAwait(false);
-            }
+        foreach (var callback in subscribers.Values)
+        {
+            await callback
+                .OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 
