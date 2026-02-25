@@ -26,7 +26,7 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
         }
 
         var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
-        var payload = packetBytes.AsMemory(ZeroTierPacketHeader.Length);
+        var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
 
         switch (verb)
         {

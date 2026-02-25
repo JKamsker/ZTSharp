@@ -90,7 +90,7 @@ internal sealed class ZeroTierDataplaneRxLoops
                 }
 
                 var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
-                var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
+                var payload = packetBytes.AsSpan(ZeroTierPacketHeader.IndexPayload);
 
                 _rootClient.TryDispatchResponse(verb, payload);
                 continue;

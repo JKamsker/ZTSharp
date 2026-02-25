@@ -127,7 +127,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
                 ZeroTierTrace.WriteLine($"[zerotier] RX {verb} from {from} via {datagram.RemoteEndPoint}.");
             }
 
-            var payload = packetBytes.AsMemory(ZeroTierPacketHeader.Length);
+            var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
 
             switch (verb)
             {

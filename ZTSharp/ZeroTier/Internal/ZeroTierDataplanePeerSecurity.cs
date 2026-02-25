@@ -86,7 +86,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
             return;
         }
 
-        var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
+        var payload = packetBytes.AsSpan(ZeroTierPacketHeader.IndexPayload);
         if (payload.Length < HelloPayloadMinLength)
         {
             return;
