@@ -240,13 +240,7 @@ internal static class ExposeCommand
         }
         finally
         {
-            try
-            {
-                await exposeCts.CancelAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            await exposeCts.CancelAsync().ConfigureAwait(false);
 
             if (acceptors is not null)
             {
