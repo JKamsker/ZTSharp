@@ -155,26 +155,17 @@ internal static class ListenCommand
 
             if (listener4 is not null)
             {
-                await DisposeListenerQuietlyAsync(listener4).ConfigureAwait(false);
+                await DisposeListenerAsync(listener4).ConfigureAwait(false);
             }
 
             if (listener6 is not null)
             {
-                await DisposeListenerQuietlyAsync(listener6).ConfigureAwait(false);
+                await DisposeListenerAsync(listener6).ConfigureAwait(false);
             }
 
             await socket.DisposeAsync().ConfigureAwait(false);
         }
     }
 
-    private static async ValueTask DisposeListenerQuietlyAsync(ZeroTierTcpListener listener)
-    {
-        try
-        {
-            await listener.DisposeAsync().ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }
+    private static ValueTask DisposeListenerAsync(ZeroTierTcpListener listener) => listener.DisposeAsync();
 }
