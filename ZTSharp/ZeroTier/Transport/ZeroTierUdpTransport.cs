@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
 using ZTSharp.Transport.Internal;
+using ZTSharp.ZeroTier.Internal;
 
 namespace ZTSharp.ZeroTier.Transport;
 
@@ -35,24 +36,10 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
-        }
-
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
-
-        try
-        {
-            return await _incoming.Reader.ReadAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"UDP receive timed out after {timeout}.");
-        }
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "UDP receive", _incoming.Reader.ReadAsync, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public Task SendAsync(IPEndPoint remoteEndpoint, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
