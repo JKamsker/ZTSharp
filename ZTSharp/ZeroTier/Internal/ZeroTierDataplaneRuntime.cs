@@ -1234,14 +1234,14 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                     if (inReVerb == ZeroTierVerb.Whois &&
                         _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
                     {
-                        whoisTcs.TrySetException(new InvalidOperationException(FormatError(inReVerb, errorCode, networkId)));
+                        whoisTcs.TrySetException(new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, networkId)));
                         return true;
                     }
 
                     if (inReVerb == ZeroTierVerb.MulticastGather &&
                         _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
                     {
-                        gatherTcs.TrySetException(new InvalidOperationException(FormatError(inReVerb, errorCode, networkId)));
+                        gatherTcs.TrySetException(new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, networkId)));
                         return true;
                     }
 
@@ -1400,31 +1400,4 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         destination[4] = (byte)(value & 0xFF);
     }
 
-    private static string FormatError(ZeroTierVerb inReVerb, byte errorCode, ulong? networkId)
-    {
-        var message = errorCode switch
-        {
-            0x01 => "Invalid request.",
-            0x02 => "Bad/unsupported protocol version.",
-            0x03 => "Object not found.",
-            0x04 => "Identity collision.",
-            0x05 => "Unsupported operation.",
-            0x06 => "Network membership certificate required (COM update needed).",
-            0x07 => "Network access denied (not authorized).",
-            0x08 => "Unwanted multicast.",
-            0x09 => "Network authentication required (external/2FA).",
-            _ => $"Unknown error (0x{errorCode:x2})."
-        };
-
-        var prefix = inReVerb switch
-        {
-            ZeroTierVerb.MulticastGather => "ERROR(MULTICAST_GATHER)",
-            ZeroTierVerb.Whois => "ERROR(WHOIS)",
-            _ => $"ERROR({inReVerb})"
-        };
-
-        return networkId is null
-            ? $"{prefix}: {message}"
-            : $"{prefix}: {message} (network: 0x{networkId:x16})";
-    }
 }
