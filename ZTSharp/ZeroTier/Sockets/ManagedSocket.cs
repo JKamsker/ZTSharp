@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 using ZTSharp.ZeroTier;
 
 namespace ZTSharp.ZeroTier.Sockets;
@@ -11,15 +13,8 @@ namespace ZTSharp.ZeroTier.Sockets;
 public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 {
     private readonly ZeroTierSocket _zt;
-    private readonly SemaphoreSlim _initLock = new(1, 1);
-    private bool _disposed;
-
-    private IPEndPoint? _localEndPoint;
-    private IPEndPoint? _remoteEndPoint;
-
-    private Stream? _stream;
-    private ZeroTierTcpListener? _listener;
-    private ZeroTierUdpSocket? _udp;
+    private readonly ManagedSocketBackend _backend;
+    private int _disposed;
 
     public ManagedSocket(ZeroTierSocket zeroTier, AddressFamily addressFamily, SocketType socketType, ProtocolType protocolType)
     {
@@ -46,84 +41,44 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
         }
 
         _zt = zeroTier;
-        AddressFamily = addressFamily;
-        SocketType = socketType;
-        ProtocolType = protocolType;
+        _backend = socketType switch
+        {
+            SocketType.Stream => new ManagedTcpSocketBackend(_zt, addressFamily),
+            SocketType.Dgram => new ManagedUdpSocketBackend(_zt, addressFamily),
+            _ => throw new NotSupportedException($"Unsupported socket type: {socketType}."),
+        };
     }
 
-    private ManagedSocket(ZeroTierSocket zeroTier, IPEndPoint localEndPoint, IPEndPoint? remoteEndPoint, Stream connectedStream)
+    private ManagedSocket(ZeroTierSocket zeroTier, ManagedSocketBackend backend)
     {
+        ArgumentNullException.ThrowIfNull(zeroTier);
+        ArgumentNullException.ThrowIfNull(backend);
+
         _zt = zeroTier;
-        AddressFamily = localEndPoint.AddressFamily;
-        SocketType = SocketType.Stream;
-        ProtocolType = ProtocolType.Tcp;
-        _localEndPoint = localEndPoint;
-        _remoteEndPoint = remoteEndPoint;
-        _stream = connectedStream;
+        _backend = backend;
     }
 
-    public AddressFamily AddressFamily { get; }
+    public AddressFamily AddressFamily => _backend.AddressFamily;
 
-    public SocketType SocketType { get; }
+    public SocketType SocketType => _backend.SocketType;
 
-    public ProtocolType ProtocolType { get; }
+    public ProtocolType ProtocolType => _backend.ProtocolType;
 
-    public EndPoint? LocalEndPoint => _localEndPoint;
+    public EndPoint? LocalEndPoint => _backend.LocalEndPoint;
 
-    public EndPoint? RemoteEndPoint => _remoteEndPoint;
+    public EndPoint? RemoteEndPoint => _backend.RemoteEndPoint;
 
-    public bool Connected => _stream is not null && !_disposed;
+    public bool Connected => _backend.Connected && !IsDisposed;
+
+    private bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 
     public void Bind(EndPoint localEndPoint)
         => BindAsync(localEndPoint).AsTask().GetAwaiter().GetResult();
 
     public async ValueTask BindAsync(EndPoint localEndPoint, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(localEndPoint);
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (localEndPoint is not IPEndPoint ip)
-        {
-            throw new NotSupportedException("Only IPEndPoint is supported.");
-        }
-
-        if (ip.AddressFamily != AddressFamily)
-        {
-            throw new NotSupportedException("Local address family must match the socket address family.");
-        }
-
-        await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-
-            if (_stream is not null || _listener is not null || _udp is not null)
-            {
-                throw new InvalidOperationException("Socket is already initialized.");
-            }
-
-            var normalized = await ManagedSocketEndpointNormalizer
-                .NormalizeLocalEndpointAsync(_zt, AddressFamily, ip, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (SocketType == SocketType.Dgram)
-            {
-                var udp = await _zt
-                    .BindUdpAsync(normalized.Address, normalized.Port, cancellationToken)
-                    .ConfigureAwait(false);
-
-                _udp = udp;
-                _localEndPoint = udp.LocalEndpoint;
-                return;
-            }
-
-            _localEndPoint = normalized;
-        }
-        finally
-        {
-            _initLock.Release();
-        }
+        ThrowIfDisposed();
+        await _backend.BindAsync(localEndPoint, cancellationToken).ConfigureAwait(false);
     }
 
     public void Listen(int backlog = 128)
@@ -131,48 +86,8 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask ListenAsync(int backlog = 128, CancellationToken cancellationToken = default)
     {
-        _ = backlog;
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        EnsureTcp();
-
-        await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-
-            if (_listener is not null)
-            {
-                throw new InvalidOperationException("Socket is already listening.");
-            }
-
-            if (_stream is not null)
-            {
-                throw new InvalidOperationException("Socket is already connected.");
-            }
-
-            if (_localEndPoint is null)
-            {
-                throw new InvalidOperationException("Bind must be called before Listen.");
-            }
-
-            if (_localEndPoint.Port == 0)
-            {
-                throw new NotSupportedException("Listening on port 0 is not supported. Bind to a concrete port first.");
-            }
-
-            var listener = await _zt
-                .ListenTcpAsync(_localEndPoint.Address, _localEndPoint.Port, cancellationToken)
-                .ConfigureAwait(false);
-
-            _listener = listener;
-            _localEndPoint = listener.LocalEndpoint;
-        }
-        finally
-        {
-            _initLock.Release();
-        }
+        ThrowIfDisposed();
+        await _backend.ListenAsync(backlog, cancellationToken).ConfigureAwait(false);
     }
 
     public ManagedSocket Accept()
@@ -180,15 +95,9 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask<ManagedSocket> AcceptAsync(CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        EnsureTcp();
-
-        var listener = _listener ?? throw new InvalidOperationException("Socket is not listening.");
-        var stream = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
-
-        var local = listener.LocalEndpoint;
-        return new ManagedSocket(_zt, local, remoteEndPoint: null, connectedStream: stream);
+        ThrowIfDisposed();
+        var accepted = await _backend.AcceptAsync(cancellationToken).ConfigureAwait(false);
+        return new ManagedSocket(_zt, accepted);
     }
 
     public void Connect(EndPoint remoteEndPoint)
@@ -196,67 +105,8 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask ConnectAsync(EndPoint remoteEndPoint, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(remoteEndPoint);
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        EnsureTcp();
-
-        if (remoteEndPoint is not IPEndPoint remoteIp)
-        {
-            throw new NotSupportedException("Only IPEndPoint is supported.");
-        }
-
-        if (remoteIp.AddressFamily != AddressFamily)
-        {
-            throw new NotSupportedException("Remote address family must match the socket address family.");
-        }
-
-        await _initLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-
-            if (_stream is not null)
-            {
-                throw new InvalidOperationException("Socket is already connected.");
-            }
-
-            if (_listener is not null)
-            {
-                throw new InvalidOperationException("Socket is listening. Create a new socket for outgoing connections.");
-            }
-
-            if (_udp is not null)
-            {
-                throw new InvalidOperationException("Socket is already initialized for UDP.");
-            }
-
-            var local = _localEndPoint;
-            if (local is not null)
-            {
-                local = await ManagedSocketEndpointNormalizer
-                    .NormalizeLocalEndpointAsync(_zt, AddressFamily, local, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            Stream connected;
-            if (local is null)
-            {
-                connected = await _zt.ConnectTcpAsync(remoteIp, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                connected = await _zt.ConnectTcpAsync(local, remoteIp, cancellationToken).ConfigureAwait(false);
-            }
-
-            _stream = connected;
-            _remoteEndPoint = remoteIp;
-            _localEndPoint = local;
-        }
-        finally
-        {
-            _initLock.Release();
-        }
+        ThrowIfDisposed();
+        await _backend.ConnectAsync(remoteEndPoint, cancellationToken).ConfigureAwait(false);
     }
 
     public int Send(byte[] buffer)
@@ -264,13 +114,8 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask<int> SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        EnsureTcp();
-
-        var stream = _stream ?? throw new InvalidOperationException("Socket is not connected.");
-        await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
-        return buffer.Length;
+        ThrowIfDisposed();
+        return await _backend.SendAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
     public int Receive(byte[] buffer)
@@ -278,12 +123,8 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask<int> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        EnsureTcp();
-
-        var stream = _stream ?? throw new InvalidOperationException("Socket is not connected.");
-        return await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        ThrowIfDisposed();
+        return await _backend.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
     public int SendTo(byte[] buffer, EndPoint remoteEndPoint)
@@ -291,29 +132,14 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask<int> SendToAsync(ReadOnlyMemory<byte> buffer, EndPoint remoteEndPoint, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(remoteEndPoint);
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        EnsureUdp();
-
-        if (remoteEndPoint is not IPEndPoint remote)
-        {
-            throw new NotSupportedException("Only IPEndPoint is supported.");
-        }
-
-        var udp = _udp ?? throw new InvalidOperationException("Socket is not bound.");
-        return await udp.SendToAsync(buffer, remote, cancellationToken).ConfigureAwait(false);
+        ThrowIfDisposed();
+        return await _backend.SendToAsync(buffer, remoteEndPoint, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<(int ReceivedBytes, EndPoint RemoteEndPoint)> ReceiveFromAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        EnsureUdp();
-
-        var udp = _udp ?? throw new InvalidOperationException("Socket is not bound.");
-        var result = await udp.ReceiveFromAsync(buffer, cancellationToken).ConfigureAwait(false);
-        return (result.ReceivedBytes, result.RemoteEndPoint);
+        ThrowIfDisposed();
+        return await _backend.ReceiveFromAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -321,7 +147,7 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
         "CA1024:Use properties where appropriate",
         Justification = "API is intentionally socket-like; throws when not connected.")]
     public Stream GetStream()
-        => _stream ?? throw new InvalidOperationException("Socket is not connected.");
+        => _backend.GetStream();
 
     public void Shutdown(SocketShutdown how)
     {
@@ -340,60 +166,14 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        await _initLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-        }
-        finally
-        {
-            _initLock.Release();
-        }
-
-        if (_stream is not null)
-        {
-            await _stream.DisposeAsync().ConfigureAwait(false);
-            _stream = null;
-        }
-
-        if (_listener is not null)
-        {
-            await _listener.DisposeAsync().ConfigureAwait(false);
-            _listener = null;
-        }
-
-        if (_udp is not null)
-        {
-            await _udp.DisposeAsync().ConfigureAwait(false);
-            _udp = null;
-        }
-
-        _initLock.Dispose();
+        await _backend.DisposeAsync().ConfigureAwait(false);
     }
 
-    private void EnsureTcp()
-    {
-        if (SocketType != SocketType.Stream || ProtocolType != ProtocolType.Tcp)
-        {
-            throw new NotSupportedException("Operation is only supported on TCP stream sockets.");
-        }
-    }
-
-    private void EnsureUdp()
-    {
-        if (SocketType != SocketType.Dgram || ProtocolType != ProtocolType.Udp)
-        {
-            throw new NotSupportedException("Operation is only supported on UDP datagram sockets.");
-        }
-    }
+    private void ThrowIfDisposed()
+        => ObjectDisposedException.ThrowIf(IsDisposed, this);
 }
