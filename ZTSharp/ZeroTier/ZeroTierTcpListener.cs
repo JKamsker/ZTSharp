@@ -89,7 +89,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 {
                     await Task.WhenAll(_connectionTasks.ToArray()).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
                 {
                 }
             }
@@ -200,10 +200,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
         }
-        catch (IOException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
         }
         finally
