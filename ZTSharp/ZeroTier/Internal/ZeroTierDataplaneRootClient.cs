@@ -238,18 +238,11 @@ internal sealed class ZeroTierDataplaneRootClient
         try
         {
             await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+            return await ZeroTierTimeouts
+                .RunWithTimeoutAsync(timeout, operation: $"{operationName} response", WaitForResponseAsync, cancellationToken)
+                .ConfigureAwait(false);
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(timeout);
-
-            try
-            {
-                return await tcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for {operationName} response after {timeout}.");
-            }
+            ValueTask<TResponse> WaitForResponseAsync(CancellationToken token) => new(tcs.Task.WaitAsync(token));
         }
         finally
         {
