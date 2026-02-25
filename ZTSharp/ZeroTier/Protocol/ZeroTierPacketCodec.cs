@@ -38,8 +38,8 @@ internal static class ZeroTierPacketCodec
         var span = packet.AsSpan();
 
         WriteUInt64(span, IndexPacketId, header.PacketId);
-        WriteUInt40(span.Slice(IndexDestination, AddressLength), header.Destination.Value);
-        WriteUInt40(span.Slice(IndexSource, AddressLength), header.Source.Value);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(span.Slice(IndexDestination, AddressLength), header.Destination.Value);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(span.Slice(IndexSource, AddressLength), header.Source.Value);
         span[ZeroTierPacketHeader.IndexFlags] = header.Flags;
         WriteUInt64(span, ZeroTierPacketHeader.IndexMac, header.Mac);
         span[ZeroTierPacketHeader.IndexVerb] = header.VerbRaw;
@@ -73,17 +73,4 @@ internal static class ZeroTierPacketCodec
             value[4];
     }
 
-    private static void WriteUInt40(Span<byte> destination, ulong value)
-    {
-        if (destination.Length < AddressLength)
-        {
-            throw new ArgumentException("Destination must be at least 5 bytes.", nameof(destination));
-        }
-
-        destination[0] = (byte)((value >> 32) & 0xFF);
-        destination[1] = (byte)((value >> 24) & 0xFF);
-        destination[2] = (byte)((value >> 16) & 0xFF);
-        destination[3] = (byte)((value >> 8) & 0xFF);
-        destination[4] = (byte)(value & 0xFF);
-    }
 }
