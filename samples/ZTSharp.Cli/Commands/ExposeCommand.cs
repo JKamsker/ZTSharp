@@ -255,21 +255,10 @@ internal static class ExposeCommand
 
             if (listener is not null)
             {
-                await DisposeListenerQuietlyAsync(listener).ConfigureAwait(false);
+                await listener.DisposeAsync().ConfigureAwait(false);
             }
 
             await socket.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-
-    private static async ValueTask DisposeListenerQuietlyAsync(ZeroTierTcpListener listener)
-    {
-        try
-        {
-            await listener.DisposeAsync().ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
         }
     }
 }
