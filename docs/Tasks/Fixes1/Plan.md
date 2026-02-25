@@ -2,7 +2,7 @@
 
 ## Maintenance (this file)
 - [x] Normalize formatting (indentation, separators, ASCII punctuation)
-- [ ] Convert Phase 0-2 items to checkboxes
+- [x] Convert Phase 0-2 items to checkboxes
 - [ ] Convert Phase 3-5 items to checkboxes
 - [ ] Convert Phase 6-7 items to checkboxes
 
@@ -25,8 +25,8 @@ resilience/DoS hardening, API disposal semantics, and legacy overlay protocol co
 
 ## Phase 0 - Baseline / guardrails
 
-1. Run dotnet restore, dotnet build -c Release, dotnet test -c Release, dotnet format --verify-no-changes to capture baseline.
-2. Create a tracking checklist (in PR description or docs/Tasks/... as appropriate) mapping each fix -> test case.
+- [ ] Run `dotnet restore`, `dotnet build -c Release`, `dotnet test -c Release`, `dotnet format --verify-no-changes` to capture baseline.
+- [ ] Create a tracking checklist (in PR description or `docs/Tasks/...` as appropriate) mapping each fix -> test case.
 
 Acceptance: baseline results recorded; no repo-tracked changes yet.
 
@@ -43,12 +43,11 @@ Files
 
 Changes
 
-- Reject keys/prefixes that:
-    - contain : (Windows drive roots + NTFS ADS),
-    - are rooted (Path.IsPathRooted(...) after normalization),
-    - contain \0 (defense-in-depth),
-    - still contain . or .. segments (already enforced).
-- Keep returned normalized form a/b/c (unchanged).
+- [ ] Reject keys/prefixes containing `:` (Windows drive roots + NTFS ADS).
+- [ ] Reject keys/prefixes that are rooted (`Path.IsPathRooted(...)` after normalization).
+- [ ] Reject keys/prefixes containing `\0` (defense-in-depth).
+- [ ] Reject keys/prefixes still containing `.` or `..` segments (already enforced).
+- [ ] Keep returned normalized form `a/b/c` (unchanged).
 
 ### 1.2 FileStateStore: root confinement + alias correctness + atomic writes
 
@@ -59,34 +58,34 @@ Files
 
 Changes
 
-- Root confinement: after combining, compute full path and ensure it stays under _rootPath (OrdinalIgnoreCase on Windows, Ordinal elsewhere).
-- Planet/roots alias:
-    - Reads/Exists/Delete: prefer planet if present, else fallback to roots.
-    - Writes: always write to planet.
-    - Optional migration: if only roots exists, attempt atomic rename/move to planet once.
-- List behavior:
-    - Normalize returned entries to / separators.
-    - Ensure ListAsync("") includes both planet and roots when either exists (avoid duplicates; case-insensitive handling on Windows/macOS FS).
-- Replace non-atomic WriteAllBytesAsync with atomic replace.
+- [ ] Enforce root confinement: after combining, compute full path and ensure it stays under `_rootPath` (OrdinalIgnoreCase on Windows, Ordinal elsewhere).
+- [ ] Planet/roots alias semantics:
+  - [ ] Reads/Exists/Delete: prefer planet if present, else fallback to roots.
+  - [ ] Writes: always write to planet.
+  - [ ] Optional migration: if only roots exists, attempt atomic rename/move to planet once.
+- [ ] List behavior:
+  - [ ] Normalize returned entries to `/` separators.
+  - [ ] Ensure `ListAsync("")` includes both `planet` and `roots` when either exists (avoid duplicates; case-insensitive handling on Windows/macOS FS).
+- [ ] Replace non-atomic `WriteAllBytesAsync` with atomic replace.
 
 ### 1.3 Atomic file helper + apply to managed stack persistence
 
 Add
 
-- ZTSharp/Internal/AtomicFile.cs (or similar internal location)
+- [ ] Add `ZTSharp/Internal/AtomicFile.cs` (or similar internal location)
 
 Behavior
 
-- Write to path.tmp.<guid> in same directory, Flush(true), then File.Move(tmp, path, overwrite:true); cleanup tmp on failure.
+- [ ] Write to `path.tmp.<guid>` in the same directory, `Flush(true)`, then `File.Move(tmp, path, overwrite: true)`; cleanup tmp on failure.
 
 Apply
 
-- ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs:Save/TryLoad:
-    - Catch IOException/UnauthorizedAccessException in TryLoad and return false.
-    - Use atomic write in Save.
-- ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs:PersistNetworkState:
-    - Atomic write for .netconf.dict and .ips.txt (write temp then replace).
-    - Add max-size cap when loading .netconf.dict (see Phase 5.2 constants).
+- [ ] `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs` Save/TryLoad:
+  - [ ] Catch `IOException`/`UnauthorizedAccessException` in `TryLoad` and return `false`.
+  - [ ] Use atomic write in `Save`.
+- [ ] `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs` PersistNetworkState:
+  - [ ] Atomic write for `.netconf.dict` and `.ips.txt` (write temp then replace).
+  - [ ] Add max-size cap when loading `.netconf.dict` (see Phase 5.2 constants).
 
 ### 1.4 Fix StateStore list edge cases (duplicates/case)
 
@@ -97,19 +96,19 @@ Files
 
 Changes
 
-- Ensure alias insertions are deduped and case-normalized consistently.
+- [ ] Ensure alias insertions are deduped and case-normalized consistently.
 
 ### Tests (Phase 1)
 
 Add/extend:
 
-- ZTSharp.Tests/StateStoreTests.cs (or new FileStateStoreSecurityTests.cs)
-    - Windows-only: WriteAsync("C:/Windows/Temp/pwn", ...) throws; no file created.
-    - Windows-only: WriteAsync("planet:ads", ...) throws.
-    - Cross-platform: WriteAsync("/etc/passwd", ...) throws (after normalization/root check).
-    - Alias: if only roots exists, ReadAsync("planet") returns data and ListAsync("") contains both keys.
-    - Root confinement: ListAsync("C:/") throws on Windows.
-- Durability: verify atomic replace (write old then new; ensure file content is either old or new, never partial) using controlled IO (best-effort test).
+- [ ] Add/extend `ZTSharp.Tests/StateStoreTests.cs` (or new `FileStateStoreSecurityTests.cs`) with:
+  - [ ] Windows-only: `WriteAsync("C:/Windows/Temp/pwn", ...)` throws; no file created.
+  - [ ] Windows-only: `WriteAsync("planet:ads", ...)` throws.
+  - [ ] Cross-platform: `WriteAsync("/etc/passwd", ...)` throws (after normalization/root check).
+  - [ ] Alias: if only `roots` exists, `ReadAsync("planet")` returns data and `ListAsync("")` contains both keys.
+  - [ ] Root confinement: `ListAsync("C:/")` throws on Windows.
+- [ ] Durability: verify atomic replace (write old then new; ensure file content is either old or new, never partial) using controlled IO (best-effort test).
 
 Acceptance: traversal blocked; alias semantics match docs; all persistence writes are atomic.
 
@@ -125,11 +124,11 @@ File
 
 Changes
 
-- Remove ack == 0 early-return.
-- Make ACK waiting stable across retries:
-    - Track _ackTarget (expected cumulative ACK) and a single _ackTcs per send operation (not per retry).
-    - Always short-circuit if _sendUna >= expectedAck before waiting/retransmitting.
-- Ensure thread-safe access between receive loop and sender (use Volatile.Read/Write or Interlocked where appropriate).
+- [ ] Remove `ack == 0` early-return.
+- [ ] Make ACK waiting stable across retries:
+  - [ ] Track `_ackTarget` (expected cumulative ACK) and a single `_ackTcs` per send operation (not per retry).
+  - [ ] Always short-circuit if `_sendUna >= expectedAck` before waiting/retransmitting.
+- [ ] Ensure thread-safe access between receive loop and sender (use `Volatile.Read/Write` or `Interlocked` where appropriate).
 
 ### 2.2 Replace receiver channel with Pipe + proper out-of-order trimming
 
@@ -141,14 +140,13 @@ Files
 
 Changes
 
-- Use System.IO.Pipelines.Pipe for in-order byte stream (eliminates per-segment byte[] allocations for in-order traffic).
-- Keep _outOfOrder for ahead-of-window segments, but:
-    - after _recvNext advances, trim or drop any buffered segments whose start is now < _recvNext (modular comparisons), releasing reserved bytes so window
-      recovers.
-    - cap out-of-order bytes to the same receive-buffer limit.
-- Propagate terminal exceptions:
-    - If remote closes with error (RST/IO), allow draining buffered data, then throw stored exception on subsequent reads (distinguish EOF vs reset).
-- Update call sites to await ProcessSegmentAsync(...) if needed (avoid blocking flush).
+- [ ] Use `System.IO.Pipelines.Pipe` for in-order byte stream (eliminates per-segment `byte[]` allocations for in-order traffic).
+- [ ] Keep `_outOfOrder` for ahead-of-window segments, but:
+  - [ ] After `_recvNext` advances, trim or drop any buffered segments whose start is now `< _recvNext` (modular comparisons), releasing reserved bytes so window recovers.
+  - [ ] Cap out-of-order bytes to the same receive-buffer limit.
+- [ ] Propagate terminal exceptions:
+  - [ ] If remote closes with error (RST/IO), allow draining buffered data, then throw stored exception on subsequent reads (distinguish EOF vs reset).
+- [ ] Update call sites to await `ProcessSegmentAsync(...)` if needed (avoid blocking flush).
 
 ### 2.3 Validate TCP checksum on receive
 
@@ -158,9 +156,9 @@ File
 
 Changes
 
-- Add TryParseWithChecksum(...) overload taking (srcIp, dstIp, segment):
-    - Validates checksum without allocations (treat checksum field as zero or validate ones'-complement rule).
-- In receive loops, use the validating parse so corrupted segments are dropped.
+- [ ] Add `TryParseWithChecksum(...)` overload taking `(srcIp, dstIp, segment)`:
+  - [ ] Validates checksum without allocations (treat checksum field as zero or validate ones'-complement rule).
+- [ ] In receive loops, use the validating parse so corrupted segments are dropped.
 
 ### 2.4 MSS negotiation
 
@@ -173,20 +171,20 @@ Files
 
 Changes
 
-- Extend TCP parse to expose options span; parse MSS option from SYN/SYN-ACK and set effective MSS to min(localMss, remoteMss) for chunking.
-- Add sender API UpdateEffectiveMss(ushort remoteMss).
+- [ ] Extend TCP parse to expose options span; parse MSS option from SYN/SYN-ACK and set effective MSS to `min(localMss, remoteMss)` for chunking.
+- [ ] Add sender API `UpdateEffectiveMss(ushort remoteMss)`.
 
 ### Tests (Phase 2)
 
 Add/extend:
 
-- ZTSharp.Tests/UserSpaceTcp*:
-    - ACK race reproduction: delayed ACK arriving after timeout must still complete send.
-    - Wrap-around ACK==0 case: iss=0xFFFF_FFFF -> expectedAck=0; ACK(0) completes.
-    - Out-of-order overlap trimming: scenario 1100.. then 1050.. then 1000.. must not leak window.
-    - Error propagation: RST causes ReadAsync to throw after drain, not return 0.
-    - Checksum validation: flip one bit in segment -> dropped.
-    - MSS negotiation: peer advertises MSS 536 -> outbound chunks never exceed 536.
+- [ ] Add/extend `ZTSharp.Tests/UserSpaceTcp*` with:
+  - [ ] ACK race reproduction: delayed ACK arriving after timeout must still complete send.
+  - [ ] Wrap-around ACK==0 case: `iss=0xFFFF_FFFF -> expectedAck=0`; ACK(0) completes.
+  - [ ] Out-of-order overlap trimming: scenario 1100.. then 1050.. then 1000.. must not leak window.
+  - [ ] Error propagation: RST causes `ReadAsync` to throw after drain, not return 0.
+  - [ ] Checksum validation: flip one bit in segment -> dropped.
+  - [ ] MSS negotiation: peer advertises MSS 536 -> outbound chunks never exceed 536.
 
 Acceptance: all TCP tests stable under stress; no deadlocks; window recovers; no spurious timeouts.
 
