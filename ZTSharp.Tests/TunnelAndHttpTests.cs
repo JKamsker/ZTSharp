@@ -73,7 +73,7 @@ public sealed class TunnelAndHttpTests
             {
                 await Task.WhenAll(echoTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
             }
         }
@@ -153,7 +153,7 @@ public sealed class TunnelAndHttpTests
             {
                 await Task.WhenAll(httpTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
             }
         }
@@ -240,7 +240,7 @@ public sealed class TunnelAndHttpTests
             {
                 await Task.WhenAll(httpTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
             }
         }
