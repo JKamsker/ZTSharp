@@ -78,111 +78,107 @@ internal static class ZeroTierMulticastGatherClient
         var requestPacketId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
         await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "MULTICAST_GATHER response", WaitForResponseAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        while (true)
+        async ValueTask<(uint TotalKnown, NodeId[] Members)> WaitForResponseAsync(CancellationToken token)
         {
-            ZeroTierUdpDatagram datagram;
-            try
+            while (true)
             {
-                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for MULTICAST_GATHER response after {timeout}.");
-            }
+                var datagram = await udp.ReceiveAsync(token).ConfigureAwait(false);
 
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
-            {
-                continue;
-            }
-
-            if (decoded.Header.Source != rootNodeId)
-            {
-                continue;
-            }
-
-            if (!ZeroTierPacketCrypto.Dearmor(packetBytes, rootKey))
-            {
-                continue;
-            }
-
-            if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-            {
-                if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                var packetBytes = datagram.Payload.ToArray();
+                if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
                 {
                     continue;
                 }
 
-                packetBytes = uncompressed;
-            }
-
-            var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
-            if (verb == ZeroTierVerb.Error)
-            {
-                if (packetBytes.Length < IndexPayload + 1 + 8 + 1)
+                if (decoded.Header.Source != rootNodeId)
                 {
                     continue;
                 }
 
-                var errorInReVerb = (ZeroTierVerb)(packetBytes[IndexPayload] & 0x1F);
-                if (errorInReVerb != ZeroTierVerb.MulticastGather)
+                if (!ZeroTierPacketCrypto.Dearmor(packetBytes, rootKey))
                 {
                     continue;
                 }
 
-                var errorInRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
-                if (errorInRePacketId != requestPacketId)
+                if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+                {
+                    if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                    {
+                        continue;
+                    }
+
+                    packetBytes = uncompressed;
+                }
+
+                var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
+                if (verb == ZeroTierVerb.Error)
+                {
+                    if (packetBytes.Length < IndexPayload + 1 + 8 + 1)
+                    {
+                        continue;
+                    }
+
+                    var errorInReVerb = (ZeroTierVerb)(packetBytes[IndexPayload] & 0x1F);
+                    if (errorInReVerb != ZeroTierVerb.MulticastGather)
+                    {
+                        continue;
+                    }
+
+                    var errorInRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
+                    if (errorInRePacketId != requestPacketId)
+                    {
+                        continue;
+                    }
+
+                    var errorCode = packetBytes[IndexPayload + 1 + 8];
+                    ulong? errorNetworkId = null;
+                    if (packetBytes.Length >= IndexPayload + 1 + 8 + 1 + 8)
+                    {
+                        errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
+                    }
+
+                    throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(errorInReVerb, errorCode, errorNetworkId));
+                }
+
+                if (verb != ZeroTierVerb.Ok)
                 {
                     continue;
                 }
 
-                var errorCode = packetBytes[IndexPayload + 1 + 8];
-                ulong? errorNetworkId = null;
-                if (packetBytes.Length >= IndexPayload + 1 + 8 + 1 + 8)
+                if (packetBytes.Length < OkIndexPayload)
                 {
-                    errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
+                    continue;
                 }
 
-                throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(errorInReVerb, errorCode, errorNetworkId));
-            }
+                var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
+                if (inReVerb != ZeroTierVerb.MulticastGather)
+                {
+                    continue;
+                }
 
-            if (verb != ZeroTierVerb.Ok)
-            {
-                continue;
-            }
+                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
+                if (inRePacketId != requestPacketId)
+                {
+                    continue;
+                }
 
-            if (packetBytes.Length < OkIndexPayload)
-            {
-                continue;
-            }
+                if (!ZeroTierMulticastGatherCodec.TryParseOkPayload(
+                        packetBytes.AsSpan(OkIndexPayload),
+                        out var okNetworkId,
+                        out _,
+                        out var totalKnown,
+                        out var members) ||
+                    okNetworkId != networkId)
+                {
+                    continue;
+                }
 
-            var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-            if (inReVerb != ZeroTierVerb.MulticastGather)
-            {
-                continue;
+                return (totalKnown, members);
             }
-
-            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (inRePacketId != requestPacketId)
-            {
-                continue;
-            }
-
-            if (!ZeroTierMulticastGatherCodec.TryParseOkPayload(
-                    packetBytes.AsSpan(OkIndexPayload),
-                    out var okNetworkId,
-                    out _,
-                    out var totalKnown,
-                    out var members) ||
-                okNetworkId != networkId)
-            {
-                continue;
-            }
-
-            return (totalKnown, members);
         }
     }
 
