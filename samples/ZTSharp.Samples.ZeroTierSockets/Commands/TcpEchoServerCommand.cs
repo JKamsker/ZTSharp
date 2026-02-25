@@ -94,7 +94,7 @@ internal static class TcpEchoServerCommand
 
                     _ = Task.Run(async () =>
                     {
-                        await using var connection = accepted;
+                        var connection = accepted;
                         try
                         {
                             var buffer = new byte[64 * 1024];
@@ -110,6 +110,10 @@ internal static class TcpEchoServerCommand
                         }
                         catch (OperationCanceledException) when (token.IsCancellationRequested)
                         {
+                        }
+                        finally
+                        {
+                            await connection.DisposeAsync().ConfigureAwait(false);
                         }
                     });
                 }
