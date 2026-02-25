@@ -10,6 +10,8 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRootClient
 {
+    private static readonly TimeSpan MulticastGatherTimeout = TimeSpan.FromSeconds(5);
+
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
@@ -181,6 +183,39 @@ internal sealed class ZeroTierDataplaneRootClient
 
         var payload = new byte[5];
         WriteUInt40(payload, targetNodeId.Value);
+        return await SendRequestAsync(
+            ZeroTierVerb.Whois,
+            payload,
+            _pendingWhois,
+            timeout,
+            "WHOIS",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<(uint TotalKnown, NodeId[] Members)> MulticastGatherAsync(
+        ZeroTierMulticastGroup group,
+        uint gatherLimit,
+        CancellationToken cancellationToken)
+    {
+        var payload = ZeroTierMulticastGatherCodec.EncodeRequestPayload(_networkId, group, gatherLimit, _inlineCom);
+        return await SendRequestAsync(
+            ZeroTierVerb.MulticastGather,
+            payload,
+            _pendingGather,
+            MulticastGatherTimeout,
+            "MULTICAST_GATHER",
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<TResponse> SendRequestAsync<TResponse>(
+        ZeroTierVerb verb,
+        byte[] payload,
+        ConcurrentDictionary<ulong, TaskCompletionSource<TResponse>> pending,
+        TimeSpan timeout,
+        string operationName,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
 
         var packetId = GeneratePacketId();
         var header = new ZeroTierPacketHeader(
@@ -189,16 +224,16 @@ internal sealed class ZeroTierDataplaneRootClient
             Source: _localNodeId,
             Flags: 0,
             Mac: 0,
-            VerbRaw: (byte)ZeroTierVerb.Whois);
+            VerbRaw: (byte)verb);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
         ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_rootKey, _rootProtocolVersion), encryptPayload: true);
         packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
 
-        var tcs = new TaskCompletionSource<ZeroTierIdentity>(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!_pendingWhois.TryAdd(packetId, tcs))
+        var tcs = new TaskCompletionSource<TResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!pending.TryAdd(packetId, tcs))
         {
-            throw new InvalidOperationException("Packet id collision while sending WHOIS.");
+            throw new InvalidOperationException($"Packet id collision while sending {operationName}.");
         }
 
         try
@@ -214,60 +249,12 @@ internal sealed class ZeroTierDataplaneRootClient
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new TimeoutException($"Timed out waiting for WHOIS response after {timeout}.");
+                throw new TimeoutException($"Timed out waiting for {operationName} response after {timeout}.");
             }
         }
         finally
         {
-            _pendingWhois.TryRemove(packetId, out _);
-        }
-    }
-
-    public async Task<(uint TotalKnown, NodeId[] Members)> MulticastGatherAsync(
-        ZeroTierMulticastGroup group,
-        uint gatherLimit,
-        CancellationToken cancellationToken)
-    {
-        var payload = ZeroTierMulticastGatherCodec.EncodeRequestPayload(_networkId, group, gatherLimit, _inlineCom);
-
-        var packetId = GeneratePacketId();
-        var header = new ZeroTierPacketHeader(
-            PacketId: packetId,
-            Destination: _rootNodeId,
-            Source: _localNodeId,
-            Flags: 0,
-            Mac: 0,
-            VerbRaw: (byte)ZeroTierVerb.MulticastGather);
-
-        var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_rootKey, _rootProtocolVersion), encryptPayload: true);
-        packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
-
-        var tcs = new TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!_pendingGather.TryAdd(packetId, tcs))
-        {
-            throw new InvalidOperationException("Packet id collision while sending MULTICAST_GATHER.");
-        }
-
-        try
-        {
-            await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
-
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
-
-            try
-            {
-                return await tcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for MULTICAST_GATHER response after {TimeSpan.FromSeconds(5)}.");
-            }
-        }
-        finally
-        {
-            _pendingGather.TryRemove(packetId, out _);
+            pending.TryRemove(packetId, out _);
         }
     }
 
