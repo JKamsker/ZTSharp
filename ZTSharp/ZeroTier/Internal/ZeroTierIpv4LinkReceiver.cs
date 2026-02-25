@@ -6,8 +6,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierIpv4LinkReceiver
 {
-    private const ushort EtherTypeArp = 0x0806;
-
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly NodeId _localNodeId;
@@ -186,7 +184,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
                             continue;
                         }
 
-                        if (etherType == EtherTypeArp)
+                        if (etherType == ZeroTierFrameCodec.EtherTypeArp)
                         {
                             await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
                         }
@@ -212,7 +210,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
                             continue;
                         }
 
-                        if (etherType == EtherTypeArp)
+                        if (etherType == ZeroTierFrameCodec.EtherTypeArp)
                         {
                             await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
                             continue;
@@ -253,7 +251,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
                             continue;
                         }
 
-                        if (etherType == EtherTypeArp)
+                        if (etherType == ZeroTierFrameCodec.EtherTypeArp)
                         {
                             await HandleArpFrameAsync(frame, cancellationToken).ConfigureAwait(false);
                             continue;
@@ -292,6 +290,6 @@ internal sealed class ZeroTierIpv4LinkReceiver
         }
 
         var reply = ZeroTierArp.BuildReply(_localMac, _localManagedIpV4, senderMac, senderIp);
-        return new ValueTask(_sender.SendExtFrameAsync(EtherTypeArp, reply, cancellationToken));
+        return new ValueTask(_sender.SendExtFrameAsync(ZeroTierFrameCodec.EtherTypeArp, reply, cancellationToken));
     }
 }

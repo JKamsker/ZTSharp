@@ -6,8 +6,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplanePeerPacketHandler
 {
-    private const ushort EtherTypeArp = 0x0806;
-
     private readonly ulong _networkId;
     private readonly ZeroTierMac _localMac;
     private readonly ZeroTierDataplaneIpHandler _ip;
@@ -46,7 +44,7 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
 
                     var frameMemory = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
 
-                    if (etherType == EtherTypeArp)
+                    if (etherType == ZeroTierFrameCodec.EtherTypeArp)
                     {
                         await _ip.HandleArpFrameAsync(peerNodeId, frameMemory, cancellationToken).ConfigureAwait(false);
                         return;
@@ -73,7 +71,7 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
 
                     var frameMemory = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
 
-                    if (etherType == EtherTypeArp)
+                    if (etherType == ZeroTierFrameCodec.EtherTypeArp)
                     {
                         await _ip.HandleArpFrameAsync(peerNodeId, frameMemory, cancellationToken).ConfigureAwait(false);
                         return;
@@ -119,7 +117,7 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
 
                     var frameMemory = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
 
-                    if (etherType == EtherTypeArp)
+                    if (etherType == ZeroTierFrameCodec.EtherTypeArp)
                     {
                         await _ip.HandleArpFrameAsync(peerNodeId, frameMemory, cancellationToken).ConfigureAwait(false);
                         return;

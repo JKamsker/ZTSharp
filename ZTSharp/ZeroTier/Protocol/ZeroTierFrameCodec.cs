@@ -4,6 +4,7 @@ namespace ZTSharp.ZeroTier.Protocol;
 
 internal static class ZeroTierFrameCodec
 {
+    public const ushort EtherTypeArp = 0x0806;
     public const ushort EtherTypeIpv4 = 0x0800;
     public const ushort EtherTypeIpv6 = 0x86DD;
 

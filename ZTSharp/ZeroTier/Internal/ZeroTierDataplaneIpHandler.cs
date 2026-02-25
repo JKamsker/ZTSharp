@@ -9,8 +9,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneIpHandler
 {
-    private const ushort EtherTypeArp = 0x0806;
-
     private readonly ZeroTierDataplaneRuntime _sender;
     private readonly ZeroTierDataplaneRouteRegistry _routes;
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId;
@@ -231,7 +229,7 @@ internal sealed class ZeroTierDataplaneIpHandler
         }
 
         var reply = ZeroTierArp.BuildReply(_localMac, localManagedIpV4Bytes, senderMac, senderIp);
-        return _sender.SendEthernetFrameAsync(peerNodeId, EtherTypeArp, reply, cancellationToken);
+        return _sender.SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeArp, reply, cancellationToken);
     }
 
     private ValueTask SendTcpRstAsync(
