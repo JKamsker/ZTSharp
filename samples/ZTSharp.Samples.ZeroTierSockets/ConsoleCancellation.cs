@@ -1,16 +1,36 @@
 namespace ZTSharp.Samples.ZeroTierSockets;
 
-internal static class ConsoleCancellation
+internal sealed class ConsoleCancellation : IDisposable
 {
-    public static CancellationTokenSource Setup()
+    private readonly CancellationTokenSource _cts;
+    private readonly ConsoleCancelEventHandler _handler;
+    private bool _disposed;
+
+    private ConsoleCancellation(CancellationTokenSource cts)
     {
-        var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
+        _cts = cts ?? throw new ArgumentNullException(nameof(cts));
+        _handler = (_, e) =>
         {
             e.Cancel = true;
-            cts.Cancel();
+            _cts.Cancel();
         };
-        return cts;
+
+        Console.CancelKeyPress += _handler;
+    }
+
+    public CancellationToken Token => _cts.Token;
+
+    public static ConsoleCancellation Setup() => new(new CancellationTokenSource());
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Console.CancelKeyPress -= _handler;
+        _cts.Dispose();
     }
 }
-
