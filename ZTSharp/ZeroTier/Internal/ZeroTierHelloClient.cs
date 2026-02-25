@@ -87,52 +87,48 @@ internal static class ZeroTierHelloClient
             throw new InvalidOperationException("Failed to send HELLO to any root endpoints (no reachable network?).");
         }
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "HELLO response", WaitForHelloOkAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        while (true)
+        async ValueTask<ZeroTierHelloOk> WaitForHelloOkAsync(CancellationToken token)
         {
-            ZeroTierUdpDatagram datagram;
-            try
+            while (true)
             {
-                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
-            }
+                var datagram = await udp.ReceiveAsync(token).ConfigureAwait(false);
 
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
-            {
-                continue;
-            }
+                var packetBytes = datagram.Payload.ToArray();
+                if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
+                {
+                    continue;
+                }
 
-            if (!rootKeys.TryGetValue(packet.Header.Source, out var key))
-            {
-                continue;
-            }
+                if (!rootKeys.TryGetValue(packet.Header.Source, out var key))
+                {
+                    continue;
+                }
 
-            if (!ZeroTierHelloOkParser.TryParse(packetBytes, key, out var ok))
-            {
-                continue;
-            }
+                if (!ZeroTierHelloOkParser.TryParse(packetBytes, key, out var ok))
+                {
+                    continue;
+                }
 
-            if (!pending.TryGetValue(ok.InRePacketId, out var rootNodeId))
-            {
-                continue;
-            }
+                if (!pending.TryGetValue(ok.InRePacketId, out var rootNodeId))
+                {
+                    continue;
+                }
 
-            return new ZeroTierHelloOk(
-                RootNodeId: rootNodeId,
-                RootEndpoint: datagram.RemoteEndPoint,
-                HelloPacketId: ok.InRePacketId,
-                HelloTimestampEcho: ok.TimestampEcho,
-                RemoteProtocolVersion: ok.RemoteProtocolVersion,
-                RemoteMajorVersion: ok.RemoteMajorVersion,
-                RemoteMinorVersion: ok.RemoteMinorVersion,
-                RemoteRevision: ok.RemoteRevision,
-                ExternalSurfaceAddress: ok.ExternalSurfaceAddress);
+                return new ZeroTierHelloOk(
+                    RootNodeId: rootNodeId,
+                    RootEndpoint: datagram.RemoteEndPoint,
+                    HelloPacketId: ok.InRePacketId,
+                    HelloTimestampEcho: ok.TimestampEcho,
+                    RemoteProtocolVersion: ok.RemoteProtocolVersion,
+                    RemoteMajorVersion: ok.RemoteMajorVersion,
+                    RemoteMinorVersion: ok.RemoteMinorVersion,
+                    RemoteRevision: ok.RemoteRevision,
+                    ExternalSurfaceAddress: ok.ExternalSurfaceAddress);
+            }
         }
     }
 
@@ -178,43 +174,39 @@ internal static class ZeroTierHelloClient
 
         await udp.SendAsync(physicalDestination, packet, cancellationToken).ConfigureAwait(false);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "HELLO response", WaitForHelloOkAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        while (true)
+        async ValueTask<byte> WaitForHelloOkAsync(CancellationToken token)
         {
-            ZeroTierUdpDatagram datagram;
-            try
+            while (true)
             {
-                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
-            }
+                var datagram = await udp.ReceiveAsync(token).ConfigureAwait(false);
 
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
-            {
-                continue;
-            }
+                var packetBytes = datagram.Payload.ToArray();
+                if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
+                {
+                    continue;
+                }
 
-            if (decoded.Header.Source != destination)
-            {
-                continue;
-            }
+                if (decoded.Header.Source != destination)
+                {
+                    continue;
+                }
 
-            if (!ZeroTierHelloOkParser.TryParse(packetBytes, sharedKey, out var ok))
-            {
-                continue;
-            }
+                if (!ZeroTierHelloOkParser.TryParse(packetBytes, sharedKey, out var ok))
+                {
+                    continue;
+                }
 
-            if (ok.InRePacketId != packetId)
-            {
-                continue;
-            }
+                if (ok.InRePacketId != packetId)
+                {
+                    continue;
+                }
 
-            return ok.RemoteProtocolVersion;
+                return ok.RemoteProtocolVersion;
+            }
         }
     }
 
