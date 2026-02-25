@@ -45,13 +45,7 @@ internal sealed class ListenHttpServer
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
             }
-            catch (SocketException)
-            {
-            }
-            catch (IOException)
-            {
-            }
-            catch (ObjectDisposedException)
+            catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
             {
             }
         }
@@ -92,4 +86,3 @@ internal sealed class ListenHttpServer
         }
     }
 }
-
