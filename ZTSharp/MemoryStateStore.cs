@@ -7,10 +7,6 @@ namespace ZTSharp;
 /// </summary>
 public sealed class MemoryStateStore : IStateStore
 {
-    private static readonly string[] _planetAliases = ["planet", "roots"];
-    private static readonly string _planetAlias = _planetAliases[0];
-    private static readonly string _rootsAlias = _planetAliases[1];
-
     private readonly ConcurrentDictionary<string, byte[]> _storage = new(StringComparer.Ordinal);
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -67,16 +63,16 @@ public sealed class MemoryStateStore : IStateStore
             var hasRootsAlias = false;
             for (var i = 0; i < keys.Count; i++)
             {
-                if (string.Equals(keys[i], _rootsAlias, StringComparison.Ordinal))
+                if (string.Equals(keys[i], StateStorePlanetAliases.RootsKey, StringComparison.Ordinal))
                 {
                     hasRootsAlias = true;
                     break;
                 }
             }
 
-            if (_storage.ContainsKey(_planetAlias) && !hasRootsAlias)
+            if (_storage.ContainsKey(StateStorePlanetAliases.PlanetKey) && !hasRootsAlias)
             {
-                keys.Add(_rootsAlias);
+                keys.Add(StateStorePlanetAliases.RootsKey);
             }
         }
 
@@ -100,9 +96,9 @@ public sealed class MemoryStateStore : IStateStore
         }
 
         normalized = string.Join('/', parts);
-        if (_planetAliases.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
         {
-            normalized = _planetAlias;
+            normalized = StateStorePlanetAliases.PlanetKey;
         }
 
         return normalized;

@@ -6,9 +6,6 @@ namespace ZTSharp;
 /// </summary>
 public sealed class FileStateStore : IStateStore
 {
-    private static readonly string[] _planetAliases = ["planet", "roots"];
-    private static readonly string _planetAlias = _planetAliases[0];
-    private static readonly string _rootsAlias = _planetAliases[1];
     private readonly string _rootPath;
 
     public FileStateStore(string rootPath)
@@ -96,22 +93,22 @@ public sealed class FileStateStore : IStateStore
             var hasRootsAlias = false;
             for (var i = 0; i < entries.Count; i++)
             {
-                if (string.Equals(entries[i], _rootsAlias, StringComparison.Ordinal))
+                if (string.Equals(entries[i], StateStorePlanetAliases.RootsKey, StringComparison.Ordinal))
                 {
                     hasRootsAlias = true;
                     break;
                 }
             }
 
-            if (File.Exists(Path.Combine(_rootPath, _planetAlias)) && !hasRootsAlias)
+            if (File.Exists(Path.Combine(_rootPath, StateStorePlanetAliases.PlanetKey)) && !hasRootsAlias)
             {
-                entries.Add(_rootsAlias);
+                entries.Add(StateStorePlanetAliases.RootsKey);
                 hasRootsAlias = true;
             }
 
-            if (File.Exists(Path.Combine(_rootPath, _rootsAlias)) && !hasRootsAlias)
+            if (File.Exists(Path.Combine(_rootPath, StateStorePlanetAliases.RootsKey)) && !hasRootsAlias)
             {
-                entries.Add(_rootsAlias);
+                entries.Add(StateStorePlanetAliases.RootsKey);
             }
 
             return Task.FromResult<IReadOnlyList<string>>(entries);
@@ -129,9 +126,9 @@ public sealed class FileStateStore : IStateStore
     private string GetPhysicalPath(string key)
     {
         var normalized = NormalizeKey(key);
-        if (_planetAliases.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
         {
-            normalized = "planet";
+            normalized = StateStorePlanetAliases.PlanetKey;
         }
 
         return Path.Combine(_rootPath, normalized);
