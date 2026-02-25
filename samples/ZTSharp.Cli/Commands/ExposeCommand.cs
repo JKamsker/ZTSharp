@@ -6,7 +6,7 @@ using ZTSharp.ZeroTier;
 
 namespace ZTSharp.Cli.Commands;
 
-internal static partial class ExposeCommand
+internal static class ExposeCommand
 {
     public static async Task RunAsync(string[] commandArgs)
     {
@@ -250,10 +250,11 @@ internal static partial class ExposeCommand
 
             var acceptorCount = Math.Clamp(Environment.ProcessorCount, 2, 8);
             acceptors = new Task[acceptorCount];
+            var forwarder = new ExposePortForwarder(targetHost, targetPort);
 
             for (var i = 0; i < acceptors.Length; i++)
             {
-                acceptors[i] = RunExposeAcceptorAsync(listener, targetHost, targetPort, exposeToken);
+                acceptors[i] = forwarder.RunAcceptorAsync(listener, exposeToken);
             }
 
             await Task.WhenAll(acceptors).ConfigureAwait(false);
@@ -294,4 +295,3 @@ internal static partial class ExposeCommand
         }
     }
 }
-
