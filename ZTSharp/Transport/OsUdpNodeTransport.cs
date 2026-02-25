@@ -15,13 +15,10 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ulong NodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
 
-    private static readonly ConcurrentDictionary<ulong, ConcurrentDictionary<ulong, IPEndPoint>> _networkDirectory = new();
-
     private readonly UdpClient _udp;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Guid, Subscriber>> _networkSubscribers = new();
-    private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<ulong, IPEndPoint>> _networkPeers = new();
-    private readonly ConcurrentDictionary<ulong, ulong> _localNodeIds = new();
+    private readonly OsUdpPeerRegistry _peers;
     private readonly CancellationTokenSource _receiverCts = new();
     private readonly Task _receiverLoop;
     private readonly bool _enablePeerDiscovery;
@@ -30,6 +27,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     {
         _enablePeerDiscovery = enablePeerDiscovery;
         _udp = OsUdpSocketFactory.Create(localPort, enableIpv6);
+        _peers = new OsUdpPeerRegistry(enablePeerDiscovery, NormalizeEndpoint);
 
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
@@ -55,38 +53,13 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 
         var registrationId = Guid.NewGuid();
         var advertisedEndpoint = localEndpoint is null ? LocalEndpoint : NormalizeEndpoint(localEndpoint);
-        _localNodeIds[networkId] = nodeId;
         var subscribers = _networkSubscribers.GetOrAdd(
             networkId,
             _ => new ConcurrentDictionary<Guid, Subscriber>());
         subscribers[registrationId] = new Subscriber(nodeId, onFrameReceived);
 
-        if (!_enablePeerDiscovery)
+        foreach (var peer in _peers.RegisterLocalAndGetKnownPeers(networkId, nodeId, advertisedEndpoint))
         {
-            return registrationId;
-        }
-
-        var discoveredPeers = _networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        discoveredPeers[nodeId] = advertisedEndpoint;
-
-        var localPeers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        foreach (var peer in discoveredPeers)
-        {
-            if (peer.Key == nodeId)
-            {
-                continue;
-            }
-
-            localPeers[peer.Key] = peer.Value;
-        }
-
-        foreach (var peer in discoveredPeers)
-        {
-            if (peer.Key == nodeId)
-            {
-                continue;
-            }
-
             await SendDiscoveryFrameAsync(
                 networkId,
                 nodeId,
@@ -104,21 +77,10 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         if (_networkSubscribers.TryGetValue(networkId, out var subscribers) &&
             subscribers.TryGetValue(registrationId, out var localSubscriber))
         {
-            if (_localNodeIds.TryGetValue(networkId, out var localNodeId) && localNodeId == localSubscriber.NodeId)
-            {
-                _localNodeIds.TryRemove(networkId, out _);
-                if (_networkDirectory.TryGetValue(networkId, out var discoveredPeers))
-                {
-                    discoveredPeers.TryRemove(localNodeId, out _);
-                    if (discoveredPeers.IsEmpty)
-                    {
-                        _networkDirectory.TryRemove(networkId, out _);
-                    }
-                }
-            }
+            _ = _peers.TryRemoveLocalNodeIdIfMatch(networkId, localSubscriber.NodeId);
         }
 
-        _networkPeers.TryRemove(networkId, out _);
+        _peers.RemoveNetworkPeers(networkId);
         if (!_networkSubscribers.TryGetValue(networkId, out var networkSubscribers))
         {
             return;
@@ -146,7 +108,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!_networkPeers.TryGetValue(networkId, out var peers))
+        if (!_peers.TryGetPeers(networkId, out var peers))
         {
             return;
         }
@@ -195,15 +157,14 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(endpoint);
 
         var remoteEndpoint = NormalizeEndpoint(endpoint);
-        var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        peers[nodeId] = remoteEndpoint;
+        _peers.AddOrUpdatePeer(networkId, nodeId, remoteEndpoint);
 
         if (!_enablePeerDiscovery)
         {
             return;
         }
 
-        if (!_localNodeIds.TryGetValue(networkId, out var localNodeId) || localNodeId == 0 || localNodeId == nodeId)
+        if (!_peers.TryGetLocalNodeId(networkId, out var localNodeId) || localNodeId == 0 || localNodeId == nodeId)
         {
             return;
         }
@@ -241,20 +202,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         }
 
         _udp.Dispose();
-        foreach (var local in _localNodeIds)
-        {
-            if (_networkDirectory.TryGetValue(local.Key, out var discoveredPeers))
-            {
-                discoveredPeers.TryRemove(local.Value, out _);
-                if (discoveredPeers.IsEmpty)
-                {
-                    _networkDirectory.TryRemove(local.Key, out _);
-                }
-            }
-        }
-
-        _networkPeers.Clear();
-        _localNodeIds.Clear();
+        _peers.Cleanup();
         _receiverCts.Dispose();
         _gate.Dispose();
     }
@@ -291,8 +239,8 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
             {
                 if (_enablePeerDiscovery && discoveredNodeId != 0)
                 {
-                    RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
-                    if (_localNodeIds.TryGetValue(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
+                    _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
+                    if (_peers.TryGetLocalNodeId(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
                     {
                         if (controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello)
                         {
@@ -311,10 +259,10 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 
             if (_enablePeerDiscovery &&
                 sourceNodeId != 0 &&
-                _localNodeIds.TryGetValue(networkId, out var localNodeIdForDiscovery) &&
+                _peers.TryGetLocalNodeId(networkId, out var localNodeIdForDiscovery) &&
                 localNodeIdForDiscovery != sourceNodeId)
             {
-                RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
+                _peers.RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
             }
 
             if (!_networkSubscribers.TryGetValue(networkId, out var subscribers))
@@ -357,15 +305,6 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         {
             ArrayPool<byte>.Shared.Return(frame);
         }
-    }
-
-    private void RegisterDiscoveredPeer(ulong networkId, ulong sourceNodeId, IPEndPoint remoteEndpoint)
-    {
-        var endpoint = NormalizeEndpoint(remoteEndpoint);
-        var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        peers[sourceNodeId] = endpoint;
-        var directoryPeers = _networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
-        directoryPeers[sourceNodeId] = endpoint;
     }
 
     private static IPEndPoint NormalizeEndpoint(IPEndPoint endpoint)
