@@ -170,7 +170,7 @@ internal sealed class NodeNetworkService
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
         CancellationToken cancellationToken)
     {
-        var keys = await _store.ListAsync(NodeStoreKeys.NetworksDirectory, cancellationToken).ConfigureAwait(false);
+        var keys = await _store.ListAsync(NodeStoreKeys.NetworksDirectoryPrefix, cancellationToken).ConfigureAwait(false);
         foreach (var key in keys)
         {
             var relative = key;
