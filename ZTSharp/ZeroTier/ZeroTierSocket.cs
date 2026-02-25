@@ -109,30 +109,18 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
     public async ValueTask<ZeroTierTcpListener> ListenTcpAsync(IPAddress localAddress, int port, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(localAddress);
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (port is < 1 or > ushort.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be between 1 and 65535.");
-        }
-
-        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
-            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            throw new NotSupportedException($"Unsupported address family: {localAddress.AddressFamily}.");
-        }
-
-        await JoinAsync(cancellationToken).ConfigureAwait(false);
-        if (!ManagedIps.Contains(localAddress))
-        {
-            throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
-        }
-
-        var (localManagedIpV4, comBytes) = GetLocalManagedIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
-        return new ZeroTierTcpListener(runtime, localAddress, (ushort)port);
+        return await ZeroTierSocketBindings.ListenTcpAsync(
+                ensureJoinedAsync: JoinAsync,
+                getManagedIps: () => ManagedIps,
+                getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
+                getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
+                localAddress,
+                port,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<ZeroTierUdpSocket> BindUdpAsync(int port, CancellationToken cancellationToken = default)
@@ -149,48 +137,18 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         int port,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(localAddress);
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (port is < 0 or > ushort.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(port), port, "Port must be between 0 and 65535.");
-        }
-
-        if (localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
-            localAddress.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            throw new NotSupportedException($"Unsupported address family: {localAddress.AddressFamily}.");
-        }
-
-        await JoinAsync(cancellationToken).ConfigureAwait(false);
-        if (!ManagedIps.Contains(localAddress))
-        {
-            throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
-        }
-
-        var (localManagedIpV4, comBytes) = GetLocalManagedIpv4AndInlineCom();
-        var runtime = await GetOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
-
-        if (port != 0)
-        {
-            return new ZeroTierUdpSocket(runtime, localAddress, (ushort)port);
-        }
-
-        for (var attempt = 0; attempt < 32; attempt++)
-        {
-            var localPort = ZeroTierEphemeralPorts.Generate();
-            try
-            {
-                return new ZeroTierUdpSocket(runtime, localAddress, localPort);
-            }
-            catch (InvalidOperationException)
-            {
-            }
-        }
-
-        throw new InvalidOperationException("Failed to bind UDP to an ephemeral port (too many collisions).");
+        return await ZeroTierSocketBindings.BindUdpAsync(
+                ensureJoinedAsync: JoinAsync,
+                getManagedIps: () => ManagedIps,
+                getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
+                getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
+                localAddress,
+                port,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public ValueTask<Stream> ConnectTcpAsync(IPEndPoint remote, CancellationToken cancellationToken = default)
@@ -213,48 +171,20 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     }
 
     public async ValueTask<Stream> ConnectTcpAsync(IPEndPoint remote, TimeSpan timeout, CancellationToken cancellationToken = default)
-    {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
-        }
-
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
-
-        try
-        {
-            return await ConnectTcpAsync(remote, timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"TCP connect timed out after {timeout}.");
-        }
-    }
+        => await ZeroTierTimeouts.RunWithTimeoutAsync(
+                timeout,
+                operation: "TCP connect",
+                action: ct => ConnectTcpAsync(remote, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
 
     public async ValueTask<Stream> ConnectTcpAsync(IPEndPoint local, IPEndPoint remote, TimeSpan timeout, CancellationToken cancellationToken = default)
-    {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
-        }
-
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
-
-        try
-        {
-            return await ConnectTcpAsync(local, remote, timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"TCP connect timed out after {timeout}.");
-        }
-    }
+        => await ZeroTierTimeouts.RunWithTimeoutAsync(
+                timeout,
+                operation: "TCP connect",
+                action: ct => ConnectTcpAsync(local, remote, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
 
     public async ValueTask DisposeAsync()
     {
