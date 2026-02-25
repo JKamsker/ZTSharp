@@ -73,10 +73,7 @@ internal sealed class NodeNetworkService
                 {
                     await _transport.LeaveNetworkAsync(networkId, registration, CancellationToken.None).ConfigureAwait(false);
                 }
-                catch (ObjectDisposedException)
-                {
-                }
-                catch (InvalidOperationException)
+                catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
                 {
                 }
             }
