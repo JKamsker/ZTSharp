@@ -27,7 +27,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
     private readonly byte[] _rootKey;
     private readonly byte[] _sharedKey;
     private readonly byte _remoteProtocolVersion;
-    private IPEndPoint[] _directEndpoints = Array.Empty<IPEndPoint>();
+    private readonly ZeroTierDirectEndpointManager _directEndpoints;
     private int _traceRxRemaining = 50;
     private int _traceRxVerbRemaining = 50;
     private int _traceTxRemaining = 20;
@@ -71,6 +71,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         _rootKey = rootKey;
         _sharedKey = sharedKey;
         _remoteProtocolVersion = remoteProtocolVersion;
+        _directEndpoints = new ZeroTierDirectEndpointManager(udp, relayEndpoint, remoteNodeId);
     }
 
     public async ValueTask SendAsync(ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken = default)
@@ -92,7 +93,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
             sharedKey: _sharedKey,
             remoteProtocolVersion: _remoteProtocolVersion);
 
-        var directEndpoints = _directEndpoints;
+        var directEndpoints = _directEndpoints.Endpoints;
         if (ZeroTierTrace.Enabled && _traceTxRemaining > 0)
         {
             _traceTxRemaining--;
@@ -183,7 +184,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                 ZeroTierTrace.WriteLine($"[zerotier] RX {verb} from {from} via {datagram.RemoteEndPoint}.");
             }
 
-            var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
+            var payload = packetBytes.AsMemory(ZeroTierPacketHeader.Length);
 
             switch (verb)
             {
@@ -199,66 +200,27 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                             continue;
                         }
 
-                        var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
-                        var errorCode = payload[1 + 8];
+                        var payloadSpan = payload.Span;
+                        var inReVerb = (ZeroTierVerb)(payloadSpan[0] & 0x1F);
+                        var errorCode = payloadSpan[1 + 8];
                         ulong? networkId = null;
-                        if (payload.Length >= 1 + 8 + 1 + 8)
+                        if (payloadSpan.Length >= 1 + 8 + 1 + 8)
                         {
-                            networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
+                            networkId = BinaryPrimitives.ReadUInt64BigEndian(payloadSpan.Slice(1 + 8 + 1, 8));
                         }
 
                         throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, networkId));
                     }
                 case ZeroTierVerb.Rendezvous when isFromRoot:
                     {
-                        if (ZeroTierRendezvousCodec.TryParse(payload, out var rendezvous) && rendezvous.With == _remoteNodeId)
-                        {
-                            var endpoints = ZeroTierDirectEndpointSelection.Normalize([rendezvous.Endpoint], _relayEndpoint, maxEndpoints: 8);
-                            if (ZeroTierTrace.Enabled)
-                            {
-                                ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS: {rendezvous.With} endpoints: {ZeroTierDirectEndpointSelection.Format(endpoints)} via {datagram.RemoteEndPoint}.");
-                            }
-
-                            _directEndpoints = endpoints;
-
-                            foreach (var endpoint in endpoints)
-                            {
-                                await SendHolePunchAsync(endpoint, cancellationToken).ConfigureAwait(false);
-                            }
-                        }
-                        else
-                        {
-                            ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS (ignored) via {datagram.RemoteEndPoint}.");
-                        }
-
+                        await _directEndpoints
+                            .HandleRendezvousFromRootAsync(payload, datagram.RemoteEndPoint, cancellationToken)
+                            .ConfigureAwait(false);
                         continue;
                     }
                 case ZeroTierVerb.PushDirectPaths when isFromRemote:
                     {
-                        if (!ZeroTierPushDirectPathsCodec.TryParse(payload, out var paths) || paths.Length == 0)
-                        {
-                            ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse PUSH_DIRECT_PATHS payload.");
-                            continue;
-                        }
-
-                        var endpoints = ZeroTierDirectEndpointSelection.Normalize(paths.Select(p => p.Endpoint), _relayEndpoint, maxEndpoints: 8);
-                        if (endpoints.Length == 0)
-                        {
-                            continue;
-                        }
-
-                        if (ZeroTierTrace.Enabled)
-                        {
-                            ZeroTierTrace.WriteLine($"[zerotier] RX PUSH_DIRECT_PATHS: endpoints: {ZeroTierDirectEndpointSelection.Format(endpoints)} (candidates: {paths.Length}).");
-                        }
-
-                        _directEndpoints = endpoints;
-
-                        foreach (var endpoint in endpoints)
-                        {
-                            await SendHolePunchAsync(endpoint, cancellationToken).ConfigureAwait(false);
-                        }
-
+                        await _directEndpoints.HandlePushDirectPathsFromRemoteAsync(payload, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
                 case ZeroTierVerb.MulticastFrame:
@@ -268,7 +230,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                             continue;
                         }
 
-                        if (!ZeroTierMulticastFramePayload.TryParse(payload, out var networkId, out var etherType, out var frame))
+                        if (!ZeroTierMulticastFramePayload.TryParse(payload.Span, out var networkId, out var etherType, out var frame))
                         {
                             ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse MULTICAST_FRAME payload.");
                             continue;
@@ -293,7 +255,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                             continue;
                         }
 
-                        if (!ZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
+                        if (!ZeroTierFrameCodec.TryParseFramePayload(payload.Span, out var networkId, out var etherType, out var frame))
                         {
                             ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse FRAME payload.");
                             continue;
@@ -327,7 +289,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                         }
 
                         if (!ZeroTierFrameCodec.TryParseExtFramePayload(
-                                payload,
+                                payload.Span,
                                 out var networkId,
                                 out _,
                                 out _,
@@ -372,24 +334,6 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         }
     }
 
-    private async ValueTask SendHolePunchAsync(IPEndPoint endpoint, CancellationToken cancellationToken)
-    {
-        var junk = new byte[4];
-        RandomNumberGenerator.Fill(junk);
-
-        try
-        {
-            ZeroTierTrace.WriteLine($"[zerotier] TX hole-punch to {endpoint}.");
-            await _udp.SendAsync(endpoint, junk, cancellationToken).ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (SocketException)
-        {
-        }
-    }
-
     private ValueTask HandleArpFrameAsync(ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
     {
         if (!ZeroTierArp.TryParseRequest(frame, out var senderMac, out var senderIp, out var targetIp))
@@ -411,7 +355,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         var packetId = GeneratePacketId();
         var packet = BuildExtFramePacket(packetId, etherType, frame);
 
-        var directEndpoints = _directEndpoints;
+        var directEndpoints = _directEndpoints.Endpoints;
         List<Task>? tasks = null;
 
         foreach (var endpoint in directEndpoints)
