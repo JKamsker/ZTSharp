@@ -26,7 +26,7 @@ resilience/DoS hardening, API disposal semantics, and legacy overlay protocol co
 ## Phase 0 - Baseline / guardrails
 
 - [x] Run `dotnet restore`, `dotnet build -c Release`, `dotnet test -c Release`, `dotnet format --verify-no-changes` to capture baseline.
-- [ ] Create a tracking checklist (in PR description or `docs/Tasks/...` as appropriate) mapping each fix -> test case.
+- [x] Create a tracking checklist (in PR description or `docs/Tasks/...` as appropriate) mapping each fix -> test case.
 
 Acceptance: baseline results recorded; no repo-tracked changes yet.
 
