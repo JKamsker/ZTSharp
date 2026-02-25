@@ -15,7 +15,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private const int IndexVerb = 27;
 
     private const ushort EtherTypeArp = 0x0806;
-    private const int HelloPayloadMinLength = 13 + (5 + 1 + ZeroTierIdentity.PublicKeyLength + 1);
 
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
@@ -37,9 +36,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private readonly ZeroTierDataplaneRootClient _rootClient;
 
-    private readonly ConcurrentDictionary<NodeId, byte[]> _peerKeys = new();
-    private readonly ConcurrentDictionary<NodeId, byte> _peerProtocolVersions = new();
-    private readonly SemaphoreSlim _peerKeyLock = new(1, 1);
+    private readonly ZeroTierDataplanePeerSecurity _peerSecurity;
 
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId = new();
 
@@ -67,11 +64,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(localIdentity);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
-
-        if (localIdentity.PrivateKey is null)
-        {
-            throw new InvalidOperationException("Local identity must contain a private key.");
-        }
 
         if (localManagedIpV4 is null && localManagedIpsV6.Count == 0)
         {
@@ -113,6 +105,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localIdentity.NodeId,
             networkId,
             inlineCom);
+        _peerSecurity = new ZeroTierDataplanePeerSecurity(udp, _rootClient, localIdentity);
 
         _dispatcherLoop = Task.Run(DispatcherLoopAsync, CancellationToken.None);
         _peerLoop = Task.Run(PeerLoopAsync, CancellationToken.None);
@@ -163,7 +156,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
-        var peerProtocolVersion = _peerProtocolVersions.TryGetValue(peerNodeId, out var protocolVersion) ? protocolVersion : (byte)0;
+        var peerProtocolVersion = _peerSecurity.GetPeerProtocolVersionOrDefault(peerNodeId);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
         var packetId = GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
@@ -192,7 +185,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
-        var peerProtocolVersion = _peerProtocolVersions.TryGetValue(peerNodeId, out var protocolVersion) ? protocolVersion : (byte)0;
+        var peerProtocolVersion = _peerSecurity.GetPeerProtocolVersionOrDefault(peerNodeId);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
         var packetId = GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
@@ -247,7 +240,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         }
 
         _cts.Dispose();
-        _peerKeyLock.Dispose();
+        _peerSecurity.Dispose();
     }
 
     private async Task DispatcherLoopAsync()
@@ -362,7 +355,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         if (decoded.Header.CipherSuite == 0 && decoded.Header.Verb == ZeroTierVerb.Hello)
         {
-            await HandleHelloAsync(peerNodeId, decoded.Header.PacketId, packetBytes, datagram.RemoteEndPoint, cancellationToken)
+            await _peerSecurity.HandleHelloAsync(peerNodeId, decoded.Header.PacketId, packetBytes, datagram.RemoteEndPoint, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -495,81 +488,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 }
             default:
                 return;
-        }
-    }
-
-    private async ValueTask HandleHelloAsync(
-        NodeId peerNodeId,
-        ulong helloPacketId,
-        byte[] packetBytes,
-        IPEndPoint remoteEndPoint,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (packetBytes.Length < ZeroTierPacketHeader.Length + HelloPayloadMinLength)
-        {
-            return;
-        }
-
-        var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
-        if (payload.Length < HelloPayloadMinLength)
-        {
-            return;
-        }
-
-        var helloTimestamp = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(5, 8));
-
-        ZeroTierIdentity identity;
-        try
-        {
-            identity = ZeroTierIdentityCodec.Deserialize(payload.Slice(13), out _);
-        }
-        catch (FormatException)
-        {
-            return;
-        }
-
-        if (identity.NodeId != peerNodeId || !identity.LocallyValidate())
-        {
-            return;
-        }
-
-        var sharedKey = new byte[48];
-        ZeroTierC25519.Agree(_localIdentity.PrivateKey!, identity.PublicKey, sharedKey);
-
-        if (!ZeroTierPacketCrypto.Dearmor(packetBytes, sharedKey))
-        {
-            if (ZeroTierTrace.Enabled)
-            {
-                ZeroTierTrace.WriteLine($"[zerotier] Drop: failed to authenticate HELLO from {peerNodeId} via {remoteEndPoint}.");
-            }
-
-            return;
-        }
-
-        _peerKeys[peerNodeId] = sharedKey;
-        var peerProtocolVersion = payload[0];
-        _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
-
-        var okPacket = ZeroTierHelloOkPacketBuilder.BuildPacket(
-            packetId: GeneratePacketId(),
-            destination: peerNodeId,
-            source: _localIdentity.NodeId,
-            inRePacketId: helloPacketId,
-            helloTimestampEcho: helloTimestamp,
-            externalSurfaceAddress: remoteEndPoint,
-            sharedKey: ZeroTierPacketCrypto.SelectOutboundKey(sharedKey, peerProtocolVersion));
-
-        try
-        {
-            await _udp.SendAsync(remoteEndPoint, okPacket, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
         }
     }
 
@@ -1061,33 +979,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         return true;
     }
 
-    private async Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_peerKeys.TryGetValue(peerNodeId, out var existing))
-        {
-            return existing;
-        }
-
-        await _peerKeyLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_peerKeys.TryGetValue(peerNodeId, out existing))
-            {
-                return existing;
-            }
-
-            var identity = await _rootClient.WhoisAsync(peerNodeId, timeout: TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
-            var key = new byte[48];
-            ZeroTierC25519.Agree(_localIdentity.PrivateKey!, identity.PublicKey, key);
-            _peerKeys[peerNodeId] = key;
-            return key;
-        }
-        finally
-        {
-            _peerKeyLock.Release();
-        }
-    }
+    private Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
+        => _peerSecurity.GetPeerKeyAsync(peerNodeId, cancellationToken);
 
     private static ulong GeneratePacketId()
     {
