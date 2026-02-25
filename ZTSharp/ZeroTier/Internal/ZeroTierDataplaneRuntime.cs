@@ -235,7 +235,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         {
             await _dispatcherLoop.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
         }
 
@@ -243,7 +243,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         {
             await _peerLoop.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
         }
 
