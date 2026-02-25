@@ -6,6 +6,38 @@ namespace ZTSharp.Cli;
 
 internal static class CliParsing
 {
+    public static int ParseUShortPort(string value, string name)
+    {
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var port) ||
+            port is < 1 or > ushort.MaxValue)
+        {
+            throw new InvalidOperationException($"Invalid {name}.");
+        }
+
+        return port;
+    }
+
+    public static int ParseUShortPortAllowZero(string value, string name)
+    {
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var port) ||
+            port is < 0 or > ushort.MaxValue)
+        {
+            throw new InvalidOperationException($"Invalid {name}.");
+        }
+
+        return port;
+    }
+
+    public static long ParseNonNegativeLong(string value, string name)
+    {
+        if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
+        {
+            throw new InvalidOperationException($"Invalid {name}.");
+        }
+
+        return parsed;
+    }
+
     public static string NormalizeStack(string stack)
     {
         if (string.Equals(stack, "zerotier", StringComparison.OrdinalIgnoreCase) ||

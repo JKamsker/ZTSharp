@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Sockets;
 using ZTSharp.ZeroTier;
 
@@ -13,11 +12,7 @@ internal static class ListenCommand
             throw new InvalidOperationException("Missing <localPort>.");
         }
 
-        if (!int.TryParse(commandArgs[0], NumberStyles.None, CultureInfo.InvariantCulture, out var localPort) ||
-            localPort is < 1 or > ushort.MaxValue)
-        {
-            throw new InvalidOperationException("Invalid <localPort>.");
-        }
+        var localPort = CliParsing.ParseUShortPort(commandArgs[0], "<localPort>");
 
         string? statePath = null;
         string? networkText = null;
@@ -41,10 +36,7 @@ internal static class ListenCommand
                 case "--body-bytes":
                     {
                         var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--body-bytes");
-                        if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out bodyBytes) || bodyBytes < 0)
-                        {
-                            throw new InvalidOperationException("Invalid --body-bytes value.");
-                        }
+                        bodyBytes = CliParsing.ParseNonNegativeLong(value, "--body-bytes value");
 
                         break;
                     }

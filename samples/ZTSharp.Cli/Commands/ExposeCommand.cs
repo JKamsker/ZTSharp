@@ -15,11 +15,7 @@ internal static class ExposeCommand
             throw new InvalidOperationException("Missing <localPort>.");
         }
 
-        if (!int.TryParse(commandArgs[0], NumberStyles.None, CultureInfo.InvariantCulture, out var localPort) ||
-            localPort is < 1 or > ushort.MaxValue)
-        {
-            throw new InvalidOperationException("Invalid <localPort>.");
-        }
+        var localPort = CliParsing.ParseUShortPort(commandArgs[0], "<localPort>");
 
         string? statePath = null;
         string? networkText = null;
@@ -48,13 +44,7 @@ internal static class ExposeCommand
                 case "--listen":
                     {
                         var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--listen");
-                        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                            parsed is < 1 or > ushort.MaxValue)
-                        {
-                            throw new InvalidOperationException("Invalid --listen value.");
-                        }
-
-                        overlayListenPort = parsed;
+                        overlayListenPort = CliParsing.ParseUShortPort(value, "--listen value");
                         break;
                     }
                 case "--to":
@@ -77,13 +67,7 @@ internal static class ExposeCommand
                 case "--udp-port":
                     {
                         var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--udp-port");
-                        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                            parsed is < 0 or > ushort.MaxValue)
-                        {
-                            throw new InvalidOperationException("Invalid --udp-port value.");
-                        }
-
-                        udpListenPort = parsed;
+                        udpListenPort = CliParsing.ParseUShortPortAllowZero(value, "--udp-port value");
                         break;
                     }
                 case "--advertise":

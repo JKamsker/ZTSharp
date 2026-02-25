@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
 using ZTSharp.ZeroTier;
@@ -14,11 +13,7 @@ internal static class UdpListenCommand
             throw new InvalidOperationException("Missing <localPort>.");
         }
 
-        if (!int.TryParse(commandArgs[0], NumberStyles.None, CultureInfo.InvariantCulture, out var localPort) ||
-            localPort is < 1 or > ushort.MaxValue)
-        {
-            throw new InvalidOperationException("Invalid <localPort>.");
-        }
+        var localPort = CliParsing.ParseUShortPort(commandArgs[0], "<localPort>");
 
         string? statePath = null;
         string? networkText = null;
@@ -204,4 +199,3 @@ internal static class UdpListenCommand
         }
     }
 }
-

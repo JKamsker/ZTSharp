@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using ZTSharp;
@@ -63,13 +62,7 @@ internal static class CallCommand
                 case "--udp-port":
                     {
                         var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--udp-port");
-                        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                            parsed is < 0 or > ushort.MaxValue)
-                        {
-                            throw new InvalidOperationException("Invalid --udp-port value.");
-                        }
-
-                        udpListenPort = parsed;
+                        udpListenPort = CliParsing.ParseUShortPortAllowZero(value, "--udp-port value");
                         break;
                     }
                 case "--advertise":
