@@ -30,7 +30,7 @@ internal static class ZeroTierDecryptingPacketReceiver
             return null;
         }
 
-        if ((packetBytes[27] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+        if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
         {
             if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
             {
@@ -43,4 +43,3 @@ internal static class ZeroTierDecryptingPacketReceiver
         return (packet.Header.Source, datagram.RemoteEndPoint, packetBytes);
     }
 }
-
