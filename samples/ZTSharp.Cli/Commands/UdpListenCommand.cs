@@ -168,17 +168,25 @@ internal static class UdpListenCommand
                 buffer[2] == (byte)'n' &&
                 buffer[3] == (byte)'g')
             {
-                try
-                {
-                    await udp.SendToAsync(pongBytes, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                }
-                catch (SocketException)
-                {
-                }
+                await TrySendAsync(udp, pongBytes, received.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private static async ValueTask<bool> TrySendAsync(ZeroTierUdpSocket udp, byte[] payload, IPEndPoint remoteEndPoint, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await udp.SendToAsync(payload, remoteEndPoint, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (SocketException)
+        {
+            return false;
         }
     }
 }
