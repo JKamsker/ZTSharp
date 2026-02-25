@@ -104,43 +104,12 @@ internal static class CliParsing
 
     public static ulong ParseNodeId(string text)
     {
-        var span = text.AsSpan().Trim();
-        var hasHexPrefix = false;
-        if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            hasHexPrefix = true;
-            span = span.Slice(2);
-        }
-
-        if (span.Length == 0)
+        if (!NodeId.TryParse(text, out var nodeId))
         {
             throw new InvalidOperationException("Invalid nodeId.");
         }
 
-        var treatAsHex = hasHexPrefix || span.Length == 10 || ContainsHexLetters(span);
-        if (treatAsHex)
-        {
-            if (!IsHex(span))
-            {
-                throw new InvalidOperationException("Invalid nodeId.");
-            }
-
-            var parsed = ulong.Parse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-            if (parsed == 0 || parsed > NodeId.MaxValue)
-            {
-                throw new InvalidOperationException("Invalid nodeId.");
-            }
-
-            return parsed;
-        }
-
-        var parsedDec = ulong.Parse(span, NumberStyles.None, CultureInfo.InvariantCulture);
-        if (parsedDec == 0 || parsedDec > NodeId.MaxValue)
-        {
-            throw new InvalidOperationException("Invalid nodeId.");
-        }
-
-        return parsedDec;
+        return nodeId.Value;
     }
 
     public static (IPAddress Address, ulong NodeId) ParseIpMapping(string value)
@@ -208,4 +177,3 @@ internal static class CliParsing
         return true;
     }
 }
-
