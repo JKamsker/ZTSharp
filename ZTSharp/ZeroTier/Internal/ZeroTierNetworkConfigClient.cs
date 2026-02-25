@@ -60,7 +60,7 @@ internal static class ZeroTierNetworkConfigClient
 
             var controllerNodeId = ZeroTierNetworkConfigProtocol.GetControllerNodeId(networkId);
 
-            var controllerIdentity = await ZeroTierNetworkConfigProtocol.WhoisAsync(
+            var controllerIdentity = await ZeroTierWhoisClient.WhoisAsync(
                     udp,
                     rootNodeId: helloOk.RootNodeId,
                     rootEndpoint: helloOk.RootEndpoint,
@@ -114,4 +114,3 @@ internal static class ZeroTierNetworkConfigClient
         }
     }
 }
-

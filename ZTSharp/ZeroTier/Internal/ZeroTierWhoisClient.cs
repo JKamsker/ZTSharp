@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Net;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -9,7 +8,6 @@ namespace ZTSharp.ZeroTier.Internal;
 internal static class ZeroTierWhoisClient
 {
     private const int IndexVerb = 27;
-
     private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
@@ -21,83 +19,52 @@ internal static class ZeroTierWhoisClient
         byte[] rootKey,
         byte rootProtocolVersion,
         NodeId localNodeId,
-        NodeId targetNodeId,
+        NodeId controllerNodeId,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(udp);
-        ArgumentNullException.ThrowIfNull(rootEndpoint);
-        ArgumentNullException.ThrowIfNull(rootKey);
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be positive.");
-        }
+        var whoisPayload = new byte[5];
+        WriteUInt40(whoisPayload, controllerNodeId.Value);
 
-        var payload = new byte[5];
-        WriteUInt40(payload, targetNodeId.Value);
-
-        var packetId = GeneratePacketId();
-        var header = new ZeroTierPacketHeader(
-            PacketId: packetId,
+        var whoisPacketId = ZeroTierPacketIdGenerator.GeneratePacketId();
+        var whoisHeader = new ZeroTierPacketHeader(
+            PacketId: whoisPacketId,
             Destination: rootNodeId,
             Source: localNodeId,
             Flags: 0,
             Mac: 0,
             VerbRaw: (byte)ZeroTierVerb.Whois);
 
-        var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, rootProtocolVersion), encryptPayload: true);
-        var requestPacketId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
-        await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+        var whoisPacket = ZeroTierPacketCodec.Encode(whoisHeader, whoisPayload);
+        ZeroTierPacketCrypto.Armor(whoisPacket, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, rootProtocolVersion), encryptPayload: true);
+        whoisPacketId = BinaryPrimitives.ReadUInt64BigEndian(whoisPacket.AsSpan(0, 8));
+
+        await udp.SendAsync(rootEndpoint, whoisPacket, cancellationToken).ConfigureAwait(false);
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(timeout);
 
         while (true)
         {
-            ZeroTierUdpDatagram datagram;
+            (NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)? received;
             try
             {
-                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
+                received = await ZeroTierDecryptingPacketReceiver
+                    .ReceiveAndDecryptAsync(udp, rootNodeId, rootKey, timeoutCts.Token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new TimeoutException($"Timed out waiting for WHOIS response after {timeout}.");
+                throw new TimeoutException($"Timed out waiting for OK(WHOIS) from root after {timeout}.");
             }
 
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
+            if (received is null)
             {
                 continue;
             }
 
-            if (decoded.Header.Source != rootNodeId)
-            {
-                continue;
-            }
-
-            if (!ZeroTierPacketCrypto.Dearmor(packetBytes, rootKey))
-            {
-                continue;
-            }
-
-            if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-            {
-                if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
-                {
-                    continue;
-                }
-
-                packetBytes = uncompressed;
-            }
-
-            var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
-            if (verb != ZeroTierVerb.Ok)
-            {
-                continue;
-            }
-
-            if (packetBytes.Length < OkIndexPayload)
+            var packetBytes = received.Value.PacketBytes;
+            if ((ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F) != ZeroTierVerb.Ok)
             {
                 continue;
             }
@@ -109,20 +76,22 @@ internal static class ZeroTierWhoisClient
             }
 
             var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (inRePacketId != requestPacketId)
+            if (inRePacketId != whoisPacketId)
             {
                 continue;
             }
 
-            return ZeroTierIdentityCodec.Deserialize(packetBytes.AsSpan(OkIndexPayload), out _);
+            var ptr = OkIndexPayload;
+            while (ptr < packetBytes.Length)
+            {
+                var identity = ZeroTierIdentityCodec.Deserialize(packetBytes.AsSpan(ptr), out var bytesRead);
+                ptr += bytesRead;
+                if (identity.NodeId == controllerNodeId)
+                {
+                    return identity;
+                }
+            }
         }
-    }
-
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
 
     private static void WriteUInt40(Span<byte> destination, ulong value)
@@ -139,3 +108,4 @@ internal static class ZeroTierWhoisClient
         destination[4] = (byte)(value & 0xFF);
     }
 }
+
