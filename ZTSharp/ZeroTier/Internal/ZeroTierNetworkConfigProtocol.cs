@@ -20,17 +20,7 @@ internal static class ZeroTierNetworkConfigProtocol
     public static NodeId GetControllerNodeId(ulong networkId) => new(networkId >> 24);
 
     public static Dictionary<NodeId, byte[]> BuildRootKeys(ZeroTierIdentity localIdentity, ZeroTierWorld planet)
-    {
-        var keys = new Dictionary<NodeId, byte[]>(planet.Roots.Count);
-        foreach (var root in planet.Roots)
-        {
-            var key = new byte[48];
-            ZeroTierC25519.Agree(localIdentity.PrivateKey!, root.Identity.PublicKey, key);
-            keys[root.Identity.NodeId] = key;
-        }
-
-        return keys;
-    }
+        => ZeroTierRootKeyDerivation.BuildRootKeys(localIdentity, planet);
 
     public static async Task<ZeroTierIdentity> WhoisAsync(
         ZeroTierUdpTransport udp,
@@ -421,4 +411,3 @@ internal static class ZeroTierNetworkConfigProtocol
         destination[4] = (byte)(value & 0xFF);
     }
 }
-
