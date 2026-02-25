@@ -144,7 +144,7 @@ internal static class ExposeCommand
             }
 
             var localUdp = node.LocalTransportEndpoint;
-            Console.WriteLine($"NodeId: {node.NodeId}");
+            CliOutput.WriteNodeId(node.NodeId);
             if (localUdp is not null)
             {
                 Console.WriteLine($"Local UDP: {localUdp}");
