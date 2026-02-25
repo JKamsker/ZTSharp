@@ -23,7 +23,7 @@ internal static class ZeroTierWhoisClient
         CancellationToken cancellationToken)
     {
         var whoisPayload = new byte[5];
-        WriteUInt40(whoisPayload, controllerNodeId.Value);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(whoisPayload, controllerNodeId.Value);
 
         var whoisPacketId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var whoisHeader = new ZeroTierPacketHeader(
@@ -93,17 +93,4 @@ internal static class ZeroTierWhoisClient
         }
     }
 
-    private static void WriteUInt40(Span<byte> destination, ulong value)
-    {
-        if (destination.Length < 5)
-        {
-            throw new ArgumentException("Destination must be at least 5 bytes.", nameof(destination));
-        }
-
-        destination[0] = (byte)((value >> 32) & 0xFF);
-        destination[1] = (byte)((value >> 24) & 0xFF);
-        destination[2] = (byte)((value >> 16) & 0xFF);
-        destination[3] = (byte)((value >> 8) & 0xFF);
-        destination[4] = (byte)(value & 0xFF);
-    }
 }
