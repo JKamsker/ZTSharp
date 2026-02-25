@@ -78,16 +78,11 @@ internal static class JoinCommand
         var networkId = CliParsing.ParseNetworkId(networkText);
         stack = CliParsing.NormalizeStack(stack);
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
+        using var cancellation = ConsoleCancellation.Create();
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunJoinZeroTierAsync(statePath, networkId, once, cts.Token).ConfigureAwait(false);
+            await RunJoinZeroTierAsync(statePath, networkId, once, cancellation.Token).ConfigureAwait(false);
             return;
         }
 
@@ -107,14 +102,14 @@ internal static class JoinCommand
 
         try
         {
-            await node.StartAsync(cts.Token).ConfigureAwait(false);
-            await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
+            await node.StartAsync(cancellation.Token).ConfigureAwait(false);
+            await node.JoinNetworkAsync(networkId, cancellation.Token).ConfigureAwait(false);
 
             if (transportMode == TransportMode.OsUdp && peers.Count != 0)
             {
                 foreach (var peer in peers)
                 {
-                    await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cts.Token).ConfigureAwait(false);
+                    await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cancellation.Token).ConfigureAwait(false);
                 }
             }
 
@@ -131,7 +126,7 @@ internal static class JoinCommand
                 return;
             }
 
-            await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token).ConfigureAwait(false);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellation.Token).ConfigureAwait(false);
         }
         finally
         {

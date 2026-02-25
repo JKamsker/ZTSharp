@@ -62,16 +62,11 @@ internal static class UdpSendCommand
         var networkId = CliParsing.ParseNetworkId(networkText);
         stack = CliParsing.NormalizeStack(stack);
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
+        using var cancellation = ConsoleCancellation.Create();
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunUdpSendZeroTierAsync(statePath, networkId, destination, dataText, cts.Token).ConfigureAwait(false);
+            await RunUdpSendZeroTierAsync(statePath, networkId, destination, dataText, cancellation.Token).ConfigureAwait(false);
             return;
         }
 

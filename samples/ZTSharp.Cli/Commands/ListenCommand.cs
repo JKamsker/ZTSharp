@@ -54,16 +54,11 @@ internal static class ListenCommand
         var networkId = CliParsing.ParseNetworkId(networkText);
         stack = CliParsing.NormalizeStack(stack);
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
+        using var cancellation = ConsoleCancellation.Create();
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunListenZeroTierAsync(statePath, networkId, localPort, bodyBytes, cts.Token).ConfigureAwait(false);
+            await RunListenZeroTierAsync(statePath, networkId, localPort, bodyBytes, cancellation.Token).ConfigureAwait(false);
             return;
         }
 

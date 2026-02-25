@@ -47,16 +47,11 @@ internal static class UdpListenCommand
         var networkId = CliParsing.ParseNetworkId(networkText);
         stack = CliParsing.NormalizeStack(stack);
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
+        using var cancellation = ConsoleCancellation.Create();
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunUdpListenZeroTierAsync(statePath, networkId, localPort, cts.Token).ConfigureAwait(false);
+            await RunUdpListenZeroTierAsync(statePath, networkId, localPort, cancellation.Token).ConfigureAwait(false);
             return;
         }
 

@@ -102,16 +102,11 @@ internal static class CallCommand
             throw new InvalidOperationException("Invalid --url value.");
         }
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
+        using var cancellation = ConsoleCancellation.Create(TimeSpan.FromSeconds(90));
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunCallZeroTierAsync(statePath, networkId, url, cts.Token).ConfigureAwait(false);
+            await RunCallZeroTierAsync(statePath, networkId, url, cancellation.Token).ConfigureAwait(false);
             return;
         }
 
@@ -131,14 +126,14 @@ internal static class CallCommand
 
         try
         {
-            await node.StartAsync(cts.Token).ConfigureAwait(false);
-            await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
+            await node.StartAsync(cancellation.Token).ConfigureAwait(false);
+            await node.JoinNetworkAsync(networkId, cancellation.Token).ConfigureAwait(false);
 
             if (transportMode == TransportMode.OsUdp && peers.Count != 0)
             {
                 foreach (var peer in peers)
                 {
-                    await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cts.Token).ConfigureAwait(false);
+                    await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cancellation.Token).ConfigureAwait(false);
                 }
             }
 
@@ -150,8 +145,8 @@ internal static class CallCommand
             }
 
             using var httpClient = CreateHttpClient(node, networkId, httpMode, ipMappings);
-            var response = await httpClient.GetAsync(url, cts.Token).ConfigureAwait(false);
-            var body = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+            var response = await httpClient.GetAsync(url, cancellation.Token).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync(cancellation.Token).ConfigureAwait(false);
             Console.WriteLine($"HTTP {(int)response.StatusCode} {response.StatusCode}");
             Console.WriteLine(body);
         }

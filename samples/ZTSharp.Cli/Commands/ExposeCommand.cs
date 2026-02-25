@@ -99,12 +99,7 @@ internal static class ExposeCommand
 
         statePath ??= CliDefaults.CreateTemporaryStatePath();
 
-        using var cts = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            cts.Cancel();
-        };
+        using var cancellation = ConsoleCancellation.Create();
 
         stack = CliParsing.NormalizeStack(stack);
 
@@ -116,7 +111,7 @@ internal static class ExposeCommand
                     overlayListenPort.Value,
                     target.Value.Host,
                     target.Value.Port,
-                    cts.Token)
+                    cancellation.Token)
                 .ConfigureAwait(false);
             return;
         }
@@ -137,14 +132,14 @@ internal static class ExposeCommand
 
         try
         {
-            await node.StartAsync(cts.Token).ConfigureAwait(false);
-            await node.JoinNetworkAsync(networkId, cts.Token).ConfigureAwait(false);
+            await node.StartAsync(cancellation.Token).ConfigureAwait(false);
+            await node.JoinNetworkAsync(networkId, cancellation.Token).ConfigureAwait(false);
 
             if (transportMode == TransportMode.OsUdp && peers.Count != 0)
             {
                 foreach (var peer in peers)
                 {
-                    await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cts.Token).ConfigureAwait(false);
+                    await node.AddPeerAsync(networkId, peer.NodeId, peer.Endpoint, cancellation.Token).ConfigureAwait(false);
                 }
             }
 
@@ -171,7 +166,7 @@ internal static class ExposeCommand
 
             try
             {
-                await forwarder.RunAsync(cts.Token).ConfigureAwait(false);
+                await forwarder.RunAsync(cancellation.Token).ConfigureAwait(false);
             }
             finally
             {
