@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using ZTSharp.Transport;
@@ -185,7 +186,7 @@ internal sealed class NodeNetworkService
             }
 
             var networkIdText = suffix[..^5];
-            if (ulong.TryParse(networkIdText, out var networkId))
+            if (ulong.TryParse(networkIdText, NumberStyles.None, CultureInfo.InvariantCulture, out var networkId))
             {
                 _joinedNetworks.TryAdd(networkId, new NetworkInfo(networkId, DateTimeOffset.UtcNow));
             }

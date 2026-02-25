@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Net;
 using ZTSharp.Transport;
 
@@ -114,7 +115,6 @@ internal sealed class NodePeerService
             return false;
         }
 
-        return ulong.TryParse(suffix, out peerNodeId);
+        return ulong.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out peerNodeId);
     }
 }
-
