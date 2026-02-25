@@ -7,10 +7,6 @@ internal static class ZeroTierPacketCodec
     private const int UInt64Length = 8;
     private const int AddressLength = 5;
 
-    private const int IndexPacketId = 0;
-    private const int IndexDestination = 8;
-    private const int IndexSource = 13;
-
     public static bool TryDecode(ReadOnlyMemory<byte> packet, out ZeroTierPacketView decoded)
     {
         if (packet.Length < ZeroTierPacketHeader.Length)
@@ -21,9 +17,9 @@ internal static class ZeroTierPacketCodec
 
         var span = packet.Span;
         var header = new ZeroTierPacketHeader(
-            PacketId: ReadUInt64(span, IndexPacketId),
-            Destination: new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(span.Slice(IndexDestination, AddressLength))),
-            Source: new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(span.Slice(IndexSource, AddressLength))),
+            PacketId: ReadUInt64(span, ZeroTierPacketHeader.IndexPacketId),
+            Destination: new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(span.Slice(ZeroTierPacketHeader.IndexDestination, AddressLength))),
+            Source: new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(span.Slice(ZeroTierPacketHeader.IndexSource, AddressLength))),
             Flags: span[ZeroTierPacketHeader.IndexFlags],
             Mac: ReadUInt64(span, ZeroTierPacketHeader.IndexMac),
             VerbRaw: span[ZeroTierPacketHeader.IndexVerb]);
@@ -37,9 +33,9 @@ internal static class ZeroTierPacketCodec
         var packet = new byte[ZeroTierPacketHeader.IndexPayload + payload.Length];
         var span = packet.AsSpan();
 
-        WriteUInt64(span, IndexPacketId, header.PacketId);
-        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(span.Slice(IndexDestination, AddressLength), header.Destination.Value);
-        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(span.Slice(IndexSource, AddressLength), header.Source.Value);
+        WriteUInt64(span, ZeroTierPacketHeader.IndexPacketId, header.PacketId);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(span.Slice(ZeroTierPacketHeader.IndexDestination, AddressLength), header.Destination.Value);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(span.Slice(ZeroTierPacketHeader.IndexSource, AddressLength), header.Source.Value);
         span[ZeroTierPacketHeader.IndexFlags] = header.Flags;
         WriteUInt64(span, ZeroTierPacketHeader.IndexMac, header.Mac);
         span[ZeroTierPacketHeader.IndexVerb] = header.VerbRaw;

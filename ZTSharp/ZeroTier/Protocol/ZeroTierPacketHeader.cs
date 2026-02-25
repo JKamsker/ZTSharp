@@ -10,6 +10,9 @@ internal readonly record struct ZeroTierPacketHeader(
 {
     public const int Length = 28;
 
+    public const int IndexPacketId = 0;
+    public const int IndexDestination = 8;
+    public const int IndexSource = 13;
     public const int IndexFlags = 18;
     public const int IndexMac = 19;
     public const int IndexVerb = 27;
