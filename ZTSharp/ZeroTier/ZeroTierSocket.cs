@@ -326,38 +326,24 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                 return _runtime;
             }
 
-            var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
-            try
-            {
-                var localManagedIpsV6 = ManagedIps
-                    .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-                    .ToArray();
+            var (runtime, helloOk, rootKey) = await ZeroTierSocketRuntimeBootstrapper
+                .CreateAsync(
+                    localIdentity: _identity,
+                    planet: _planet,
+                    networkId: _options.NetworkId,
+                    managedIps: ManagedIps,
+                    localManagedIpV4: localManagedIpV4,
+                    inlineCom: inlineCom,
+                    cachedRoot: _upstreamRoot,
+                    cachedRootKey: _upstreamRootKey,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-                var (runtime, helloOk, rootKey) = await ZeroTierDataplaneRuntimeFactory
-                    .CreateAsync(
-                        udp,
-                        localIdentity: _identity,
-                        planet: _planet,
-                        networkId: _options.NetworkId,
-                        localManagedIpV4: localManagedIpV4,
-                        localManagedIpsV6: localManagedIpsV6,
-                        inlineCom: inlineCom,
-                        cachedRoot: _upstreamRoot,
-                        cachedRootKey: _upstreamRootKey,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            _upstreamRoot ??= helloOk;
+            _upstreamRootKey ??= rootKey;
 
-                _upstreamRoot ??= helloOk;
-                _upstreamRootKey ??= rootKey;
-
-                _runtime = runtime;
-                return runtime;
-            }
-            catch
-            {
-                await udp.DisposeAsync().ConfigureAwait(false);
-                throw;
-            }
+            _runtime = runtime;
+            return runtime;
         }
         finally
         {
