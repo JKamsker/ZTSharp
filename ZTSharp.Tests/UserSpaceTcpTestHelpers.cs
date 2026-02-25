@@ -3,7 +3,7 @@ using ZTSharp.ZeroTier.Net;
 
 namespace ZTSharp.Tests;
 
-internal static class UserSpaceTcpClientTestHelpers
+internal static class UserSpaceTcpTestHelpers
 {
     public static async Task<int> ReadExactAsync(UserSpaceTcpClient client, byte[] buffer, int length, CancellationToken cancellationToken)
     {
@@ -11,6 +11,23 @@ internal static class UserSpaceTcpClientTestHelpers
         while (readTotal < length)
         {
             var read = await client.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                return readTotal;
+            }
+
+            readTotal += read;
+        }
+
+        return readTotal;
+    }
+
+    public static async Task<int> ReadExactAsync(UserSpaceTcpServerConnection server, byte[] buffer, int length, CancellationToken cancellationToken)
+    {
+        var readTotal = 0;
+        while (readTotal < length)
+        {
+            var read = await server.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 return readTotal;
@@ -45,4 +62,3 @@ internal sealed class InspectableIpv4Link : IUserSpaceIpLink
         return ValueTask.CompletedTask;
     }
 }
-

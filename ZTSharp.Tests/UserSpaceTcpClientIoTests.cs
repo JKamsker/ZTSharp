@@ -130,7 +130,7 @@ public sealed class UserSpaceTcpClientIoTests
 
         var buffer = new byte[10];
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        var read = await UserSpaceTcpClientTestHelpers.ReadExactAsync(client, buffer, buffer.Length, cts.Token);
+        var read = await UserSpaceTcpTestHelpers.ReadExactAsync(client, buffer, buffer.Length, cts.Token);
         Assert.Equal(buffer.Length, read);
         Assert.Equal("helloworld", System.Text.Encoding.ASCII.GetString(buffer));
     }
@@ -214,4 +214,3 @@ public sealed class UserSpaceTcpClientIoTests
         Assert.NotEqual((ushort)0, updateWindow);
     }
 }
-
