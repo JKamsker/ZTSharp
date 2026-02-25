@@ -67,23 +67,28 @@ public sealed class FileStateStore : IStateStore
     public Task<IReadOnlyList<string>> ListAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var virtualPrefix = NormalizePrefix(prefix);
+        var virtualPrefix = StateStorePrefixNormalization.NormalizeForList(prefix);
 
         if (!Directory.Exists(_rootPath))
         {
             return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         }
 
-        var dir = Path.Combine(_rootPath, virtualPrefix);
-        if (!Directory.Exists(dir))
+        var path = virtualPrefix.Length == 0 ? _rootPath : Path.Combine(_rootPath, virtualPrefix);
+        if (virtualPrefix.Length != 0 && File.Exists(path))
+        {
+            return Task.FromResult<IReadOnlyList<string>>([virtualPrefix]);
+        }
+
+        if (!Directory.Exists(path))
         {
             return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         }
 
         var entries = new List<string>();
-        foreach (var path in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            entries.Add(Path.GetRelativePath(_rootPath, path).Replace('\\', '/'));
+            entries.Add(Path.GetRelativePath(_rootPath, file).Replace('\\', '/'));
         }
 
         if (virtualPrefix.Length == 0)
@@ -145,14 +150,4 @@ public sealed class FileStateStore : IStateStore
         return string.Join('/', parts);
     }
 
-    private static string NormalizePrefix(string prefix)
-    {
-        if (string.IsNullOrWhiteSpace(prefix))
-        {
-            return string.Empty;
-        }
-
-        var normalized = prefix.Replace('\\', '/').Trim('/');
-        return normalized;
-    }
 }

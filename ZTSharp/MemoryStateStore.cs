@@ -49,11 +49,14 @@ public sealed class MemoryStateStore : IStateStore
     public Task<IReadOnlyList<string>> ListAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var normalizedPrefix = NormalizePrefix(prefix);
+        var normalizedPrefix = StateStorePrefixNormalization.NormalizeForList(prefix);
+        var normalizedPrefixWithSlash = normalizedPrefix.Length == 0 ? string.Empty : normalizedPrefix + "/";
         var keys = new List<string>();
         foreach (var key in _storage.Keys)
         {
-            if (key.StartsWith(normalizedPrefix, StringComparison.Ordinal))
+            if (normalizedPrefixWithSlash.Length == 0 ||
+                string.Equals(key, normalizedPrefix, StringComparison.Ordinal) ||
+                key.StartsWith(normalizedPrefixWithSlash, StringComparison.Ordinal))
             {
                 keys.Add(key);
             }
@@ -84,11 +87,6 @@ public sealed class MemoryStateStore : IStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.CompletedTask;
-    }
-
-    private static string NormalizePrefix(string prefix)
-    {
-        return string.IsNullOrWhiteSpace(prefix) ? string.Empty : prefix.Replace('\\', '/');
     }
 
     private static string NormalizeKey(string key)
