@@ -1,6 +1,5 @@
 using System.Buffers;
 using System.IO;
-using System.Threading.Channels;
 
 namespace ZTSharp.Sockets;
 
@@ -12,7 +11,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
     private const int HeaderLength = OverlayTcpFrameCodec.HeaderLength;
     private const int MaxDataPerFrame = 1024;
 
-    private readonly Channel<ReadOnlyMemory<byte>> _incoming;
+    private readonly OverlayTcpIncomingBuffer _incoming;
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Node _node;
@@ -24,12 +23,8 @@ public sealed class OverlayTcpClient : IAsyncDisposable
     private int _remotePort;
     private ulong _connectionId;
 
-    private ReadOnlyMemory<byte> _currentSegment;
-    private int _currentSegmentOffset;
-
     private TaskCompletionSource<bool>? _connectTcs;
     private bool _connected;
-    private bool _remoteClosed;
     private bool _disposed;
 
     private OverlayTcpStream? _stream;
@@ -46,7 +41,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
         _networkId = networkId;
         _localPort = localPort;
         _localNodeId = node.NodeId.Value;
-        _incoming = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+        _incoming = new OverlayTcpIncomingBuffer();
 
         _node.RawFrameReceived += OnFrameReceived;
     }
@@ -66,7 +61,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
         _connected = true;
     }
 
-    public bool Connected => _connected && !_disposed && !_remoteClosed;
+    public bool Connected => _connected && !_disposed && !_incoming.RemoteClosed;
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Design",
@@ -113,41 +108,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        if (_currentSegment.Length == 0 || _currentSegmentOffset >= _currentSegment.Length)
-        {
-            while (true)
-            {
-                if (_incoming.Reader.TryRead(out var segment))
-                {
-                    _currentSegment = segment;
-                    _currentSegmentOffset = 0;
-                    break;
-                }
-
-                if (_remoteClosed)
-                {
-                    return 0;
-                }
-
-                try
-                {
-                    _currentSegment = await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-                    _currentSegmentOffset = 0;
-                    break;
-                }
-                catch (ChannelClosedException)
-                {
-                    return 0;
-                }
-            }
-        }
-
-        var remaining = _currentSegment.Length - _currentSegmentOffset;
-        var toCopy = Math.Min(buffer.Length, remaining);
-        _currentSegment.Span.Slice(_currentSegmentOffset, toCopy).CopyTo(buffer.Span);
-        _currentSegmentOffset += toCopy;
-        return toCopy;
+        return await _incoming.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
     internal async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken)
@@ -160,7 +121,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
             throw new InvalidOperationException("Client is not connected.");
         }
 
-        if (_remoteClosed)
+        if (_incoming.RemoteClosed)
         {
             throw new IOException("Remote has closed the connection.");
         }
@@ -196,7 +157,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
 
             _disposed = true;
             _node.RawFrameReceived -= OnFrameReceived;
-            if (_connected && !_remoteClosed)
+            if (_connected && !_incoming.RemoteClosed)
             {
                 try
                 {
@@ -213,7 +174,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
                 }
             }
 
-            _incoming.Writer.TryComplete();
+            _incoming.Complete();
             _stream?.Dispose();
         }
         finally
@@ -253,14 +214,13 @@ public sealed class OverlayTcpClient : IAsyncDisposable
 
             if (type == OverlayTcpFrameCodec.FrameType.Data)
             {
-                _incoming.Writer.TryWrite(frame.Payload.Slice(HeaderLength));
+                _incoming.TryWrite(frame.Payload.Slice(HeaderLength));
                 return;
             }
 
             if (type == OverlayTcpFrameCodec.FrameType.Fin)
             {
-                _remoteClosed = true;
-                _incoming.Writer.TryComplete();
+                _incoming.MarkRemoteClosed();
             }
 
             return;
