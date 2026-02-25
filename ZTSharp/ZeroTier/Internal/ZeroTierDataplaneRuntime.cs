@@ -14,8 +14,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 {
     private const int IndexVerb = 27;
 
-    private const ushort EtherTypeArp = 0x0806;
-
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
@@ -35,15 +33,12 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly Task _peerLoop;
 
     private readonly ZeroTierDataplaneRootClient _rootClient;
-
     private readonly ZeroTierDataplanePeerSecurity _peerSecurity;
-
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId = new();
-
     private readonly ZeroTierDataplaneRouteRegistry _routes;
+    private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
 
     private int _traceRxRemaining = 200;
-
     private bool _disposed;
 
     public ZeroTierDataplaneRuntime(
@@ -95,6 +90,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _localManagedIpV4Bytes = localManagedIpV4?.GetAddressBytes();
         _localManagedIpsV6 = localManagedIpsV6.Count == 0 ? Array.Empty<IPAddress>() : localManagedIpsV6.ToArray();
         _localMac = ZeroTierMac.FromAddress(localIdentity.NodeId, networkId);
+
         _routes = new ZeroTierDataplaneRouteRegistry(this);
         _rootClient = new ZeroTierDataplaneRootClient(
             udp,
@@ -106,6 +102,19 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             networkId,
             inlineCom);
         _peerSecurity = new ZeroTierDataplanePeerSecurity(udp, _rootClient, localIdentity);
+
+        var icmpv6 = new ZeroTierDataplaneIcmpv6Handler(this, _localMac, _localManagedIpsV6);
+        var ip = new ZeroTierDataplaneIpHandler(
+            sender: this,
+            routes: _routes,
+            managedIpToNodeId: _managedIpToNodeId,
+            icmpv6: icmpv6,
+            networkId: _networkId,
+            localMac: _localMac,
+            localManagedIpV4: _localManagedIpV4,
+            localManagedIpV4Bytes: _localManagedIpV4Bytes,
+            localManagedIpsV6: _localManagedIpsV6);
+        _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip);
 
         _dispatcherLoop = Task.Run(DispatcherLoopAsync, CancellationToken.None);
         _peerLoop = Task.Run(PeerLoopAsync, CancellationToken.None);
@@ -300,11 +309,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
                 var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
 
-                if (_rootClient.TryDispatchResponse(verb, payload))
-                {
-                    continue;
-                }
-
+                _rootClient.TryDispatchResponse(verb, payload);
                 continue;
             }
 
@@ -376,607 +381,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             packetBytes = uncompressed;
         }
 
-        var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
-        var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
-
-        switch (verb)
-        {
-            case ZeroTierVerb.MulticastFrame:
-                {
-                    if (!TryParseMulticastFramePayload(payload, out var networkId, out var etherType, out var frame))
-                    {
-                        return;
-                    }
-
-                    if (networkId != _networkId)
-                    {
-                        return;
-                    }
-
-                    if (etherType == EtherTypeArp)
-                    {
-                        await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
-                        return;
-                    }
-
-                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
-                    {
-                        var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                        await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    return;
-                }
-            case ZeroTierVerb.Frame:
-                {
-                    if (!ZeroTierFrameCodec.TryParseFramePayload(payload, out var networkId, out var etherType, out var frame))
-                    {
-                        return;
-                    }
-
-                    if (networkId != _networkId)
-                    {
-                        return;
-                    }
-
-                    if (etherType == EtherTypeArp)
-                    {
-                        await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
-                        return;
-                    }
-
-                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv4)
-                    {
-                        var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                        await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
-                        return;
-                    }
-
-                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
-                    {
-                        var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                        await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    return;
-                }
-            case ZeroTierVerb.ExtFrame:
-                {
-                    if (!ZeroTierFrameCodec.TryParseExtFramePayload(
-                            payload,
-                            out var networkId,
-                            out _,
-                            out _,
-                            out var to,
-                            out var from,
-                            out var etherType,
-                            out var frame))
-                    {
-                        return;
-                    }
-
-                    if (networkId != _networkId)
-                    {
-                        return;
-                    }
-
-                    if (to != _localMac || from != ZeroTierMac.FromAddress(peerNodeId, _networkId))
-                    {
-                        return;
-                    }
-
-                    if (etherType == EtherTypeArp)
-                    {
-                        await HandleArpFrameAsync(peerNodeId, frame, cancellationToken).ConfigureAwait(false);
-                        return;
-                    }
-
-                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv4)
-                    {
-                        var ipv4Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                        await HandleIpv4PacketAsync(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
-                        return;
-                    }
-
-                    if (etherType == ZeroTierFrameCodec.EtherTypeIpv6)
-                    {
-                        var ipv6Packet = packetBytes.AsMemory(packetBytes.Length - frame.Length, frame.Length);
-                        await HandleIpv6PacketAsync(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    return;
-                }
-            default:
-                return;
-        }
-    }
-
-    private async ValueTask HandleIpv6PacketAsync(NodeId peerNodeId, ReadOnlyMemory<byte> ipv6Packet, CancellationToken cancellationToken)
-    {
-        if (_localManagedIpsV6.Length == 0)
-        {
-            return;
-        }
-
-        if (!Ipv6Codec.TryParse(ipv6Packet.Span, out var src, out var dst, out var nextHeader, out var hopLimit, out var ipPayload))
-        {
-            return;
-        }
-
-        var isUnicastToUs = TryGetLocalManagedIpv6(dst, out _);
-        var isMulticast = dst.IsIPv6Multicast;
-
-        if (!isUnicastToUs && !isMulticast)
-        {
-            return;
-        }
-
-        if (!IsUnspecifiedIpv6(src))
-        {
-            _managedIpToNodeId[src] = peerNodeId;
-        }
-
-        if (nextHeader == Icmpv6Codec.ProtocolNumber)
-        {
-            var icmpMessage = ipv6Packet.Slice(Ipv6Codec.HeaderLength, ipPayload.Length);
-            await HandleIcmpv6Async(peerNodeId, src, dst, hopLimit, icmpMessage, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (nextHeader == UdpCodec.ProtocolNumber && isUnicastToUs)
-        {
-            if (!UdpCodec.TryParse(ipPayload, out _, out var dstPort, out _))
-            {
-                return;
-            }
-
-            if (_routes.TryGetUdpHandler(AddressFamily.InterNetworkV6, dstPort, out var handler))
-            {
-                handler.TryWrite(new ZeroTierRoutedIpPacket(peerNodeId, ipv6Packet));
-            }
-
-            return;
-        }
-
-        if (nextHeader == TcpCodec.ProtocolNumber && isUnicastToUs)
-        {
-            if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
-            {
-                return;
-            }
-
-            var routeKey = ZeroTierTcpRouteKeyV6.FromAddresses(dst, dstPort, src, srcPort);
-            if (_routes.TryGetRoute(routeKey, out var route))
-            {
-                route.IncomingWriter.TryWrite(ipv6Packet);
-                return;
-            }
-
-            if ((flags & TcpCodec.Flags.Syn) != 0 &&
-                (flags & TcpCodec.Flags.Ack) == 0 &&
-                _routes.TryGetTcpSynHandler(AddressFamily.InterNetworkV6, dstPort, out var handler))
-            {
-                await handler(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            if ((flags & TcpCodec.Flags.Syn) != 0 &&
-                (flags & TcpCodec.Flags.Ack) == 0)
-            {
-                await SendTcpRstAsync(
-                        peerNodeId,
-                        localIp: dst,
-                        remoteIp: src,
-                        localPort: dstPort,
-                        remotePort: srcPort,
-                        acknowledgmentNumber: unchecked(seq + 1),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-            }
-        }
-    }
-
-    private async Task HandleIpv4PacketAsync(NodeId peerNodeId, ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken)
-    {
-        if (!Ipv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
-        {
-            return;
-        }
-
-        if (!dst.Equals(_localManagedIpV4))
-        {
-            return;
-        }
-
-        _managedIpToNodeId[src] = peerNodeId;
-
-        if (protocol == UdpCodec.ProtocolNumber)
-        {
-            if (!UdpCodec.TryParse(ipPayload, out _, out var udpDstPort, out _))
-            {
-                return;
-            }
-
-            if (_routes.TryGetUdpHandler(AddressFamily.InterNetwork, udpDstPort, out var udpHandler))
-            {
-                udpHandler.TryWrite(new ZeroTierRoutedIpPacket(peerNodeId, ipv4Packet));
-            }
-
-            return;
-        }
-
-        if (protocol != TcpCodec.ProtocolNumber)
-        {
-            return;
-        }
-
-        if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
-        {
-            return;
-        }
-
-        var routeKey = new ZeroTierTcpRouteKey(
-            LocalIp: BinaryPrimitives.ReadUInt32BigEndian(dst.GetAddressBytes()),
-            LocalPort: dstPort,
-            RemoteIp: BinaryPrimitives.ReadUInt32BigEndian(src.GetAddressBytes()),
-            RemotePort: srcPort);
-
-        if (_routes.TryGetRoute(routeKey, out var route))
-        {
-            route.IncomingWriter.TryWrite(ipv4Packet);
-            return;
-        }
-
-        if ((flags & TcpCodec.Flags.Syn) != 0 &&
-            (flags & TcpCodec.Flags.Ack) == 0 &&
-            _routes.TryGetTcpSynHandler(AddressFamily.InterNetwork, dstPort, out var handler))
-        {
-            await handler(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if ((flags & TcpCodec.Flags.Syn) != 0 &&
-            (flags & TcpCodec.Flags.Ack) == 0)
-        {
-            await SendTcpRstAsync(
-                    peerNodeId,
-                    localIp: dst,
-                    remoteIp: src,
-                    localPort: dstPort,
-                    remotePort: srcPort,
-                    acknowledgmentNumber: unchecked(seq + 1),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-    }
-
-    private async ValueTask HandleIcmpv6Async(
-        NodeId peerNodeId,
-        IPAddress sourceIp,
-        IPAddress destinationIp,
-        byte hopLimit,
-        ReadOnlyMemory<byte> icmpMessage,
-        CancellationToken cancellationToken)
-    {
-        var icmpSpan = icmpMessage.Span;
-
-        if (!Icmpv6Codec.TryParse(icmpSpan, out var type, out var code, out _))
-        {
-            return;
-        }
-
-        // Echo request / reply
-        if (type == 128 && code == 0)
-        {
-            if (IsUnspecifiedIpv6(sourceIp) || !TryGetLocalManagedIpv6(destinationIp, out _))
-            {
-                return;
-            }
-
-            var reply = icmpSpan.ToArray();
-            reply[0] = 129; // Echo Reply
-            reply[1] = 0;
-            BinaryPrimitives.WriteUInt16BigEndian(reply.AsSpan(2, 2), 0);
-
-            var checksum = Icmpv6Codec.ComputeChecksum(destinationIp, sourceIp, reply);
-            BinaryPrimitives.WriteUInt16BigEndian(reply.AsSpan(2, 2), checksum);
-
-            var packet = Ipv6Codec.Encode(
-                source: destinationIp,
-                destination: sourceIp,
-                nextHeader: Icmpv6Codec.ProtocolNumber,
-                payload: reply,
-                hopLimit: 64);
-
-            await SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeIpv6, packet, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        // Neighbor Solicitation
-        if (type == 135 && code == 0)
-        {
-            if (hopLimit != 255)
-            {
-                return;
-            }
-
-            if (icmpSpan.Length < 24)
-            {
-                return;
-            }
-
-            var targetIp = new IPAddress(icmpSpan.Slice(8, 16));
-            if (IsUnspecifiedIpv6(sourceIp) || !TryGetLocalManagedIpv6(targetIp, out var localTarget))
-            {
-                return;
-            }
-
-            var na = new byte[32];
-            var span = na.AsSpan();
-
-            span[0] = 136; // Neighbor Advertisement
-            span[1] = 0;
-            BinaryPrimitives.WriteUInt16BigEndian(span.Slice(2, 2), 0); // checksum placeholder
-            BinaryPrimitives.WriteUInt32BigEndian(span.Slice(4, 4), 0x6000_0000u); // solicited + override
-            localTarget.GetAddressBytes().CopyTo(span.Slice(8, 16));
-
-            span[24] = 2; // option type: Target Link-Layer Address
-            span[25] = 1; // option length: 8 bytes
-            _localMac.CopyTo(span.Slice(26, 6));
-
-            var checksum = Icmpv6Codec.ComputeChecksum(localTarget, sourceIp, na);
-            BinaryPrimitives.WriteUInt16BigEndian(span.Slice(2, 2), checksum);
-
-            var packet = Ipv6Codec.Encode(
-                source: localTarget,
-                destination: sourceIp,
-                nextHeader: Icmpv6Codec.ProtocolNumber,
-                payload: na,
-                hopLimit: 255);
-
-            await SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeIpv6, packet, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private bool TryGetLocalManagedIpv6(IPAddress address, out IPAddress localIp)
-    {
-        for (var i = 0; i < _localManagedIpsV6.Length; i++)
-        {
-            var ip = _localManagedIpsV6[i];
-            if (address.Equals(ip))
-            {
-                localIp = ip;
-                return true;
-            }
-        }
-
-        localIp = IPAddress.IPv6None;
-        return false;
-    }
-
-    private static bool IsUnspecifiedIpv6(IPAddress address)
-    {
-        if (address.AddressFamily != AddressFamily.InterNetworkV6)
-        {
-            return false;
-        }
-
-        var bytes = address.GetAddressBytes();
-        if (bytes.Length != 16)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < bytes.Length; i++)
-        {
-            if (bytes[i] != 0)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private ValueTask HandleArpFrameAsync(NodeId peerNodeId, ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
-    {
-        var localManagedIpV4Bytes = _localManagedIpV4Bytes;
-        if (localManagedIpV4Bytes is null)
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        if (!TryParseArpRequest(frame, out var senderMac, out var senderIp, out var targetIp))
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        var reply = BuildArpReply(senderMac, senderIp, localManagedIpV4Bytes);
-        return SendEthernetFrameAsync(peerNodeId, EtherTypeArp, reply, cancellationToken);
-    }
-
-    private static bool TryParseArpRequest(
-        ReadOnlySpan<byte> packet,
-        out ReadOnlySpan<byte> senderMac,
-        out ReadOnlySpan<byte> senderIp,
-        out ReadOnlySpan<byte> targetIp)
-    {
-        senderMac = default;
-        senderIp = default;
-        targetIp = default;
-
-        if (packet.Length < 28)
-        {
-            return false;
-        }
-
-        var htype = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(0, 2));
-        var ptype = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(2, 2));
-        var hlen = packet[4];
-        var plen = packet[5];
-        var oper = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(6, 2));
-
-        if (htype != 1 || ptype != ZeroTierFrameCodec.EtherTypeIpv4 || hlen != 6 || plen != 4 || oper != 1)
-        {
-            return false;
-        }
-
-        senderMac = packet.Slice(8, 6);
-        senderIp = packet.Slice(14, 4);
-        targetIp = packet.Slice(24, 4);
-        return true;
-    }
-
-    private byte[] BuildArpReply(
-        ReadOnlySpan<byte> requesterMac,
-        ReadOnlySpan<byte> requesterIp,
-        ReadOnlySpan<byte> localManagedIpV4Bytes)
-    {
-        if (localManagedIpV4Bytes.Length != 4)
-        {
-            throw new ArgumentOutOfRangeException(nameof(localManagedIpV4Bytes), "Local IPv4 address bytes must be exactly 4 bytes.");
-        }
-
-        var reply = new byte[28];
-        var span = reply.AsSpan();
-
-        BinaryPrimitives.WriteUInt16BigEndian(span.Slice(0, 2), 1); // HTYPE ethernet
-        BinaryPrimitives.WriteUInt16BigEndian(span.Slice(2, 2), ZeroTierFrameCodec.EtherTypeIpv4); // PTYPE IPv4
-        span[4] = 6; // HLEN
-        span[5] = 4; // PLEN
-        BinaryPrimitives.WriteUInt16BigEndian(span.Slice(6, 2), 2); // OPER reply
-
-        Span<byte> localMac = stackalloc byte[6];
-        _localMac.CopyTo(localMac);
-
-        localMac.CopyTo(span.Slice(8, 6)); // SHA
-        localManagedIpV4Bytes.CopyTo(span.Slice(14, 4)); // SPA
-        requesterMac.CopyTo(span.Slice(18, 6)); // THA
-        requesterIp.CopyTo(span.Slice(24, 4)); // TPA
-
-        return reply;
-    }
-
-    private async ValueTask SendTcpRstAsync(
-        NodeId peerNodeId,
-        IPAddress localIp,
-        IPAddress remoteIp,
-        ushort localPort,
-        ushort remotePort,
-        uint acknowledgmentNumber,
-        CancellationToken cancellationToken)
-    {
-        if (localIp.AddressFamily != remoteIp.AddressFamily)
-        {
-            return;
-        }
-
-        var tcp = TcpCodec.Encode(
-            sourceIp: localIp,
-            destinationIp: remoteIp,
-            sourcePort: localPort,
-            destinationPort: remotePort,
-            sequenceNumber: 0,
-            acknowledgmentNumber: acknowledgmentNumber,
-            flags: TcpCodec.Flags.Rst | TcpCodec.Flags.Ack,
-            windowSize: 0,
-            options: ReadOnlySpan<byte>.Empty,
-            payload: ReadOnlySpan<byte>.Empty);
-
-        if (localIp.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var ip = Ipv4Codec.Encode(
-                source: localIp,
-                destination: remoteIp,
-                protocol: TcpCodec.ProtocolNumber,
-                payload: tcp,
-                identification: GenerateIpIdentification());
-
-            await SendIpv4Async(peerNodeId, ip, cancellationToken).ConfigureAwait(false);
-        }
-        else if (localIp.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var ip = Ipv6Codec.Encode(
-                source: localIp,
-                destination: remoteIp,
-                nextHeader: TcpCodec.ProtocolNumber,
-                payload: tcp,
-                hopLimit: 64);
-
-            await SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeIpv6, ip, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static ushort GenerateIpIdentification()
-    {
-        Span<byte> buffer = stackalloc byte[2];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt16LittleEndian(buffer);
-    }
-
-    private static bool TryParseMulticastFramePayload(
-        ReadOnlySpan<byte> payload,
-        out ulong networkId,
-        out ushort etherType,
-        out ReadOnlySpan<byte> frame)
-    {
-        networkId = 0;
-        etherType = 0;
-        frame = default;
-
-        if (payload.Length < 8 + 1 + 6 + 4 + 2)
-        {
-            return false;
-        }
-
-        networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(0, 8));
-        var flags = payload[8];
-
-        var ptr = 9;
-
-        if ((flags & 0x01) != 0)
-        {
-            if (!ZeroTierCertificateOfMembershipCodec.TryGetSerializedLength(payload.Slice(ptr), out var comLen))
-            {
-                return false;
-            }
-
-            ptr += comLen;
-        }
-
-        if ((flags & 0x02) != 0)
-        {
-            if (payload.Length < ptr + 4)
-            {
-                return false;
-            }
-
-            ptr += 4;
-        }
-
-        if ((flags & 0x04) != 0)
-        {
-            if (payload.Length < ptr + 6)
-            {
-                return false;
-            }
-
-            ptr += 6;
-        }
-
-        if (payload.Length < ptr + 6 + 4 + 2)
-        {
-            return false;
-        }
-
-        etherType = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(ptr + 6 + 4, 2));
-        frame = payload.Slice(ptr + 6 + 4 + 2);
-        return true;
+        await _peerPackets.HandleAsync(peerNodeId, packetBytes, cancellationToken).ConfigureAwait(false);
     }
 
     private Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
@@ -988,5 +393,4 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         RandomNumberGenerator.Fill(buffer);
         return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
-
 }
