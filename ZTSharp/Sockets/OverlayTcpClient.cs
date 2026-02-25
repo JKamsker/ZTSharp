@@ -163,13 +163,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
                 {
                     await SendControlFrameAsync(OverlayTcpFrameCodec.FrameType.Fin, CancellationToken.None).ConfigureAwait(false);
                 }
-                catch (ObjectDisposedException)
-                {
-                }
-                catch (InvalidOperationException)
-                {
-                }
-                catch (OperationCanceledException)
+                catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or OperationCanceledException)
                 {
                 }
             }
