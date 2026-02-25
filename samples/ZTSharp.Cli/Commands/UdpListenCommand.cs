@@ -129,29 +129,26 @@ internal static class UdpListenCommand
         }
         finally
         {
-            if (udp4 is not null)
-            {
-                try
-                {
-                    await udp4.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-            }
-
-            if (udp6 is not null)
-            {
-                try
-                {
-                    await udp6.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-            }
+            await DisposeUdpQuietlyAsync(udp4).ConfigureAwait(false);
+            await DisposeUdpQuietlyAsync(udp6).ConfigureAwait(false);
 
             await socket.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async ValueTask DisposeUdpQuietlyAsync(ZeroTierUdpSocket? udp)
+    {
+        if (udp is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await udp.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 
