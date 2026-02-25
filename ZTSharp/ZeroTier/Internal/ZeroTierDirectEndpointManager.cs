@@ -87,10 +87,7 @@ internal sealed class ZeroTierDirectEndpointManager
             ZeroTierTrace.WriteLine($"[zerotier] TX hole-punch to {endpoint}.");
             await _udp.SendAsync(endpoint, junk, cancellationToken).ConfigureAwait(false);
         }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (SocketException)
+        catch (Exception ex) when (ex is ObjectDisposedException or SocketException)
         {
         }
     }
