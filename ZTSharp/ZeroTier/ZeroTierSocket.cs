@@ -333,98 +333,17 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         }
     }
 
-    [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability",
-        "CA2000:Dispose objects before losing scope",
-        Justification = "Ownership transfers to the returned Stream (disposes UserSpaceTcpClient, link, and UDP transport).")]
     private async ValueTask<Stream> ConnectTcpCoreAsync(IPEndPoint? local, IPEndPoint remote, CancellationToken cancellationToken)
     {
-        if (remote.Port is < 1 or > ushort.MaxValue)
-        {
-            throw new ArgumentOutOfRangeException(nameof(remote), "Remote port must be between 1 and 65535.");
-        }
-
-        if (remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork &&
-            remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            throw new NotSupportedException($"Unsupported address family: {remote.Address.AddressFamily}.");
-        }
-
-        if (IPAddress.IsLoopback(remote.Address))
-        {
-            throw new NotSupportedException("Loopback addresses are not supported in the ZeroTier managed stack.");
-        }
-
-        await JoinAsync(cancellationToken).ConfigureAwait(false);
-
-        var (localManagedIpV4, comBytes) = GetLocalManagedIpv4AndInlineCom();
-
-        if (local is not null && local.Address.AddressFamily != remote.Address.AddressFamily)
-        {
-            throw new NotSupportedException("Local and remote address families must match.");
-        }
-
-        if (local is not null && (local.Port < 0 || local.Port > ushort.MaxValue))
-        {
-            throw new ArgumentOutOfRangeException(nameof(local), "Local port must be between 0 and 65535.");
-        }
-
-        var localAddress = local?.Address ?? (remote.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
-            ? localManagedIpV4 ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.")
-            : ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-              ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network."));
-
-        if (!ManagedIps.Contains(localAddress))
-        {
-            throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
-        }
-
-        var runtime = await GetOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
-        var remoteNodeId = await runtime.ResolveNodeIdAsync(remote.Address, cancellationToken).ConfigureAwait(false);
-
-        var fixedPort = local is not null && local.Port != 0;
-        var fixedLocalPort = fixedPort ? (ushort)local!.Port : (ushort)0;
-
-        IUserSpaceIpLink? link = null;
-        ushort localPort = 0;
-        for (var attempt = 0; attempt < 32; attempt++)
-        {
-            localPort = fixedPort ? fixedLocalPort : ZeroTierEphemeralPorts.Generate();
-            var localEndpoint = new IPEndPoint(localAddress, localPort);
-
-            try
-            {
-                link = runtime.RegisterTcpRoute(remoteNodeId, localEndpoint, remote);
-                break;
-            }
-            catch (InvalidOperationException) when (!fixedPort && attempt < 31)
-            {
-            }
-        }
-
-        if (link is null)
-        {
-            throw new InvalidOperationException("Failed to bind TCP to an ephemeral port (too many collisions).");
-        }
-
-        var tcp = new UserSpaceTcpClient(
-            link,
-            localAddress,
-            remote.Address,
-            remotePort: (ushort)remote.Port,
-            localPort: localPort);
-
-        try
-        {
-            await tcp.ConnectAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await tcp.DisposeAsync().ConfigureAwait(false);
-            throw;
-        }
-
-        return tcp.GetStream();
+        return await ZeroTierSocketTcpConnector.ConnectAsync(
+                ensureJoinedAsync: JoinAsync,
+                getManagedIps: () => ManagedIps,
+                getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
+                getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
+                local,
+                remote,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private (IPAddress? LocalManagedIpV4, byte[] InlineCom) GetLocalManagedIpv4AndInlineCom()
