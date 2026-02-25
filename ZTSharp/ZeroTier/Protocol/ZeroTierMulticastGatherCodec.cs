@@ -68,13 +68,7 @@ internal static class ZeroTierMulticastGatherCodec
         var p = 24;
         for (var i = 0; i < list.Length; i++)
         {
-            var nodeId =
-                ((ulong)payload[p] << 32) |
-                ((ulong)payload[p + 1] << 24) |
-                ((ulong)payload[p + 2] << 16) |
-                ((ulong)payload[p + 3] << 8) |
-                payload[p + 4];
-            list[i] = new NodeId(nodeId);
+            list[i] = new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(payload.Slice(p, 5)));
             p += 5;
         }
 
@@ -82,4 +76,3 @@ internal static class ZeroTierMulticastGatherCodec
         return true;
     }
 }
-
