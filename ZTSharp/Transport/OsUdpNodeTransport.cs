@@ -28,7 +28,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     {
         _enablePeerDiscovery = enablePeerDiscovery;
         _udp = OsUdpSocketFactory.Create(localPort, enableIpv6);
-        _peers = new OsUdpPeerRegistry(enablePeerDiscovery, NormalizeEndpoint);
+        _peers = new OsUdpPeerRegistry(enablePeerDiscovery, UdpEndpointNormalization.Normalize);
 
         _receiver = new OsUdpReceiveLoop(
             _udp,
@@ -44,7 +44,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     {
         get
         {
-            return NormalizeEndpoint((IPEndPoint)_udp.Client.LocalEndPoint!);
+            return UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
         }
     }
 
@@ -60,7 +60,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         var registrationId = Guid.NewGuid();
-        var advertisedEndpoint = localEndpoint is null ? LocalEndpoint : NormalizeEndpoint(localEndpoint);
+        var advertisedEndpoint = localEndpoint is null ? LocalEndpoint : UdpEndpointNormalization.Normalize(localEndpoint);
         var subscribers = _networkSubscribers.GetOrAdd(
             networkId,
             _ => new ConcurrentDictionary<Guid, Subscriber>());
@@ -164,7 +164,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
         ArgumentNullException.ThrowIfNull(endpoint);
 
-        var remoteEndpoint = NormalizeEndpoint(endpoint);
+        var remoteEndpoint = UdpEndpointNormalization.Normalize(endpoint);
         _peers.AddOrUpdatePeer(networkId, nodeId, remoteEndpoint);
 
         if (!_enablePeerDiscovery)
@@ -252,18 +252,5 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         }
     }
 
-    private static IPEndPoint NormalizeEndpoint(IPEndPoint endpoint)
-    {
-        if (endpoint.Address.Equals(IPAddress.Any))
-        {
-            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
-        }
 
-        if (endpoint.Address.Equals(IPAddress.IPv6Any))
-        {
-            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
-        }
-
-        return endpoint;
-    }
 }
