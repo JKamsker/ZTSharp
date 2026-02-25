@@ -1,20 +1,16 @@
-using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
-using System.Security.Cryptography;
 
 namespace ZTSharp.ZeroTier.Net;
 
 internal sealed class UserSpaceTcpSender : IAsyncDisposable
 {
-    private readonly IUserSpaceIpLink _link;
-    private readonly IPAddress _localAddress;
-    private readonly IPAddress _remoteAddress;
-    private readonly ushort _remotePort;
-    private readonly ushort _localPort;
     private readonly ushort _mss;
     private readonly UserSpaceTcpReceiver _receiver;
+    private readonly UserSpaceTcpSegmentTransmitter _transmitter;
+    private readonly UserSpaceTcpRemoteSendWindow _remoteSendWindow = new();
+    private readonly UserSpaceTcpRtoEstimator _rtoEstimator = new();
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
@@ -23,15 +19,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     private uint _sendNext;
 
     private ushort _lastAdvertisedWindow = ushort.MaxValue;
-    private int _windowUpdatePending;
-
-    private double? _srttMs;
-    private double _rttvarMs;
-    private TimeSpan _rto = TimeSpan.FromSeconds(1);
-
-    private ushort _remoteWindow = ushort.MaxValue;
-    private TaskCompletionSource<bool>? _remoteWindowTcs;
-    private readonly object _remoteWindowLock = new();
+    private readonly UserSpaceTcpWindowUpdateTrigger _windowUpdateTrigger;
 
     private bool _disposed;
 
@@ -49,13 +37,14 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(remoteAddress);
         ArgumentNullException.ThrowIfNull(receiver);
 
-        _link = link;
-        _localAddress = localAddress;
-        _remoteAddress = remoteAddress;
-        _localPort = localPort;
-        _remotePort = remotePort;
         _mss = mss;
         _receiver = receiver;
+        _transmitter = new UserSpaceTcpSegmentTransmitter(link, localAddress, remoteAddress, localPort, remotePort);
+        _windowUpdateTrigger = new UserSpaceTcpWindowUpdateTrigger(
+            receiver,
+            sendPureAckAsync: SendPureAckAsync,
+            getLastAdvertisedWindow: () => _lastAdvertisedWindow,
+            isDisposed: () => _disposed);
     }
 
     public uint SendNext => _sendNext;
@@ -74,25 +63,12 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     }
 
     public void UpdateRemoteSendWindow(ushort windowSize)
-    {
-        TaskCompletionSource<bool>? toRelease = null;
-        lock (_remoteWindowLock)
-        {
-            _remoteWindow = windowSize;
-            if (windowSize != 0 && _remoteWindowTcs is not null)
-            {
-                toRelease = _remoteWindowTcs;
-                _remoteWindowTcs = null;
-            }
-        }
-
-        toRelease?.TrySetResult(true);
-    }
+        => _remoteSendWindow.Update(windowSize);
 
     public void FailPendingOperations(Exception exception)
     {
         _ackTcs?.TrySetException(exception);
-        SignalRemoteSendWindowWaiters(exception);
+        _remoteSendWindow.SignalWaiters(exception);
     }
 
     public void OnAckReceived(uint ack)
@@ -129,7 +105,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
                 await WaitForRemoteSendWindowAsync(cancellationToken).ConfigureAwait(false);
 
-                var remoteWindow = _remoteWindow;
+                var remoteWindow = _remoteSendWindow.Window;
                 var maxChunkSize = Math.Min((int)_mss, (int)remoteWindow);
                 if (maxChunkSize == 0)
                 {
@@ -215,49 +191,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     }
 
     public void MaybeSendWindowUpdate(bool isConnected, bool isRemoteClosed)
-    {
-        if (!isConnected || _disposed || isRemoteClosed)
-        {
-            return;
-        }
-
-        if (_lastAdvertisedWindow != 0)
-        {
-            return;
-        }
-
-        var window = _receiver.GetReceiveWindow();
-        if (window == 0)
-        {
-            return;
-        }
-
-        if (Interlocked.Exchange(ref _windowUpdatePending, 1) == 1)
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await SendPureAckAsync(ack: _receiver.RecvNext, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (IOException)
-            {
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _windowUpdatePending, 0);
-            }
-        });
-    }
+        => _windowUpdateTrigger.MaybeSendWindowUpdate(isConnected, isRemoteClosed);
 
     private async Task SendTcpWithRetriesAsync(
         uint seq,
@@ -269,7 +203,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         const int retries = 8;
-        var delay = _rto;
+        var delay = _rtoEstimator.Rto;
         var maxDelay = TimeSpan.FromSeconds(30);
 
         for (var attempt = 0; attempt < retries; attempt++)
@@ -287,7 +221,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
                 {
                     if (attempt == 0)
                     {
-                        UpdateRto(Stopwatch.GetElapsedTime(sentAt));
+                        _rtoEstimator.Update(Stopwatch.GetElapsedTime(sentAt));
                     }
 
                     return;
@@ -296,39 +230,11 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
             catch (TimeoutException)
             {
                 delay = delay < maxDelay ? delay + delay : maxDelay;
-                _rto = delay;
+                _rtoEstimator.Rto = delay;
             }
         }
 
         throw new IOException($"TCP send timed out waiting for ACK after {retries} attempts.");
-    }
-
-    private void UpdateRto(TimeSpan rtt)
-    {
-        var r = rtt.TotalMilliseconds;
-        if (r <= 0 || double.IsNaN(r) || double.IsInfinity(r))
-        {
-            return;
-        }
-
-        const double alpha = 1.0 / 8.0;
-        const double beta = 1.0 / 4.0;
-
-        if (_srttMs is null)
-        {
-            _srttMs = r;
-            _rttvarMs = r / 2.0;
-        }
-        else
-        {
-            var srtt = _srttMs.Value;
-            _rttvarMs = (1.0 - beta) * _rttvarMs + beta * Math.Abs(srtt - r);
-            _srttMs = (1.0 - alpha) * srtt + alpha * r;
-        }
-
-        var rtoMs = _srttMs.Value + Math.Max(1.0, 4.0 * _rttvarMs);
-        rtoMs = Math.Clamp(rtoMs, 200.0, 60_000.0);
-        _rto = TimeSpan.FromMilliseconds(rtoMs);
     }
 
     private async Task SendTcpAsync(
@@ -341,89 +247,20 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     {
         var window = _receiver.GetReceiveWindow();
         _lastAdvertisedWindow = window;
-
-        var tcp = TcpCodec.Encode(
-            _localAddress,
-            _remoteAddress,
-            sourcePort: _localPort,
-            destinationPort: _remotePort,
-            sequenceNumber: seq,
-            acknowledgmentNumber: ack,
-            flags,
-            windowSize: window,
-            options: options.Span,
-            payload.Span);
-
-        byte[] ip;
-        if (_localAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            ip = Ipv4Codec.Encode(
-                _localAddress,
-                _remoteAddress,
-                protocol: TcpCodec.ProtocolNumber,
-                payload: tcp,
-                identification: GenerateIpIdentification());
-        }
-        else
-        {
-            ip = Ipv6Codec.Encode(
-                _localAddress,
-                _remoteAddress,
-                nextHeader: TcpCodec.ProtocolNumber,
-                payload: tcp,
-                hopLimit: 64);
-        }
-
-        await _link.SendAsync(ip, cancellationToken).ConfigureAwait(false);
-    }
-
-    private void SignalRemoteSendWindowWaiters(Exception exception)
-    {
-        TaskCompletionSource<bool>? toRelease = null;
-        lock (_remoteWindowLock)
-        {
-            if (_remoteWindowTcs is not null)
-            {
-                toRelease = _remoteWindowTcs;
-                _remoteWindowTcs = null;
-            }
-        }
-
-        toRelease?.TrySetException(exception);
+        await _transmitter
+            .SendAsync(seq, ack, flags, window, options, payload, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task WaitForRemoteSendWindowAsync(CancellationToken cancellationToken)
     {
-        while (true)
+        await _remoteSendWindow.WaitForNonZeroAsync(cancellationToken).ConfigureAwait(false);
+
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_receiver.RemoteClosed)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ObjectDisposedException.ThrowIf(_disposed, this);
-
-            if (_receiver.RemoteClosed)
-            {
-                throw new IOException("Remote has closed the connection.");
-            }
-
-            TaskCompletionSource<bool> tcs;
-            lock (_remoteWindowLock)
-            {
-                if (_remoteWindow != 0)
-                {
-                    return;
-                }
-
-                tcs = _remoteWindowTcs ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            }
-
-            await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new IOException("Remote has closed the connection.");
         }
-    }
-
-    private static ushort GenerateIpIdentification()
-    {
-        Span<byte> buffer = stackalloc byte[2];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt16LittleEndian(buffer);
     }
 
     public ValueTask DisposeAsync()
