@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Threading.Channels;
+using ZTSharp.Internal;
 using SystemTcpClient = System.Net.Sockets.TcpClient;
 
 namespace ZTSharp.Sockets;
@@ -12,12 +12,11 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
 {
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly ConcurrentDictionary<int, Task> _connectionTasks = new();
+    private readonly ActiveTaskSet _connectionTasks = new();
     private readonly OverlayTcpListener _listener;
     private readonly string _targetHost;
     private readonly int _targetPort;
     private bool _disposed;
-    private int _nextConnectionId;
 
     public OverlayTcpPortForwarder(
         Node node,
@@ -72,10 +71,10 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
                 break;
             }
 
-            TrackConnection(HandleConnectionAsync(accepted, token));
+            _connectionTasks.Track(HandleConnectionAsync(accepted, token));
         }
 
-        await WaitForConnectionsAsync().ConfigureAwait(false);
+        await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -92,51 +91,13 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
             await _shutdown.CancelAsync().ConfigureAwait(false);
             await _listener.DisposeAsync().ConfigureAwait(false);
 
-            await WaitForConnectionsAsync().ConfigureAwait(false);
+            await _connectionTasks.WaitAsync(_shutdown.Token).ConfigureAwait(false);
         }
         finally
         {
             _disposeLock.Release();
             _disposeLock.Dispose();
             _shutdown.Dispose();
-        }
-    }
-
-    private void TrackConnection(Task connectionTask)
-    {
-        var id = Interlocked.Increment(ref _nextConnectionId);
-        _connectionTasks.TryAdd(id, connectionTask);
-
-        _ = connectionTask.ContinueWith(
-            t => _connectionTasks.TryRemove(id, out _),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-    }
-
-    private async Task WaitForConnectionsAsync()
-    {
-        while (!_connectionTasks.IsEmpty)
-        {
-            var snapshot = new List<Task>(_connectionTasks.Count);
-            foreach (var task in _connectionTasks.Values)
-            {
-                snapshot.Add(task);
-            }
-
-            if (snapshot.Count == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await Task.WhenAll(snapshot).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
-            {
-                return;
-            }
         }
     }
 

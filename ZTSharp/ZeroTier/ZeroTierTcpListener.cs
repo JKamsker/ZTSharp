@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.Net;
 using System.Threading.Channels;
+using ZTSharp.Internal;
 using ZTSharp.ZeroTier.Internal;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
@@ -11,13 +11,12 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 {
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly ConcurrentDictionary<int, Task> _connectionTasks = new();
+    private readonly ActiveTaskSet _connectionTasks = new();
     private readonly Channel<Stream> _acceptQueue = Channel.CreateUnbounded<Stream>();
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
     private bool _disposed;
-    private int _nextConnectionId;
 
     internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort)
     {
@@ -84,51 +83,13 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
 
-            await WaitForConnectionsAsync().ConfigureAwait(false);
+            await _connectionTasks.WaitAsync(_shutdown.Token).ConfigureAwait(false);
         }
         finally
         {
             _disposeLock.Release();
             _disposeLock.Dispose();
             _shutdown.Dispose();
-        }
-    }
-
-    private void TrackConnection(Task connectionTask)
-    {
-        var id = Interlocked.Increment(ref _nextConnectionId);
-        _connectionTasks.TryAdd(id, connectionTask);
-
-        _ = connectionTask.ContinueWith(
-            t => _connectionTasks.TryRemove(id, out _),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-    }
-
-    private async Task WaitForConnectionsAsync()
-    {
-        while (!_connectionTasks.IsEmpty)
-        {
-            var snapshot = new List<Task>(_connectionTasks.Count);
-            foreach (var task in _connectionTasks.Values)
-            {
-                snapshot.Add(task);
-            }
-
-            if (snapshot.Count == 0)
-            {
-                return;
-            }
-
-            try
-            {
-                await Task.WhenAll(snapshot).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
-            {
-                return;
-            }
         }
     }
 
@@ -194,7 +155,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
         link.IncomingWriter.TryWrite(ipPacket);
 
-        TrackConnection(HandleAcceptedConnectionAsync(connection, cancellationToken));
+        _connectionTasks.Track(HandleAcceptedConnectionAsync(connection, cancellationToken));
         return Task.CompletedTask;
     }
 
