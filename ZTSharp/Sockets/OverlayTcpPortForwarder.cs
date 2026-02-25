@@ -170,13 +170,7 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
                             localToOverlay ?? Task.CompletedTask)
                         .ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (IOException)
-                {
-                }
-                catch (ObjectDisposedException)
+                catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
                 {
                 }
             }
@@ -217,10 +211,7 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (IOException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException)
         {
         }
     }
