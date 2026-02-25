@@ -30,13 +30,7 @@ internal static class OsUdpSocketFactory
             udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
             return udp6;
         }
-        catch (SocketException)
-        {
-        }
-        catch (PlatformNotSupportedException)
-        {
-        }
-        catch (NotSupportedException)
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
         {
         }
 
@@ -56,21 +50,8 @@ internal static class OsUdpSocketFactory
         {
             udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, [0], null);
         }
-        catch (SocketException)
-        {
-        }
-        catch (PlatformNotSupportedException)
-        {
-        }
-        catch (NotSupportedException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException or ObjectDisposedException or InvalidOperationException)
         {
         }
     }
 }
-
