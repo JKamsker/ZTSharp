@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Diagnostics;
 using System.Threading;
 
@@ -7,18 +6,6 @@ namespace ZTSharp;
 internal sealed class EventLoop : IDisposable
 {
     internal delegate ValueTask WorkItemCallback(object? state, CancellationToken cancellationToken);
-
-    private readonly struct WorkItem
-    {
-        public readonly WorkItemCallback Callback;
-        public readonly object? State;
-
-        public WorkItem(WorkItemCallback callback, object? state)
-        {
-            Callback = callback;
-            State = state;
-        }
-    }
 
     public readonly struct TimerHandle
     {
@@ -41,10 +28,8 @@ internal sealed class EventLoop : IDisposable
     private readonly Thread _thread;
     private readonly int _pollIntervalMs;
     private readonly EventLoopTimerQueue _timers;
+    private readonly EventLoopWorkQueue _work;
 
-    private WorkItem[] _workBuffer;
-    private int _workHead;
-    private int _workCount;
     private bool _disposed;
 
     public EventLoop(
@@ -60,7 +45,7 @@ internal sealed class EventLoop : IDisposable
             ? 0
             : Math.Clamp((int)pollInterval.TotalMilliseconds, 1, int.MaxValue);
 
-        _workBuffer = ArrayPool<WorkItem>.Shared.Rent(initialWorkItemCapacity);
+        _work = new EventLoopWorkQueue(initialWorkItemCapacity);
         _timers = new EventLoopTimerQueue(initialTimerCapacity);
 
         _thread = new Thread(Run)
@@ -78,7 +63,7 @@ internal sealed class EventLoop : IDisposable
         lock (_gate)
         {
             ThrowIfDisposed();
-            EnqueueWorkNoLock(new WorkItem(callback, state));
+            _work.Enqueue(new EventLoopWorkItem(callback, state));
         }
 
         _signal.Set();
@@ -174,48 +159,12 @@ internal sealed class EventLoop : IDisposable
         }
     }
 
-    private static void ExecuteWorkItem(in WorkItem work, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var task = work.Callback(work.State, cancellationToken);
-            if (!task.IsCompletedSuccessfully)
-            {
-                task.AsTask().GetAwaiter().GetResult();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException("Event loop callback threw an exception.", ex);
-        }
-    }
+    private static void ExecuteWorkItem(in EventLoopWorkItem work, CancellationToken cancellationToken)
+        => ExecuteCallback(work.Callback, work.State, "Event loop work item", cancellationToken);
 
     private void ExecuteTimerItem(in EventLoopTimerQueue.TimerItem timer, CancellationToken cancellationToken)
     {
-        try
-        {
-            var task = timer.Callback(timer.State, cancellationToken);
-            if (!task.IsCompletedSuccessfully)
-            {
-                task.AsTask().GetAwaiter().GetResult();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException("Event loop callback threw an exception.", ex);
-        }
+        ExecuteCallback(timer.Callback, timer.State, "Event loop timer", cancellationToken);
 
         if (timer.PeriodTicks <= 0)
         {
@@ -235,6 +184,28 @@ internal sealed class EventLoop : IDisposable
         _signal.Set();
     }
 
+    private static void ExecuteCallback(WorkItemCallback callback, object? state, string operation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var task = callback(state, cancellationToken);
+            if (!task.IsCompletedSuccessfully)
+            {
+                task.AsTask().GetAwaiter().GetResult();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"{operation} callback threw an exception.", ex);
+        }
+    }
+
     private int GetWaitMilliseconds(long nowTimestamp)
     {
         lock (_gate)
@@ -244,29 +215,21 @@ internal sealed class EventLoop : IDisposable
                 return 0;
             }
 
-            return _timers.GetWaitMilliseconds(nowTimestamp, _pollIntervalMs, hasPendingWork: _workCount > 0);
+            return _timers.GetWaitMilliseconds(nowTimestamp, _pollIntervalMs, hasPendingWork: _work.HasPendingWork);
         }
     }
 
-    private bool TryDequeueWork(out WorkItem work)
+    private bool TryDequeueWork(out EventLoopWorkItem work)
     {
         lock (_gate)
         {
-            if (_disposed || _workCount == 0)
+            if (_disposed || !_work.TryDequeue(out var dequeued))
             {
                 work = default;
                 return false;
             }
 
-            work = _workBuffer[_workHead];
-            _workBuffer[_workHead] = default;
-            _workHead++;
-            if (_workHead == _workBuffer.Length)
-            {
-                _workHead = 0;
-            }
-
-            _workCount--;
+            work = dequeued;
             return true;
         }
     }
@@ -283,43 +246,6 @@ internal sealed class EventLoop : IDisposable
 
             return _timers.TryDequeueDue(nowTimestamp, out timer);
         }
-    }
-
-    private void EnqueueWorkNoLock(in WorkItem work)
-    {
-        if (_workCount == _workBuffer.Length)
-        {
-            GrowWorkBufferNoLock(_workBuffer.Length * 2);
-        }
-
-        var index = _workHead + _workCount;
-        if (index >= _workBuffer.Length)
-        {
-            index -= _workBuffer.Length;
-        }
-
-        _workBuffer[index] = work;
-        _workCount++;
-    }
-
-    private void GrowWorkBufferNoLock(int newSize)
-    {
-        var rented = ArrayPool<WorkItem>.Shared.Rent(newSize);
-        for (var i = 0; i < _workCount; i++)
-        {
-            var index = _workHead + i;
-            if (index >= _workBuffer.Length)
-            {
-                index -= _workBuffer.Length;
-            }
-
-            rented[i] = _workBuffer[index];
-        }
-
-        Array.Clear(_workBuffer, 0, _workBuffer.Length);
-        ArrayPool<WorkItem>.Shared.Return(_workBuffer);
-        _workBuffer = rented;
-        _workHead = 0;
     }
 
     private static long ToStopwatchTicks(TimeSpan duration)
@@ -362,10 +288,7 @@ internal sealed class EventLoop : IDisposable
         _signal.Dispose();
         _cts.Dispose();
         _timers.Dispose();
-
-        Array.Clear(_workBuffer, 0, _workBuffer.Length);
-        ArrayPool<WorkItem>.Shared.Return(_workBuffer);
-        _workBuffer = Array.Empty<WorkItem>();
+        _work.Dispose();
     }
 
     private void ThrowIfDisposed()
