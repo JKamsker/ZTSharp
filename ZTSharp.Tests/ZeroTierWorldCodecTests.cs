@@ -101,10 +101,7 @@ public sealed class ZeroTierWorldCodecTests
             {
                 Directory.Delete(stateRoot, recursive: true);
             }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
             }
         }
