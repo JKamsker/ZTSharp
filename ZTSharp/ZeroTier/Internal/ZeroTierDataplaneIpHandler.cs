@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
 
@@ -16,6 +15,7 @@ internal sealed class ZeroTierDataplaneIpHandler
     private readonly ZeroTierDataplaneRouteRegistry _routes;
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId;
     private readonly ZeroTierDataplaneIcmpv6Handler _icmpv6;
+    private readonly ZeroTierTcpRstSender _tcpRst;
 
     private readonly ulong _networkId;
     private readonly ZeroTierMac _localMac;
@@ -44,6 +44,7 @@ internal sealed class ZeroTierDataplaneIpHandler
         _routes = routes;
         _managedIpToNodeId = managedIpToNodeId;
         _icmpv6 = icmpv6;
+        _tcpRst = new ZeroTierTcpRstSender(sender);
 
         _networkId = networkId;
         _localMac = localMac;
@@ -233,7 +234,7 @@ internal sealed class ZeroTierDataplaneIpHandler
         return _sender.SendEthernetFrameAsync(peerNodeId, EtherTypeArp, reply, cancellationToken);
     }
 
-    private async ValueTask SendTcpRstAsync(
+    private ValueTask SendTcpRstAsync(
         NodeId peerNodeId,
         IPAddress localIp,
         IPAddress remoteIp,
@@ -241,54 +242,7 @@ internal sealed class ZeroTierDataplaneIpHandler
         ushort remotePort,
         uint acknowledgmentNumber,
         CancellationToken cancellationToken)
-    {
-        if (localIp.AddressFamily != remoteIp.AddressFamily)
-        {
-            return;
-        }
-
-        var tcp = TcpCodec.Encode(
-            sourceIp: localIp,
-            destinationIp: remoteIp,
-            sourcePort: localPort,
-            destinationPort: remotePort,
-            sequenceNumber: 0,
-            acknowledgmentNumber: acknowledgmentNumber,
-            flags: TcpCodec.Flags.Rst | TcpCodec.Flags.Ack,
-            windowSize: 0,
-            options: ReadOnlySpan<byte>.Empty,
-            payload: ReadOnlySpan<byte>.Empty);
-
-        if (localIp.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var ip = Ipv4Codec.Encode(
-                source: localIp,
-                destination: remoteIp,
-                protocol: TcpCodec.ProtocolNumber,
-                payload: tcp,
-                identification: GenerateIpIdentification());
-
-            await _sender.SendIpv4Async(peerNodeId, ip, cancellationToken).ConfigureAwait(false);
-        }
-        else if (localIp.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var ip = Ipv6Codec.Encode(
-                source: localIp,
-                destination: remoteIp,
-                nextHeader: TcpCodec.ProtocolNumber,
-                payload: tcp,
-                hopLimit: 64);
-
-            await _sender.SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeIpv6, ip, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static ushort GenerateIpIdentification()
-    {
-        Span<byte> buffer = stackalloc byte[2];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt16LittleEndian(buffer);
-    }
+        => _tcpRst.SendAsync(peerNodeId, localIp, remoteIp, localPort, remotePort, acknowledgmentNumber, cancellationToken);
 
     private bool TryGetLocalManagedIpv6(IPAddress address, out IPAddress localIp)
     {
@@ -330,4 +284,3 @@ internal sealed class ZeroTierDataplaneIpHandler
         return true;
     }
 }
-
