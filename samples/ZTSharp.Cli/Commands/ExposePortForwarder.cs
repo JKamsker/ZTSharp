@@ -69,8 +69,10 @@ internal sealed class ExposePortForwarder
                 using var bridgeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var token = bridgeCts.Token;
 
+#pragma warning disable CA2025 // Streams are disposed after the copy tasks complete.
                 var overlayToLocal = StreamUtilities.CopyAsync(overlayStream, localStream, token);
                 var localToOverlay = StreamUtilities.CopyAsync(localStream, overlayStream, token);
+#pragma warning restore CA2025
 
                 try
                 {

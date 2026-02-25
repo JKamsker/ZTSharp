@@ -205,17 +205,10 @@ internal static class ExposeCommand
 
         try
         {
-            Console.WriteLine($"NodeId: {socket.NodeId}");
+            CliOutput.WriteNodeId(socket.NodeId);
 
             await socket.JoinAsync(exposeToken).ConfigureAwait(false);
-            if (socket.ManagedIps.Count != 0)
-            {
-                Console.WriteLine("Managed IPs:");
-                foreach (var ip in socket.ManagedIps)
-                {
-                    Console.WriteLine($"  {ip}");
-                }
-            }
+            CliOutput.WriteManagedIps(socket.ManagedIps);
 
             var managedIp = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
             if (managedIp is null)

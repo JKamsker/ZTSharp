@@ -145,18 +145,10 @@ internal static class JoinCommand
         try
         {
             Console.WriteLine($"State: {statePath}");
-            Console.WriteLine($"NodeId: {socket.NodeId}");
+            CliOutput.WriteNodeId(socket.NodeId);
 
             await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
-
-            if (socket.ManagedIps.Count != 0)
-            {
-                Console.WriteLine("Managed IPs:");
-                foreach (var ip in socket.ManagedIps)
-                {
-                    Console.WriteLine($"  {ip}");
-                }
-            }
+            CliOutput.WriteManagedIps(socket.ManagedIps);
 
             if (once)
             {

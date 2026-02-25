@@ -138,7 +138,7 @@ internal static class CallCommand
             }
 
             var localUdp = node.LocalTransportEndpoint;
-            Console.WriteLine($"NodeId: {node.NodeId}");
+            CliOutput.WriteNodeId(node.NodeId);
             if (localUdp is not null)
             {
                 Console.WriteLine($"Local UDP: {localUdp}");
@@ -166,17 +166,10 @@ internal static class CallCommand
 
         try
         {
-            Console.WriteLine($"NodeId: {socket.NodeId}");
+            CliOutput.WriteNodeId(socket.NodeId);
 
             await socket.JoinAsync(cancellationToken).ConfigureAwait(false);
-            if (socket.ManagedIps.Count != 0)
-            {
-                Console.WriteLine("Managed IPs:");
-                foreach (var ip in socket.ManagedIps)
-                {
-                    Console.WriteLine($"  {ip}");
-                }
-            }
+            CliOutput.WriteManagedIps(socket.ManagedIps);
 
             using var httpClient = socket.CreateHttpClient();
             var response = await httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);

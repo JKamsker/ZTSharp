@@ -91,17 +91,10 @@ internal static class ListenCommand
 
         try
         {
-            Console.WriteLine($"NodeId: {socket.NodeId}");
+            CliOutput.WriteNodeId(socket.NodeId);
 
             await socket.JoinAsync(listenToken).ConfigureAwait(false);
-            if (socket.ManagedIps.Count != 0)
-            {
-                Console.WriteLine("Managed IPs:");
-                foreach (var ip in socket.ManagedIps)
-                {
-                    Console.WriteLine($"  {ip}");
-                }
-            }
+            CliOutput.WriteManagedIps(socket.ManagedIps);
 
             var managedIp4 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork);
             var managedIp6 = socket.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6);
