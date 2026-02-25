@@ -81,8 +81,8 @@ public class ExternalZtNetTests
 
             var node1Identity = await node1.GetIdentityAsync();
             var node2Identity = await node2.GetIdentityAsync();
-            var node1Id = node1Identity.NodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
-            var node2Id = node2Identity.NodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
+            var node1Id = node1Identity.NodeId.ToHexString();
+            var node2Id = node2Identity.NodeId.ToHexString();
 
             var node1Endpoint = node1.LocalTransportEndpoint;
             var node2Endpoint = node2.LocalTransportEndpoint;

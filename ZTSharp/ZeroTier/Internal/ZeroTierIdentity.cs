@@ -72,7 +72,7 @@ internal sealed class ZeroTierIdentity
     {
         // Format matches ZeroTierOne Identity::toString:
         // <hex10 address>:0:<hex public key 64 bytes>[:<hex private key 64 bytes>]
-        var addressText = NodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
+        var addressText = NodeId.ToHexString();
         var publicHex = ToLowerHex(PublicKey);
         if (!includePrivate || PrivateKey is null)
         {
