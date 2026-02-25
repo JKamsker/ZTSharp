@@ -78,13 +78,7 @@ internal sealed class ExposePortForwarder
                 }
                 finally
                 {
-                    try
-                    {
-                        await bridgeCts.CancelAsync().ConfigureAwait(false);
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                    }
+                    await bridgeCts.CancelAsync().ConfigureAwait(false);
 
                     try
                     {
