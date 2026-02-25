@@ -4,7 +4,7 @@ using ZTSharp.ZeroTier;
 
 namespace ZTSharp.Cli.Commands;
 
-internal static partial class ListenCommand
+internal static class ListenCommand
 {
     public static async Task RunAsync(string[] commandArgs)
     {
@@ -125,6 +125,7 @@ internal static partial class ListenCommand
 
             var acceptorCount = Math.Clamp(Environment.ProcessorCount, 2, 8);
             acceptors = new List<Task>(acceptorCount * 2);
+            var server = new ListenHttpServer(bodyBytes);
 
             if (managedIp4 is not null)
             {
@@ -133,7 +134,7 @@ internal static partial class ListenCommand
 
                 for (var i = 0; i < acceptorCount; i++)
                 {
-                    acceptors.Add(RunListenAcceptorAsync(listener4, bodyBytes, listenToken));
+                    acceptors.Add(server.RunAcceptorAsync(listener4, listenToken));
                 }
             }
 
@@ -144,7 +145,7 @@ internal static partial class ListenCommand
 
                 for (var i = 0; i < acceptorCount; i++)
                 {
-                    acceptors.Add(RunListenAcceptorAsync(listener6, bodyBytes, listenToken));
+                    acceptors.Add(server.RunAcceptorAsync(listener6, listenToken));
                 }
             }
 
@@ -197,4 +198,3 @@ internal static partial class ListenCommand
         }
     }
 }
-
