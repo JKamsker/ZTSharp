@@ -48,12 +48,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId = new();
 
-    private readonly ConcurrentDictionary<ZeroTierTcpRouteKey, ZeroTierRoutedIpv4Link> _routesV4 = new();
-    private readonly ConcurrentDictionary<ZeroTierTcpRouteKeyV6, ZeroTierRoutedIpv6Link> _routesV6 = new();
-    private readonly ConcurrentDictionary<ushort, Func<NodeId, ReadOnlyMemory<byte>, CancellationToken, Task>> _tcpSynHandlersV4 = new();
-    private readonly ConcurrentDictionary<ushort, Func<NodeId, ReadOnlyMemory<byte>, CancellationToken, Task>> _tcpSynHandlersV6 = new();
-    private readonly ConcurrentDictionary<ushort, ChannelWriter<ZeroTierRoutedIpPacket>> _udpHandlersV4 = new();
-    private readonly ConcurrentDictionary<ushort, ChannelWriter<ZeroTierRoutedIpPacket>> _udpHandlersV6 = new();
+    private readonly ZeroTierDataplaneRouteRegistry _routes;
 
     private int _traceRxRemaining = 200;
 
@@ -113,6 +108,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _localManagedIpV4Bytes = localManagedIpV4?.GetAddressBytes();
         _localManagedIpsV6 = localManagedIpsV6.Count == 0 ? Array.Empty<IPAddress>() : localManagedIpsV6.ToArray();
         _localMac = ZeroTierMac.FromAddress(localIdentity.NodeId, networkId);
+        _routes = new ZeroTierDataplaneRouteRegistry(this);
 
         _dispatcherLoop = Task.Run(DispatcherLoopAsync, CancellationToken.None);
         _peerLoop = Task.Run(PeerLoopAsync, CancellationToken.None);
@@ -125,100 +121,29 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     public IZeroTierRoutedIpLink RegisterTcpRoute(NodeId peerNodeId, IPEndPoint localEndpoint, IPEndPoint remoteEndpoint)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        ArgumentNullException.ThrowIfNull(localEndpoint);
-        ArgumentNullException.ThrowIfNull(remoteEndpoint);
-
-        if (localEndpoint.Address.AddressFamily != remoteEndpoint.Address.AddressFamily)
-        {
-            throw new NotSupportedException("Local and remote address families must match.");
-        }
-
-        if (localEndpoint.Address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var routeKey = ZeroTierTcpRouteKey.FromEndpoints(localEndpoint, remoteEndpoint);
-            var link = new ZeroTierRoutedIpv4Link(this, routeKey, peerNodeId);
-            if (!_routesV4.TryAdd(routeKey, link))
-            {
-                throw new InvalidOperationException($"TCP route already registered: {routeKey}.");
-            }
-
-            return link;
-        }
-
-        if (localEndpoint.Address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var routeKey = ZeroTierTcpRouteKeyV6.FromEndpoints(localEndpoint, remoteEndpoint);
-            var link = new ZeroTierRoutedIpv6Link(this, routeKey, peerNodeId);
-            if (!_routesV6.TryAdd(routeKey, link))
-            {
-                throw new InvalidOperationException($"TCP route already registered: {routeKey}.");
-            }
-
-            return link;
-        }
-
-        throw new NotSupportedException($"Unsupported address family: {localEndpoint.Address.AddressFamily}.");
+        return _routes.RegisterTcpRoute(peerNodeId, localEndpoint, remoteEndpoint);
     }
 
     public void UnregisterRoute(ZeroTierTcpRouteKey routeKey)
-        => _routesV4.TryRemove(routeKey, out _);
+        => _routes.UnregisterRoute(routeKey);
 
     public void UnregisterRoute(ZeroTierTcpRouteKeyV6 routeKey)
-        => _routesV6.TryRemove(routeKey, out _);
+        => _routes.UnregisterRoute(routeKey);
 
     public bool TryRegisterTcpListener(
         AddressFamily addressFamily,
         ushort localPort,
         Func<NodeId, ReadOnlyMemory<byte>, CancellationToken, Task> onSyn)
-        => addressFamily switch
-        {
-            AddressFamily.InterNetwork => _tcpSynHandlersV4.TryAdd(localPort, onSyn),
-            AddressFamily.InterNetworkV6 => _tcpSynHandlersV6.TryAdd(localPort, onSyn),
-            _ => throw new ArgumentOutOfRangeException(nameof(addressFamily), addressFamily, "Unsupported address family.")
-        };
+        => _routes.TryRegisterTcpListener(addressFamily, localPort, onSyn);
 
     public void UnregisterTcpListener(AddressFamily addressFamily, ushort localPort)
-    {
-        if (addressFamily == AddressFamily.InterNetwork)
-        {
-            _tcpSynHandlersV4.TryRemove(localPort, out _);
-            return;
-        }
-
-        if (addressFamily == AddressFamily.InterNetworkV6)
-        {
-            _tcpSynHandlersV6.TryRemove(localPort, out _);
-            return;
-        }
-
-        throw new ArgumentOutOfRangeException(nameof(addressFamily), addressFamily, "Unsupported address family.");
-    }
+        => _routes.UnregisterTcpListener(addressFamily, localPort);
 
     public bool TryRegisterUdpPort(AddressFamily addressFamily, ushort localPort, ChannelWriter<ZeroTierRoutedIpPacket> handler)
-        => addressFamily switch
-        {
-            AddressFamily.InterNetwork => _udpHandlersV4.TryAdd(localPort, handler),
-            AddressFamily.InterNetworkV6 => _udpHandlersV6.TryAdd(localPort, handler),
-            _ => throw new ArgumentOutOfRangeException(nameof(addressFamily), addressFamily, "Unsupported address family.")
-        };
+        => _routes.TryRegisterUdpPort(addressFamily, localPort, handler);
 
     public void UnregisterUdpPort(AddressFamily addressFamily, ushort localPort)
-    {
-        if (addressFamily == AddressFamily.InterNetwork)
-        {
-            _udpHandlersV4.TryRemove(localPort, out _);
-            return;
-        }
-
-        if (addressFamily == AddressFamily.InterNetworkV6)
-        {
-            _udpHandlersV6.TryRemove(localPort, out _);
-            return;
-        }
-
-        throw new ArgumentOutOfRangeException(nameof(addressFamily), addressFamily, "Unsupported address family.");
-    }
+        => _routes.UnregisterUdpPort(addressFamily, localPort);
 
     public async Task<NodeId> ResolveNodeIdAsync(IPAddress managedIp, CancellationToken cancellationToken)
     {
@@ -709,7 +634,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 return;
             }
 
-            if (_udpHandlersV6.TryGetValue(dstPort, out var handler))
+            if (_routes.TryGetUdpHandler(AddressFamily.InterNetworkV6, dstPort, out var handler))
             {
                 handler.TryWrite(new ZeroTierRoutedIpPacket(peerNodeId, ipv6Packet));
             }
@@ -725,7 +650,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             }
 
             var routeKey = ZeroTierTcpRouteKeyV6.FromAddresses(dst, dstPort, src, srcPort);
-            if (_routesV6.TryGetValue(routeKey, out var route))
+            if (_routes.TryGetRoute(routeKey, out var route))
             {
                 route.IncomingWriter.TryWrite(ipv6Packet);
                 return;
@@ -733,7 +658,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
             if ((flags & TcpCodec.Flags.Syn) != 0 &&
                 (flags & TcpCodec.Flags.Ack) == 0 &&
-                _tcpSynHandlersV6.TryGetValue(dstPort, out var handler))
+                _routes.TryGetTcpSynHandler(AddressFamily.InterNetworkV6, dstPort, out var handler))
             {
                 await handler(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
                 return;
@@ -776,7 +701,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 return;
             }
 
-            if (_udpHandlersV4.TryGetValue(udpDstPort, out var udpHandler))
+            if (_routes.TryGetUdpHandler(AddressFamily.InterNetwork, udpDstPort, out var udpHandler))
             {
                 udpHandler.TryWrite(new ZeroTierRoutedIpPacket(peerNodeId, ipv4Packet));
             }
@@ -800,7 +725,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             RemoteIp: BinaryPrimitives.ReadUInt32BigEndian(src.GetAddressBytes()),
             RemotePort: srcPort);
 
-        if (_routesV4.TryGetValue(routeKey, out var route))
+        if (_routes.TryGetRoute(routeKey, out var route))
         {
             route.IncomingWriter.TryWrite(ipv4Packet);
             return;
@@ -808,7 +733,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         if ((flags & TcpCodec.Flags.Syn) != 0 &&
             (flags & TcpCodec.Flags.Ack) == 0 &&
-            _tcpSynHandlersV4.TryGetValue(dstPort, out var handler))
+            _routes.TryGetTcpSynHandler(AddressFamily.InterNetwork, dstPort, out var handler))
         {
             await handler(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
             return;
