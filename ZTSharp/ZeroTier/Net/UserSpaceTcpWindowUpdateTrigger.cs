@@ -55,13 +55,7 @@ internal sealed class UserSpaceTcpWindowUpdateTrigger
             {
                 await _sendPureAckAsync(_receiver.RecvNext, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (IOException)
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or IOException)
             {
             }
             finally
@@ -71,4 +65,3 @@ internal sealed class UserSpaceTcpWindowUpdateTrigger
         });
     }
 }
-
