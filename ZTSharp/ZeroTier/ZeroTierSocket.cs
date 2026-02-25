@@ -1,6 +1,4 @@
-using System.Buffers.Binary;
 using System.Net;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Http;
 using ZTSharp.ZeroTier.Internal;
 using ZTSharp.ZeroTier.Net;
@@ -31,8 +29,8 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         _identity = identity;
         _planet = planet;
         NodeId = identity.NodeId;
-        ManagedIps = LoadPersistedManagedIps(statePath, options.NetworkId);
-        _networkConfigDictionaryBytes = LoadPersistedNetworkConfigDictionary(statePath, options.NetworkId);
+        ManagedIps = ZeroTierSocketStatePersistence.LoadManagedIps(statePath, options.NetworkId);
+        _networkConfigDictionaryBytes = ZeroTierSocketStatePersistence.LoadNetworkConfigDictionary(statePath, options.NetworkId);
     }
 
     public NodeId NodeId { get; private set; }
@@ -75,7 +73,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         if (!ZeroTierIdentityStore.TryLoad(identityPath, out var identity))
         {
             if (!File.Exists(identityPath) &&
-                TryLoadLibztIdentity(options.StateRootPath, out identity))
+                ZeroTierSocketIdentityMigration.TryLoadLibztIdentity(options.StateRootPath, out identity))
             {
                 ZeroTierIdentityStore.Save(identityPath, identity);
             }
@@ -93,44 +91,6 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         var planet = ZeroTierPlanetLoader.Load(options, cancellationToken);
 
         return Task.FromResult(new ZeroTierSocket(options, statePath, identity, planet));
-    }
-
-    private static bool TryLoadLibztIdentity(string stateRootPath, out ZeroTierIdentity identity)
-    {
-        identity = default!;
-        ArgumentException.ThrowIfNullOrWhiteSpace(stateRootPath);
-
-        var libztSecretPath = Path.Combine(stateRootPath, "libzt", "identity.secret");
-        if (!File.Exists(libztSecretPath))
-        {
-            return false;
-        }
-
-        string text;
-        try
-        {
-            text = File.ReadAllText(libztSecretPath);
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-
-        if (!ZeroTierIdentity.TryParse(text, out identity))
-        {
-            return false;
-        }
-
-        if (identity.PrivateKey is null)
-        {
-            return false;
-        }
-
-        return identity.LocallyValidate();
     }
 
     public async Task JoinAsync(CancellationToken cancellationToken = default)
@@ -158,7 +118,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             _networkConfigDictionaryBytes = result.DictionaryBytes;
             _upstreamRoot = result.UpstreamRoot;
             _upstreamRootKey = result.UpstreamRootKey;
-            PersistNetworkState(result);
+            ZeroTierSocketStatePersistence.PersistNetworkState(_statePath, _options.NetworkId, result.DictionaryBytes, result.ManagedIps);
             _joined = true;
         }
         finally
@@ -285,7 +245,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
         for (var attempt = 0; attempt < 32; attempt++)
         {
-            var localPort = GenerateEphemeralPort();
+            var localPort = ZeroTierEphemeralPorts.Generate();
             try
             {
                 return new ZeroTierUdpSocket(runtime, localAddress, localPort);
@@ -387,74 +347,6 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         }
     }
 
-    private static IPAddress[] LoadPersistedManagedIps(string statePath, ulong networkId)
-    {
-        var networksDir = Path.Combine(statePath, "networks.d");
-        var path = Path.Combine(networksDir, $"{networkId:x16}.ips.txt");
-        if (!File.Exists(path))
-        {
-            return Array.Empty<IPAddress>();
-        }
-
-        try
-        {
-            var lines = File.ReadAllLines(path);
-            var ips = new List<IPAddress>(lines.Length);
-            foreach (var line in lines)
-            {
-                if (IPAddress.TryParse(line.Trim(), out var ip))
-                {
-                    ips.Add(ip);
-                }
-            }
-
-            return ips.ToArray();
-        }
-        catch (IOException)
-        {
-            return Array.Empty<IPAddress>();
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Array.Empty<IPAddress>();
-        }
-    }
-
-    private static byte[]? LoadPersistedNetworkConfigDictionary(string statePath, ulong networkId)
-    {
-        var networksDir = Path.Combine(statePath, "networks.d");
-        var path = Path.Combine(networksDir, $"{networkId:x16}.netconf.dict");
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            return File.ReadAllBytes(path);
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
-
-    private void PersistNetworkState(ZeroTierNetworkConfigResult result)
-    {
-        var networksDir = Path.Combine(_statePath, "networks.d");
-        Directory.CreateDirectory(networksDir);
-
-        var dictPath = Path.Combine(networksDir, $"{_options.NetworkId:x16}.netconf.dict");
-        File.WriteAllBytes(dictPath, result.DictionaryBytes);
-
-        var ipsPath = Path.Combine(networksDir, $"{_options.NetworkId:x16}.ips.txt");
-        File.WriteAllLines(ipsPath, result.ManagedIps.Select(ip => ip.ToString()));
-    }
-
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
@@ -511,7 +403,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ushort localPort = 0;
         for (var attempt = 0; attempt < 32; attempt++)
         {
-            localPort = fixedPort ? fixedLocalPort : GenerateEphemeralPort();
+            localPort = fixedPort ? fixedLocalPort : ZeroTierEphemeralPorts.Generate();
             var localEndpoint = new IPEndPoint(localAddress, localPort);
 
             try
@@ -552,39 +444,14 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     private (IPAddress? LocalManagedIpV4, byte[] InlineCom) GetLocalManagedIpv4AndInlineCom()
     {
         var localManagedIpV4 = ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
-        var inlineCom = GetInlineCom();
-        return (localManagedIpV4, inlineCom);
-    }
-
-    private byte[] GetInlineCom()
-    {
         var dict = _networkConfigDictionaryBytes;
         if (dict is null)
         {
             throw new InvalidOperationException("Missing network config dictionary (join not completed?).");
         }
 
-        if (!ZeroTierDictionary.TryGet(dict, "C", out var comBytes) || comBytes.Length == 0)
-        {
-            throw new InvalidOperationException("Network config does not contain a certificate of membership (key 'C').");
-        }
-
-        if (!ZeroTierCertificateOfMembershipCodec.TryGetSerializedLength(comBytes, out var comLen))
-        {
-            throw new InvalidOperationException("Network config contains an invalid certificate of membership (key 'C').");
-        }
-
-        if (comLen != comBytes.Length)
-        {
-            if (ZeroTierTrace.Enabled)
-            {
-                ZeroTierTrace.WriteLine($"[zerotier] COM length mismatch: dictionary value has {comBytes.Length} bytes, certificate is {comLen} bytes. Truncating inline COM.");
-            }
-
-            comBytes = comBytes.AsSpan(0, comLen).ToArray();
-        }
-
-        return comBytes;
+        var inlineCom = ZeroTierInlineCom.GetInlineCom(dict);
+        return (localManagedIpV4, inlineCom);
     }
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
@@ -695,11 +562,4 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         }
     }
 
-    private static ushort GenerateEphemeralPort()
-    {
-        Span<byte> buffer = stackalloc byte[2];
-        RandomNumberGenerator.Fill(buffer);
-        var port = BinaryPrimitives.ReadUInt16LittleEndian(buffer);
-        return (ushort)(49152 + (port % (ushort)(65535 - 49152)));
-    }
 }
