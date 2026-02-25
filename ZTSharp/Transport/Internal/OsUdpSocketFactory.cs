@@ -7,10 +7,10 @@ internal static class OsUdpSocketFactory
 {
     private const int WindowsSioUdpConnReset = unchecked((int)0x9800000C);
 
-    public static UdpClient Create(int localPort, bool enableIpv6)
+    public static UdpClient Create(int localPort, bool enableIpv6, Action<string>? log = null)
     {
         var udp = CreateSocketCore(localPort, enableIpv6);
-        TryDisableWindowsUdpConnReset(udp);
+        TryDisableWindowsUdpConnReset(udp, log);
         return udp;
     }
 
@@ -39,7 +39,7 @@ internal static class OsUdpSocketFactory
         return udpFallback;
     }
 
-    private static void TryDisableWindowsUdpConnReset(UdpClient udp)
+    private static void TryDisableWindowsUdpConnReset(UdpClient udp, Action<string>? log)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -50,8 +50,25 @@ internal static class OsUdpSocketFactory
         {
             udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, [0], null);
         }
-        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException or ObjectDisposedException or InvalidOperationException)
+        catch (SocketException)
         {
+            log?.Invoke("Failed to disable UDP connection reset handling (SocketException).");
+        }
+        catch (PlatformNotSupportedException)
+        {
+            log?.Invoke("Failed to disable UDP connection reset handling (PlatformNotSupportedException).");
+        }
+        catch (NotSupportedException)
+        {
+            log?.Invoke("Failed to disable UDP connection reset handling (NotSupportedException).");
+        }
+        catch (ObjectDisposedException)
+        {
+            log?.Invoke("Failed to disable UDP connection reset handling (ObjectDisposedException).");
+        }
+        catch (InvalidOperationException)
+        {
+            log?.Invoke("Failed to disable UDP connection reset handling (InvalidOperationException).");
         }
     }
 }

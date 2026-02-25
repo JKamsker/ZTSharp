@@ -1,13 +1,12 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
+using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.ZeroTier.Transport;
 
 internal sealed class ZeroTierUdpTransport : IAsyncDisposable
 {
-    private const int WindowsSioUdpConnReset = unchecked((int)0x9800000C);
-
     private readonly UdpClient _udp;
     private readonly Channel<ZeroTierUdpDatagram> _incoming;
     private readonly Action<string>? _log;
@@ -18,35 +17,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
     public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null)
     {
         _log = log;
-        _udp = CreateSocket(localPort, enableIpv6);
-
-        if (OperatingSystem.IsWindows())
-        {
-            try
-            {
-                _udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, [0], null);
-            }
-            catch (SocketException)
-            {
-                Log("Failed to disable UDP connection reset handling (SocketException).");
-            }
-            catch (PlatformNotSupportedException)
-            {
-                Log("Failed to disable UDP connection reset handling (PlatformNotSupportedException).");
-            }
-            catch (NotSupportedException)
-            {
-                Log("Failed to disable UDP connection reset handling (NotSupportedException).");
-            }
-            catch (ObjectDisposedException)
-            {
-                Log("Failed to disable UDP connection reset handling (ObjectDisposedException).");
-            }
-            catch (InvalidOperationException)
-            {
-                Log("Failed to disable UDP connection reset handling (InvalidOperationException).");
-            }
-        }
+        _udp = OsUdpSocketFactory.Create(localPort, enableIpv6, Log);
 
         _incoming = Channel.CreateUnbounded<ZeroTierUdpDatagram>();
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
@@ -149,31 +120,6 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
                 return;
             }
         }
-    }
-
-    private static UdpClient CreateSocket(int localPort, bool enableIpv6)
-    {
-        if (!enableIpv6)
-        {
-            var udp4 = new UdpClient(AddressFamily.InterNetwork);
-            udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-            return udp4;
-        }
-
-        try
-        {
-            var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
-            udp6.Client.DualMode = true;
-            udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
-            return udp6;
-        }
-        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
-        {
-        }
-
-        var udpFallback = new UdpClient(AddressFamily.InterNetwork);
-        udpFallback.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-        return udpFallback;
     }
 
     private static IPEndPoint NormalizeEndpoint(IPEndPoint endpoint)
