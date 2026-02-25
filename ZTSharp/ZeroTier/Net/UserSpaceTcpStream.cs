@@ -31,16 +31,7 @@ internal sealed class UserSpaceTcpStream : Stream
             {
                 _client.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (IOException)
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException or IOException)
             {
             }
         }
