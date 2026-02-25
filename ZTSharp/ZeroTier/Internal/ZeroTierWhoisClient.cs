@@ -40,54 +40,50 @@ internal static class ZeroTierWhoisClient
 
         await udp.SendAsync(rootEndpoint, whoisPacket, cancellationToken).ConfigureAwait(false);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "Waiting for OK(WHOIS) from root", WaitForOkWhoisAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        while (true)
+        async ValueTask<ZeroTierIdentity> WaitForOkWhoisAsync(CancellationToken token)
         {
-            (NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)? received;
-            try
+            while (true)
             {
-                received = await ZeroTierDecryptingPacketReceiver
-                    .ReceiveAndDecryptAsync(udp, rootNodeId, rootKey, timeoutCts.Token)
+                var received = await ZeroTierDecryptingPacketReceiver
+                    .ReceiveAndDecryptAsync(udp, rootNodeId, rootKey, token)
                     .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for OK(WHOIS) from root after {timeout}.");
-            }
 
-            if (received is null)
-            {
-                continue;
-            }
-
-            var packetBytes = received.Value.PacketBytes;
-            if ((ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F) != ZeroTierVerb.Ok)
-            {
-                continue;
-            }
-
-            var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-            if (inReVerb != ZeroTierVerb.Whois)
-            {
-                continue;
-            }
-
-            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (inRePacketId != whoisPacketId)
-            {
-                continue;
-            }
-
-            var ptr = OkIndexPayload;
-            while (ptr < packetBytes.Length)
-            {
-                var identity = ZeroTierIdentityCodec.Deserialize(packetBytes.AsSpan(ptr), out var bytesRead);
-                ptr += bytesRead;
-                if (identity.NodeId == controllerNodeId)
+                if (received is null)
                 {
-                    return identity;
+                    continue;
+                }
+
+                var packetBytes = received.Value.PacketBytes;
+                if ((ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F) != ZeroTierVerb.Ok)
+                {
+                    continue;
+                }
+
+                var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
+                if (inReVerb != ZeroTierVerb.Whois)
+                {
+                    continue;
+                }
+
+                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
+                if (inRePacketId != whoisPacketId)
+                {
+                    continue;
+                }
+
+                var ptr = OkIndexPayload;
+                while (ptr < packetBytes.Length)
+                {
+                    var identity = ZeroTierIdentityCodec.Deserialize(packetBytes.AsSpan(ptr), out var bytesRead);
+                    ptr += bytesRead;
+                    if (identity.NodeId == controllerNodeId)
+                    {
+                        return identity;
+                    }
                 }
             }
         }
