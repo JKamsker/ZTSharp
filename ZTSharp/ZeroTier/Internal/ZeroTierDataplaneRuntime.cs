@@ -223,13 +223,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _peerQueue.Writer.TryComplete();
         await _cts.CancelAsync().ConfigureAwait(false);
 
-        try
-        {
-            await _udp.DisposeAsync().ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
-        }
+        await _udp.DisposeAsync().ConfigureAwait(false);
 
         try
         {
