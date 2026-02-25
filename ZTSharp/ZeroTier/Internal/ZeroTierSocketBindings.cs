@@ -93,15 +93,25 @@ internal static class ZeroTierSocketBindings
         for (var attempt = 0; attempt < 32; attempt++)
         {
             var localPort = ZeroTierEphemeralPorts.Generate();
-            try
+            var socket = TryBindUdpSocket(runtime, localAddress, localPort);
+            if (socket is not null)
             {
-                return new ZeroTierUdpSocket(runtime, localAddress, localPort);
-            }
-            catch (InvalidOperationException)
-            {
+                return socket;
             }
         }
 
         throw new InvalidOperationException("Failed to bind UDP to an ephemeral port (too many collisions).");
+    }
+
+    private static ZeroTierUdpSocket? TryBindUdpSocket(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort)
+    {
+        try
+        {
+            return new ZeroTierUdpSocket(runtime, localAddress, localPort);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 }
