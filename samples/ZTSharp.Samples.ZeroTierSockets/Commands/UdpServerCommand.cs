@@ -28,8 +28,7 @@ internal static class UdpServerCommand
                 case "--port":
                     {
                         var value = SampleParsing.ReadOptionValue(args, ref i, "--port");
-                        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) ||
-                            parsed is < 1 or > ushort.MaxValue)
+                        if (!SampleParsing.TryParseUShortPort(value, out var parsed))
                         {
                             throw new InvalidOperationException("Invalid --port value.");
                         }

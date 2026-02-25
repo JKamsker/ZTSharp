@@ -5,6 +5,10 @@ namespace ZTSharp.Samples.ZeroTierSockets;
 
 internal static class SampleParsing
 {
+    public static bool TryParseUShortPort(string value, out int port)
+        => int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out port) &&
+           port is >= 1 and <= ushort.MaxValue;
+
     public static string ReadOptionValue(string[] args, ref int index, string option)
     {
         if (index + 1 >= args.Length)
@@ -35,8 +39,7 @@ internal static class SampleParsing
         var parts = value.Split(':', 2, StringSplitOptions.TrimEntries);
         if (parts.Length != 2 ||
             !IPAddress.TryParse(parts[0], out var ip) ||
-            !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var port) ||
-            port is < 1 or > ushort.MaxValue)
+            !TryParseUShortPort(parts[1], out var port))
         {
             throw new InvalidOperationException("Invalid --to value (expected ip:port or url).");
         }
@@ -60,4 +63,3 @@ internal static class SampleParsing
         return ulong.Parse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     }
 }
-
