@@ -18,12 +18,8 @@ internal static class ZeroTierTrace
         {
             Console.Error.WriteLine(message);
         }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
         {
         }
     }
 }
-
