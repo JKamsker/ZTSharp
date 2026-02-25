@@ -138,10 +138,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
         {
             await _udp.SendAsync(remoteEndPoint, okPacket, cancellationToken).ConfigureAwait(false);
         }
-        catch (SocketException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
         {
         }
     }
