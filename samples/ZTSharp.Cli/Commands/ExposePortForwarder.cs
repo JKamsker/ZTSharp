@@ -100,9 +100,6 @@ internal sealed class ExposePortForwarder
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
-        catch (SocketException)
-        {
-        }
         finally
         {
             localClient.Dispose();
