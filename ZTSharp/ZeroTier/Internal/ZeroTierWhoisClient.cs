@@ -7,7 +7,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierWhoisClient
 {
-    private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
+    private const int OkIndexInReVerb = ZeroTierPacketHeader.IndexPayload;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
 
