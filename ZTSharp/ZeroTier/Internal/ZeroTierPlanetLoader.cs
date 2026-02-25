@@ -101,10 +101,7 @@ internal static class ZeroTierPlanetLoader
                 world = decoded;
                 return true;
             }
-            catch (FormatException)
-            {
-            }
-            catch (ArgumentException)
+            catch (Exception ex) when (ex is FormatException or ArgumentException)
             {
             }
         }
