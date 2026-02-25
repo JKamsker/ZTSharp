@@ -5,29 +5,18 @@ namespace ZTSharp.Tests;
 
 internal static class UserSpaceTcpTestHelpers
 {
-    public static async Task<int> ReadExactAsync(UserSpaceTcpClient client, byte[] buffer, int length, CancellationToken cancellationToken)
+    public static Task<int> ReadExactAsync(UserSpaceTcpClient client, byte[] buffer, int length, CancellationToken cancellationToken)
+        => ReadExactAsync(client.ReadAsync, buffer, length, cancellationToken);
+
+    public static Task<int> ReadExactAsync(UserSpaceTcpServerConnection server, byte[] buffer, int length, CancellationToken cancellationToken)
+        => ReadExactAsync(server.ReadAsync, buffer, length, cancellationToken);
+
+    private static async Task<int> ReadExactAsync(Func<Memory<byte>, CancellationToken, ValueTask<int>> readAsync, byte[] buffer, int length, CancellationToken cancellationToken)
     {
         var readTotal = 0;
         while (readTotal < length)
         {
-            var read = await client.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
-    }
-
-    public static async Task<int> ReadExactAsync(UserSpaceTcpServerConnection server, byte[] buffer, int length, CancellationToken cancellationToken)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await server.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken).ConfigureAwait(false);
+            var read = await readAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 return readTotal;
