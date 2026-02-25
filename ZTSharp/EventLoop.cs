@@ -147,10 +147,7 @@ internal sealed class EventLoop : IDisposable
                 _signal.WaitOne(waitMs);
             }
         }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
         catch (InvalidOperationException)
@@ -194,10 +191,7 @@ internal sealed class EventLoop : IDisposable
                 task.AsTask().GetAwaiter().GetResult();
             }
         }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
         catch (Exception ex)
