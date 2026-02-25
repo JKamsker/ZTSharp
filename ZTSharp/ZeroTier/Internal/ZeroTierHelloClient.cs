@@ -24,16 +24,6 @@ internal static class ZeroTierHelloClient
     internal const byte AdvertisedMinorVersion = 12;
     internal const ushort AdvertisedRevision = 0;
 
-    private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
-    private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
-    private const int OkIndexPayload = OkIndexInRePacketId + 8;
-
-    private const int HelloOkIndexTimestamp = OkIndexPayload;
-    private const int HelloOkIndexProtocolVersion = HelloOkIndexTimestamp + 8;
-    private const int HelloOkIndexMajorVersion = HelloOkIndexProtocolVersion + 1;
-    private const int HelloOkIndexMinorVersion = HelloOkIndexMajorVersion + 1;
-    private const int HelloOkIndexRevision = HelloOkIndexMinorVersion + 1;
-
     public static async Task<ZeroTierHelloOk> HelloRootsAsync(
         ZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
@@ -127,71 +117,26 @@ internal static class ZeroTierHelloClient
                 continue;
             }
 
-            if (!ZeroTierPacketCrypto.Dearmor(packetBytes, key))
+            if (!ZeroTierHelloOkParser.TryParse(packetBytes, key, out var ok))
             {
                 continue;
             }
 
-            if ((packetBytes[27] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-            {
-                if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
-                {
-                    continue;
-                }
-
-                packetBytes = uncompressed;
-            }
-
-            var verb = (ZeroTierVerb)(packetBytes[27] & 0x1F);
-            if (verb != ZeroTierVerb.Ok)
+            if (!pending.TryGetValue(ok.InRePacketId, out var rootNodeId))
             {
                 continue;
-            }
-
-            if (packetBytes.Length < HelloOkIndexRevision + 2)
-            {
-                continue;
-            }
-
-            var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-            if (inReVerb != ZeroTierVerb.Hello)
-            {
-                continue;
-            }
-
-            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (!pending.TryGetValue(inRePacketId, out var rootNodeId))
-            {
-                continue;
-            }
-
-            var timestampEcho = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(HelloOkIndexTimestamp, 8));
-            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
-            var remoteMajor = packetBytes[HelloOkIndexMajorVersion];
-            var remoteMinor = packetBytes[HelloOkIndexMinorVersion];
-            var remoteRevision = BinaryPrimitives.ReadUInt16BigEndian(packetBytes.AsSpan(HelloOkIndexRevision, 2));
-
-            var ptr = HelloOkIndexRevision + 2;
-            IPEndPoint? surface = null;
-            if (ptr < packetBytes.Length)
-            {
-                if (ZeroTierInetAddressCodec.TryDeserialize(packetBytes.AsSpan(ptr), out var parsed, out var consumed))
-                {
-                    surface = parsed;
-                    ptr += consumed;
-                }
             }
 
             return new ZeroTierHelloOk(
                 RootNodeId: rootNodeId,
                 RootEndpoint: datagram.RemoteEndPoint,
-                HelloPacketId: inRePacketId,
-                HelloTimestampEcho: timestampEcho,
-                RemoteProtocolVersion: remoteProto,
-                RemoteMajorVersion: remoteMajor,
-                RemoteMinorVersion: remoteMinor,
-                RemoteRevision: remoteRevision,
-                ExternalSurfaceAddress: surface);
+                HelloPacketId: ok.InRePacketId,
+                HelloTimestampEcho: ok.TimestampEcho,
+                RemoteProtocolVersion: ok.RemoteProtocolVersion,
+                RemoteMajorVersion: ok.RemoteMajorVersion,
+                RemoteMinorVersion: ok.RemoteMinorVersion,
+                RemoteRevision: ok.RemoteRevision,
+                ExternalSurfaceAddress: ok.ExternalSurfaceAddress);
         }
     }
 
@@ -259,46 +204,17 @@ internal static class ZeroTierHelloClient
                 continue;
             }
 
-            if (!ZeroTierPacketCrypto.Dearmor(packetBytes, sharedKey))
+            if (!ZeroTierHelloOkParser.TryParse(packetBytes, sharedKey, out var ok))
             {
                 continue;
             }
 
-            if ((packetBytes[27] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-            {
-                if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
-                {
-                    continue;
-                }
-
-                packetBytes = uncompressed;
-            }
-
-            var verb = (ZeroTierVerb)(packetBytes[27] & 0x1F);
-            if (verb != ZeroTierVerb.Ok)
+            if (ok.InRePacketId != packetId)
             {
                 continue;
             }
 
-            if (packetBytes.Length < HelloOkIndexRevision + 2)
-            {
-                continue;
-            }
-
-            var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-            if (inReVerb != ZeroTierVerb.Hello)
-            {
-                continue;
-            }
-
-            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (inRePacketId != packetId)
-            {
-                continue;
-            }
-
-            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
-            return remoteProto;
+            return ok.RemoteProtocolVersion;
         }
     }
 
