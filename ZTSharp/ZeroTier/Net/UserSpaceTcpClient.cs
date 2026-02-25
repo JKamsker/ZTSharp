@@ -203,19 +203,7 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
                     using var finCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     await _sender.SendFinWithRetriesAsync(_receiver.RecvNext, finCts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (TimeoutException)
-                {
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-                catch (InvalidOperationException)
-                {
-                }
-                catch (IOException)
+                catch (Exception ex) when (ex is OperationCanceledException or TimeoutException or ObjectDisposedException or InvalidOperationException or IOException)
                 {
                 }
             }
@@ -227,7 +215,7 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
                 {
                     await _receiveLoopTask.ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                 {
                 }
             }
