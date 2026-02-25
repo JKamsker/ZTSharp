@@ -142,19 +142,15 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            return;
         }
         catch (SocketException)
         {
+            return;
         }
         finally
         {
-            try
-            {
-                await bridgeCts.CancelAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            await bridgeCts.CancelAsync().ConfigureAwait(false);
 
             if (overlayToLocal is not null || localToOverlay is not null)
             {
