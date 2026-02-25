@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Threading.Channels;
 
 namespace ZTSharp.Sockets;
@@ -9,15 +8,7 @@ namespace ZTSharp.Sockets;
 /// </summary>
 public sealed class OverlayTcpListener : IAsyncDisposable
 {
-    private const byte TcpFrameVersion = 1;
-
-    private enum TcpFrameType : byte
-    {
-        Syn = 1,
-        SynAck = 2
-    }
-
-    private const int HeaderLength = 1 + 1 + 2 + 2 + sizeof(ulong) + sizeof(ulong);
+    private const int HeaderLength = OverlayTcpFrameCodec.HeaderLength;
 
     private readonly Channel<OverlayTcpClient> _acceptQueue;
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
@@ -80,12 +71,12 @@ public sealed class OverlayTcpListener : IAsyncDisposable
             return;
         }
 
-        if (!TryParseHeader(frame.Payload.Span, out var type, out var sourcePort, out var destinationPort, out var destinationNodeId, out var connectionId))
+        if (!OverlayTcpFrameCodec.TryParseHeader(frame.Payload.Span, out var type, out var sourcePort, out var destinationPort, out var destinationNodeId, out var connectionId))
         {
             return;
         }
 
-        if (type != TcpFrameType.Syn ||
+        if (type != OverlayTcpFrameCodec.FrameType.Syn ||
             destinationNodeId != _localNodeId ||
             destinationPort != _localPort)
         {
@@ -124,7 +115,7 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         var frame = usesPool ? ArrayPool<byte>.Shared.Rent(frameLength) : new byte[frameLength];
         try
         {
-            BuildHeader(TcpFrameType.SynAck, _localPort, remotePort, remoteNodeId, connectionId, frame.AsSpan(0, frameLength));
+            OverlayTcpFrameCodec.BuildHeader(OverlayTcpFrameCodec.FrameType.SynAck, _localPort, remotePort, remoteNodeId, connectionId, frame.AsSpan(0, frameLength));
             await _node.SendFrameAsync(_networkId, frame.AsMemory(0, frameLength)).ConfigureAwait(false);
         }
         finally
@@ -134,53 +125,5 @@ public sealed class OverlayTcpListener : IAsyncDisposable
                 ArrayPool<byte>.Shared.Return(frame);
             }
         }
-    }
-
-    private static void BuildHeader(
-        TcpFrameType type,
-        int sourcePort,
-        int destinationPort,
-        ulong destinationNodeId,
-        ulong connectionId,
-        Span<byte> destination)
-    {
-        destination[0] = TcpFrameVersion;
-        destination[1] = (byte)type;
-        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), (ushort)sourcePort);
-        BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), (ushort)destinationPort);
-        BinaryPrimitives.WriteUInt64LittleEndian(destination.Slice(6, sizeof(ulong)), destinationNodeId);
-        BinaryPrimitives.WriteUInt64LittleEndian(destination.Slice(6 + sizeof(ulong), sizeof(ulong)), connectionId);
-    }
-
-    private static bool TryParseHeader(
-        ReadOnlySpan<byte> payload,
-        out TcpFrameType type,
-        out int sourcePort,
-        out int destinationPort,
-        out ulong destinationNodeId,
-        out ulong connectionId)
-    {
-        type = TcpFrameType.Syn;
-        sourcePort = 0;
-        destinationPort = 0;
-        destinationNodeId = 0;
-        connectionId = 0;
-
-        if (payload.Length < HeaderLength || payload[0] != TcpFrameVersion)
-        {
-            return false;
-        }
-
-        type = (TcpFrameType)payload[1];
-        if (type is not (TcpFrameType.Syn or TcpFrameType.SynAck))
-        {
-            return false;
-        }
-
-        sourcePort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
-        destinationPort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
-        destinationNodeId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(6, sizeof(ulong)));
-        connectionId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(6 + sizeof(ulong), sizeof(ulong)));
-        return true;
     }
 }
