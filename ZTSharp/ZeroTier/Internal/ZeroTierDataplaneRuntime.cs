@@ -1,8 +1,6 @@
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading.Channels;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
@@ -167,7 +165,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
         var peerProtocolVersion = _peerSecurity.GetPeerProtocolVersionOrDefault(peerNodeId);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
             packetId,
             destination: peerNodeId,
@@ -196,7 +194,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         var key = await GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
         var peerProtocolVersion = _peerSecurity.GetPeerProtocolVersionOrDefault(peerNodeId);
         var remoteMac = ZeroTierMac.FromAddress(peerNodeId, _networkId);
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildPacket(
             packetId,
             destination: peerNodeId,
@@ -387,10 +385,4 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
         => _peerSecurity.GetPeerKeyAsync(peerNodeId, cancellationToken);
 
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
-    }
 }
