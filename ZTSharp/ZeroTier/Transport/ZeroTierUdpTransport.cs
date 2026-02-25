@@ -108,10 +108,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         {
             await _receiverLoop.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
     }
@@ -126,11 +123,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             {
                 result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (ObjectDisposedException)
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
             {
                 return;
             }
@@ -174,13 +167,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
             return udp6;
         }
-        catch (SocketException)
-        {
-        }
-        catch (PlatformNotSupportedException)
-        {
-        }
-        catch (NotSupportedException)
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
         {
         }
 
