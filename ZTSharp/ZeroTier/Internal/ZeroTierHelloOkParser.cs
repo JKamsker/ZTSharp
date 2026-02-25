@@ -15,7 +15,7 @@ internal readonly record struct ZeroTierHelloOkPayload(
 
 internal static class ZeroTierHelloOkParser
 {
-    private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
+    private const int OkIndexInReVerb = ZeroTierPacketHeader.IndexPayload;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
 
@@ -37,7 +37,8 @@ internal static class ZeroTierHelloOkParser
             return false;
         }
 
-        if ((packetBytes[27] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+        var verbRaw = packetBytes[ZeroTierPacketHeader.IndexVerb];
+        if ((verbRaw & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
         {
             if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
             {
@@ -45,6 +46,7 @@ internal static class ZeroTierHelloOkParser
             }
 
             packetBytes = uncompressed;
+            verbRaw = packetBytes[ZeroTierPacketHeader.IndexVerb];
         }
 
         if (packetBytes.Length < HelloOkIndexRevision + 2)
@@ -52,7 +54,7 @@ internal static class ZeroTierHelloOkParser
             return false;
         }
 
-        var verb = (ZeroTierVerb)(packetBytes[27] & 0x1F);
+        var verb = (ZeroTierVerb)(verbRaw & 0x1F);
         if (verb != ZeroTierVerb.Ok)
         {
             return false;
@@ -92,4 +94,3 @@ internal static class ZeroTierHelloOkParser
         return true;
     }
 }
-

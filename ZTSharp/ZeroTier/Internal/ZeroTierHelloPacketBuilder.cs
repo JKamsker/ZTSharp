@@ -80,7 +80,7 @@ internal static class ZeroTierHelloPacketBuilder
         var packet = ZeroTierPacketCodec.Encode(header, payload);
 
         // cryptField() encrypts the remainder of HELLO (moon list), using the raw key and IV with low 3 bits masked off.
-        CryptHelloRemainder(packet, sharedKey, ZeroTierPacketHeader.Length + startCryptedPortionAtPayloadOffset);
+        CryptHelloRemainder(packet, sharedKey, ZeroTierPacketHeader.IndexPayload + startCryptedPortionAtPayloadOffset);
 
         // HELLO is not fully encrypted, but must be MACed.
         ZeroTierPacketCrypto.Armor(packet, sharedKey, encryptPayload: false);
