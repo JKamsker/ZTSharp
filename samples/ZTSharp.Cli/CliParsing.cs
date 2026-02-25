@@ -1,0 +1,211 @@
+using System.Globalization;
+using System.Net;
+using ZTSharp;
+
+namespace ZTSharp.Cli;
+
+internal static class CliParsing
+{
+    public static string NormalizeStack(string stack)
+    {
+        if (string.Equals(stack, "zerotier", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(stack, "libzt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "managed";
+        }
+
+        return stack;
+    }
+
+    public static string ReadOptionValue(string[] args, ref int index, string name)
+    {
+        if (index + 1 >= args.Length)
+        {
+            throw new InvalidOperationException($"Missing value for {name}.");
+        }
+
+        index++;
+        return args[index];
+    }
+
+    public static ulong ParseNetworkId(string text)
+    {
+        var span = text.AsSpan().Trim();
+        var hasHexPrefix = false;
+        if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            hasHexPrefix = true;
+            span = span.Slice(2);
+        }
+
+        if (span.Length == 0)
+        {
+            throw new InvalidOperationException("Invalid --network value.");
+        }
+
+        var treatAsHex = hasHexPrefix || span.Length == 16 || ContainsHexLetters(span);
+        if (treatAsHex)
+        {
+            if (!IsHex(span))
+            {
+                throw new InvalidOperationException("Invalid --network value.");
+            }
+
+            return ulong.Parse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+
+        return ulong.Parse(span, NumberStyles.None, CultureInfo.InvariantCulture);
+    }
+
+    public static (string Host, int Port) ParseHostPort(string value)
+    {
+        try
+        {
+            var uri = new Uri("http://" + value);
+            if (string.IsNullOrWhiteSpace(uri.Host) || uri.Port is < 1 or > ushort.MaxValue)
+            {
+                throw new InvalidOperationException("Invalid endpoint.");
+            }
+
+            return (uri.Host, uri.Port);
+        }
+        catch (UriFormatException)
+        {
+            throw new InvalidOperationException("Invalid endpoint format. Expected host:port.");
+        }
+    }
+
+    public static IPEndPoint ParseIpEndpoint(string value)
+    {
+        var (host, port) = ParseHostPort(value);
+        if (!IPAddress.TryParse(host, out var ip))
+        {
+            throw new InvalidOperationException("Invalid --advertise value (expected IP[:port]).");
+        }
+
+        return new IPEndPoint(ip, port);
+    }
+
+    public static (ulong NodeId, IPEndPoint Endpoint) ParsePeer(string value)
+    {
+        var at = value.IndexOf('@', StringComparison.Ordinal);
+        if (at <= 0 || at == value.Length - 1)
+        {
+            throw new InvalidOperationException("Invalid --peer value (expected nodeId@ip:port).");
+        }
+
+        var nodeIdText = value.Substring(0, at);
+        var endpointText = value.Substring(at + 1);
+
+        var nodeId = ParseNodeId(nodeIdText);
+        var endpoint = ParseIpEndpoint(endpointText);
+        return (nodeId, endpoint);
+    }
+
+    public static ulong ParseNodeId(string text)
+    {
+        var span = text.AsSpan().Trim();
+        var hasHexPrefix = false;
+        if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            hasHexPrefix = true;
+            span = span.Slice(2);
+        }
+
+        if (span.Length == 0)
+        {
+            throw new InvalidOperationException("Invalid nodeId.");
+        }
+
+        var treatAsHex = hasHexPrefix || span.Length == 10 || ContainsHexLetters(span);
+        if (treatAsHex)
+        {
+            if (!IsHex(span))
+            {
+                throw new InvalidOperationException("Invalid nodeId.");
+            }
+
+            var parsed = ulong.Parse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            if (parsed == 0 || parsed > NodeId.MaxValue)
+            {
+                throw new InvalidOperationException("Invalid nodeId.");
+            }
+
+            return parsed;
+        }
+
+        var parsedDec = ulong.Parse(span, NumberStyles.None, CultureInfo.InvariantCulture);
+        if (parsedDec == 0 || parsedDec > NodeId.MaxValue)
+        {
+            throw new InvalidOperationException("Invalid nodeId.");
+        }
+
+        return parsedDec;
+    }
+
+    public static (IPAddress Address, ulong NodeId) ParseIpMapping(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException("Invalid --map-ip value.");
+        }
+
+        var equals = value.IndexOf('=', StringComparison.Ordinal);
+        if (equals <= 0 || equals == value.Length - 1)
+        {
+            throw new InvalidOperationException("Invalid --map-ip value (expected ip=nodeId).");
+        }
+
+        var ipText = value.Substring(0, equals);
+        var nodeIdText = value.Substring(equals + 1);
+
+        if (!IPAddress.TryParse(ipText, out var ip))
+        {
+            throw new InvalidOperationException("Invalid --map-ip value (expected ip=nodeId).");
+        }
+
+        var nodeId = ParseNodeId(nodeIdText);
+        return (ip, nodeId);
+    }
+
+    private static bool ContainsHexLetters(ReadOnlySpan<char> value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c is >= 'a' and <= 'f' or >= 'A' and <= 'F')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsHex(ReadOnlySpan<char> value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (c is >= '0' and <= '9')
+            {
+                continue;
+            }
+
+            if (c is >= 'a' and <= 'f')
+            {
+                continue;
+            }
+
+            if (c is >= 'A' and <= 'F')
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+}
+
