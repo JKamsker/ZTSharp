@@ -93,7 +93,7 @@ internal sealed class NodePeerService
     private static string BuildPeerFileKey(ulong networkId, ulong peerNodeId)
         => $"{NodeStoreKeys.PeersDirectory}/{networkId}/{peerNodeId}.peer";
 
-    private static string BuildPeersNetworkPrefix(ulong networkId) => $"{NodeStoreKeys.PeersDirectory}/{networkId}";
+    private static string BuildPeersNetworkPrefix(ulong networkId) => $"{NodeStoreKeys.PeersDirectory}/{networkId}/";
 
     private static bool TryParsePeerKey(ReadOnlySpan<char> prefix, string key, out ulong peerNodeId)
     {
@@ -103,7 +103,7 @@ internal sealed class NodePeerService
             return false;
         }
 
-        var suffix = key.AsSpan(prefix.Length).TrimStart('/');
+        var suffix = key.AsSpan(prefix.Length);
         if (!suffix.EndsWith(".peer", StringComparison.Ordinal))
         {
             return false;
