@@ -16,9 +16,12 @@ internal static class StateStorePrefixNormalization
         }
 
         var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Any(part => part == "." || part == ".."))
+        for (var i = 0; i < parts.Length; i++)
         {
-            throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
+            if (parts[i] is "." or "..")
+            {
+                throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
+            }
         }
 
         return string.Join('/', parts);
