@@ -100,7 +100,7 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
                 {
                     await Task.WhenAll(_connectionTasks.ToArray()).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
                 {
                 }
             }
@@ -118,7 +118,7 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         var overlayClient = accepted;
         using var localClient = new SystemTcpClient { NoDelay = true };
 
-        CancellationTokenSource? bridgeCts = null;
+        using var bridgeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Stream? localStream = null;
         Stream? overlayStream = null;
         Task? overlayToLocal = null;
@@ -131,7 +131,6 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
             localStream = localClient.GetStream();
             overlayStream = overlayClient.GetStream();
 
-            bridgeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var bridgeToken = bridgeCts.Token;
 
 #pragma warning disable CA2025 // Streams are disposed after the copy tasks complete.
@@ -149,15 +148,12 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         }
         finally
         {
-            if (bridgeCts is not null)
+            try
             {
-                try
-                {
-                    await bridgeCts.CancelAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
+                await bridgeCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
             }
 
             if (overlayToLocal is not null || localToOverlay is not null)
@@ -177,27 +173,14 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
 
             if (overlayStream is not null)
             {
-                try
-                {
-                    await overlayStream.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
+                await DisposeStreamQuietlyAsync(overlayStream).ConfigureAwait(false);
             }
 
             if (localStream is not null)
             {
-                try
-                {
-                    await localStream.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
+                await DisposeStreamQuietlyAsync(localStream).ConfigureAwait(false);
             }
 
-            bridgeCts?.Dispose();
             await overlayClient.DisposeAsync().ConfigureAwait(false);
         }
     }
@@ -212,6 +195,17 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         {
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
+        {
+        }
+    }
+
+    private static async ValueTask DisposeStreamQuietlyAsync(Stream stream)
+    {
+        try
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
         {
         }
     }
