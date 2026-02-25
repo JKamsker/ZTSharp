@@ -4,7 +4,7 @@
 - [x] Normalize formatting (indentation, separators, ASCII punctuation)
 - [x] Convert Phase 0-2 items to checkboxes
 - [x] Convert Phase 3-5 items to checkboxes
-- [ ] Convert Phase 6-7 items to checkboxes
+- [x] Convert Phase 6-7 items to checkboxes
 
 ## Summary
 
@@ -473,8 +473,8 @@ Files
 
 Changes
 
-- Add ExecuteWhileRunningAsync(...) on NodeLifecycleService that holds _stateLock for the duration of an operation.
-- Update NodeCore.JoinNetworkAsync/LeaveNetworkAsync/SendFrameAsync/... to use this wrapper so StopAsync cannot interleave and leave partial registrations.
+- [ ] Add `ExecuteWhileRunningAsync(...)` on `NodeLifecycleService` that holds `_stateLock` for the duration of an operation.
+- [ ] Update `NodeCore.JoinNetworkAsync/LeaveNetworkAsync/SendFrameAsync/...` to use this wrapper so `StopAsync` cannot interleave and leave partial registrations.
 
 ### 6.2 Isolate user callbacks so receive loop can't be killed
 
@@ -486,9 +486,9 @@ Files
 
 Changes
 
-- Wrap _onRawFrameReceived and _onFrameReceived in try/catch; publish a fault event/log and continue.
-- In OsUdpNodeTransport.DispatchFrameAsync, catch per-subscriber exception and continue.
-- In OsUdpReceiveLoop.RunAsync, wrap _dispatchFrameAsync call to prevent loop death.
+- [ ] Wrap `_onRawFrameReceived` and `_onFrameReceived` in try/catch; publish a fault event/log and continue.
+- [ ] In `OsUdpNodeTransport.DispatchFrameAsync`, catch per-subscriber exception and continue.
+- [ ] In `OsUdpReceiveLoop.RunAsync`, wrap `_dispatchFrameAsync` call to prevent loop death.
 
 ### 6.3 Peer discovery protocol: avoid false positives + spoof mismatch
 
@@ -499,8 +499,8 @@ Files
 
 Changes
 
-- Require payload length exactly PayloadLength for discovery frames.
-- Require discoveredNodeId == sourceNodeId before registering, otherwise ignore.
+- [ ] Require payload length exactly `PayloadLength` for discovery frames.
+- [ ] Require `discoveredNodeId == sourceNodeId` before registering, otherwise ignore.
 
 ### 6.4 Overlay TCP: local node id capture + handshake data loss + bounded queues
 
@@ -512,10 +512,10 @@ Files
 
 Changes
 
-- Remove captured _localNodeId; read node.NodeId.Value dynamically (or throw if NodeId==0 to force Start-before-use).
-- Allow Data frames arriving before _connected to be buffered if they match the pending connection tuple.
-- Make accept queue bounded (capacity 128, DropWrite).
-- Make incoming buffer bounded (capacity 1024 segments, DropWrite) and enforce max frame payload length (reject oversized).
+- [ ] Remove captured `_localNodeId`; read `node.NodeId.Value` dynamically (or throw if NodeId==0 to force Start-before-use).
+- [ ] Allow Data frames arriving before `_connected` to be buffered if they match the pending connection tuple.
+- [ ] Make accept queue bounded (capacity 128, DropWrite).
+- [ ] Make incoming buffer bounded (capacity 1024 segments, DropWrite) and enforce max frame payload length (reject oversized).
 
 ### 6.5 ZtUdpClient: fix "SendTo broadcasts to everyone" (protocol v2) + bounded receive + unsubscribe
 
@@ -525,14 +525,14 @@ File
 
 Changes
 
-- Introduce UDP frame version 2 that includes destinationNodeId (ulong LE) in header:
-    - v2 header: [ver=2][type=1][srcPort u16be][dstPort u16be][dstNodeId u64le] + payload
-- Send v2 frames by default.
-- Receive: parse v2 and require dstNodeId == localNodeId and dstPort == localPort.
-- Back-compat: still parse v1 frames (treat as broadcast, same as old behavior) for mixed-version scenarios.
-- Connected-mode filtering: if ConnectAsync used, only deliver datagrams from the connected (nodeId, port) pair.
-- Make _incoming bounded (1024, DropWrite) so "drop if consumer can't keep up" is real.
-- Always unsubscribe handler on dispose (ignore ownsConnection for event unsubscription to avoid leaks).
+- [ ] Introduce UDP frame version 2 that includes destinationNodeId (ulong LE) in header:
+  - [ ] v2 header: [ver=2][type=1][srcPort u16be][dstPort u16be][dstNodeId u64le] + payload
+- [ ] Send v2 frames by default.
+- [ ] Receive: parse v2 and require dstNodeId == localNodeId and dstPort == localPort.
+- [ ] Back-compat: still parse v1 frames (treat as broadcast, same as old behavior) for mixed-version scenarios.
+- [ ] Connected-mode filtering: if ConnectAsync used, only deliver datagrams from the connected (nodeId, port) pair.
+- [ ] Make `_incoming` bounded (1024, DropWrite) so "drop if consumer can't keep up" is real.
+- [ ] Always unsubscribe handler on dispose (ignore ownsConnection for event unsubscription to avoid leaks).
 
 ### 6.6 Fix ActiveTaskSet + forwarder disposal waits
 
@@ -543,7 +543,7 @@ Files
 
 Changes
 
-- ActiveTaskSet.WaitAsync: never return early due to empty snapshot; honor cancellation by throwing (or return, but ensure disposal sites don't pass already-canceled token when they intend to wait).
+- [ ] ActiveTaskSet.WaitAsync: never return early due to empty snapshot; honor cancellation by throwing (or return, but ensure disposal sites don't pass already-canceled token when they intend to wait).
 
 ### 6.7 Validate codec inputs on decode
 
@@ -560,16 +560,16 @@ File
 
 Changes
 
-- Only record cancellations for timers that actually exist; cap/prune cancelled set to prevent unbounded growth.
+- [ ] Only record cancellations for timers that actually exist; cap/prune cancelled set to prevent unbounded growth.
 
 ### Tests (Phase 6)
 
-- Overlay TCP before start: constructing listener/client pre-start should either work (dynamic NodeId) or throw deterministically; test chosen behavior.
-- Overlay TCP handshake data loss: server write immediately after accept must be received by client.
-- ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
-- OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
-- Subscriber exception: throwing callback must not kill OS-UDP receive loop.
-- ActiveTaskSet wait correctness under concurrency.
+- [ ] Overlay TCP before start: constructing listener/client pre-start should either work (dynamic NodeId) or throw deterministically; test chosen behavior.
+- [ ] Overlay TCP handshake data loss: server write immediately after accept must be received by client.
+- [ ] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
+- [ ] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
+- [ ] Subscriber exception: throwing callback must not kill OS-UDP receive loop.
+- [ ] ActiveTaskSet wait correctness under concurrency.
 
 Acceptance: legacy overlay stack no longer has the identified correctness holes; receive loops stay alive under callback faults; queues are bounded.
 
@@ -577,17 +577,17 @@ Acceptance: legacy overlay stack no longer has the identified correctness holes;
 
 ## Phase 7 - Docs + final validation
 
-1. Update docs/PERSISTENCE.md to reflect:
-    - stricter key rules (no rooted paths/colon),
-    - alias behavior (planet/roots) and migration behavior,
-    - atomic write guarantees (best-effort).
-2. If overlay UDP frame v2 is introduced, document it briefly in docs/USAGE.md or a legacy section.
+- [ ] Update `docs/PERSISTENCE.md` to reflect:
+  - [ ] Stricter key rules (no rooted paths/colon).
+  - [ ] Alias behavior (planet/roots) and migration behavior.
+  - [ ] Atomic write guarantees (best-effort).
+- [ ] If overlay UDP frame v2 is introduced, document it briefly in `docs/USAGE.md` (or a legacy section).
 
 Final acceptance:
 
-- dotnet format --verify-no-changes passes.
-- dotnet test -c Release passes on all OS (CI matrix).
-- No new analyzer warnings (warnings-as-errors remains clean).
+- [ ] `dotnet format --verify-no-changes` passes.
+- [ ] `dotnet test -c Release` passes on all OS (CI matrix).
+- [ ] No new analyzer warnings (warnings-as-errors remains clean).
 
 ---
 
