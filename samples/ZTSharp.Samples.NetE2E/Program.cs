@@ -39,14 +39,14 @@ try
 {
     await using var node1 = new Node(new NodeOptions
     {
-        StateRootPath = Path.Combine(Path.GetTempPath(), "zt-sample-node-" + Guid.NewGuid()),
+        StateRootPath = SampleDefaults.CreateGuidSuffixedTempPath("zt-sample-node-"),
         StateStore = new MemoryStateStore(),
         TransportMode = TransportMode.OsUdp
     });
 
     await using var node2 = new Node(new NodeOptions
     {
-        StateRootPath = Path.Combine(Path.GetTempPath(), "zt-sample-node-" + Guid.NewGuid()),
+        StateRootPath = SampleDefaults.CreateGuidSuffixedTempPath("zt-sample-node-"),
         StateStore = new MemoryStateStore(),
         TransportMode = TransportMode.OsUdp
     });
