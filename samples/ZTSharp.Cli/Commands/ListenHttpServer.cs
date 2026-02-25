@@ -76,13 +76,7 @@ internal sealed class ListenHttpServer
         }
         finally
         {
-            try
-            {
-                await overlayStream.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            await overlayStream.DisposeAsync().ConfigureAwait(false);
         }
     }
 }
