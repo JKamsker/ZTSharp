@@ -60,8 +60,8 @@ try
     var node1Identity = await node1.GetIdentityAsync();
     var node2Identity = await node2.GetIdentityAsync();
 
-    var node1IdText = node1Identity.NodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
-    var node2IdText = node2Identity.NodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
+    var node1IdText = node1Identity.NodeId.ToHexString();
+    var node2IdText = node2Identity.NodeId.ToHexString();
     Console.WriteLine($"Node1: {node1IdText}");
     Console.WriteLine($"Node2: {node2IdText}");
 

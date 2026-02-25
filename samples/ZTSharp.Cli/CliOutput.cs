@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using ZTSharp;
 
@@ -6,7 +5,7 @@ namespace ZTSharp.Cli;
 
 internal static class CliOutput
 {
-    public static string FormatNodeIdHost(NodeId nodeId) => nodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
+    public static string FormatNodeIdHost(NodeId nodeId) => nodeId.ToHexString();
 
     public static void WriteNodeId(NodeId nodeId)
     {

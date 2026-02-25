@@ -9,6 +9,8 @@ public readonly record struct NodeId(ulong Value)
 {
     public const ulong MaxValue = 0xFFFFFFFFFFUL;
 
+    public string ToHexString() => Value.ToString("x10", CultureInfo.InvariantCulture);
+
     public static bool TryParse(string? value, out NodeId nodeId)
     {
         nodeId = default;
