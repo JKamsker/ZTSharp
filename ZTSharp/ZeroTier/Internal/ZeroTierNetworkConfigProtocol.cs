@@ -7,9 +7,9 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierNetworkConfigProtocol
 {
-    private const int IndexPayload = ZeroTierPacketHeader.Length;
+    private const int IndexPayload = ZeroTierPacketHeader.IndexPayload;
 
-    private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
+    private const int OkIndexInReVerb = ZeroTierPacketHeader.IndexPayload;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
 
