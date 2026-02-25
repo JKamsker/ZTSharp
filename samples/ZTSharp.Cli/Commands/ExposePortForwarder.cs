@@ -94,13 +94,7 @@ internal sealed class ExposePortForwarder
             }
             finally
             {
-                try
-                {
-                    await localStream.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
+                await localStream.DisposeAsync().ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -113,13 +107,7 @@ internal sealed class ExposePortForwarder
         {
             localClient.Dispose();
 
-            try
-            {
-                await overlayStream.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            await overlayStream.DisposeAsync().ConfigureAwait(false);
         }
     }
 }
