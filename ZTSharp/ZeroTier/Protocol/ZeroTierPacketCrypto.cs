@@ -14,10 +14,6 @@ internal static class ZeroTierPacketCrypto
     private const int DiscardedKeystreamBytes = 64;
     private const int MacLength = 8;
 
-    internal const int IndexFlags = 18;
-    internal const int IndexMac = 19;
-    internal const int IndexVerb = 27;
-
     private const byte CipherC25519Poly1305None = 0;
     private const byte CipherC25519Poly1305Salsa2012 = 1;
     internal const byte CipherAesGmacSiv = 3;
@@ -47,19 +43,19 @@ internal static class ZeroTierPacketCrypto
         Span<byte> mangledKey = stackalloc byte[MangledKeyLength];
         MangleKey(key.Slice(0, KeyLength), packet, mangledKey);
 
-        var payloadLength = packet.Length - IndexVerb;
+        var payloadLength = packet.Length - ZeroTierPacketHeader.IndexVerb;
         var keystreamLength = DiscardedKeystreamBytes + (encryptPayload ? payloadLength : 0);
         var keystream = new byte[keystreamLength];
         ZeroTierSalsa20.GenerateKeyStream12(mangledKey, packet.Slice(0, 8), keystream);
 
         if (encryptPayload)
         {
-            XorInPlace(packet.Slice(IndexVerb, payloadLength), keystream.AsSpan(DiscardedKeystreamBytes));
+            XorInPlace(packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength), keystream.AsSpan(DiscardedKeystreamBytes));
         }
 
         Span<byte> tag = stackalloc byte[16];
-        ComputePoly1305Tag(packet.Slice(IndexVerb, payloadLength), keystream.AsSpan(0, MacKeyLength), tag);
-        tag.Slice(0, MacLength).CopyTo(packet.Slice(IndexMac, MacLength));
+        ComputePoly1305Tag(packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength), keystream.AsSpan(0, MacKeyLength), tag);
+        tag.Slice(0, MacLength).CopyTo(packet.Slice(ZeroTierPacketHeader.IndexMac, MacLength));
     }
 
     public static ReadOnlySpan<byte> SelectOutboundKey(ReadOnlySpan<byte> key, byte remoteProtocolVersion)
@@ -89,7 +85,7 @@ internal static class ZeroTierPacketCrypto
             throw new ArgumentException($"Key must be at least {KeyLength} bytes.", nameof(key));
         }
 
-        var cipher = (byte)((packet[IndexFlags] & 0x38) >> 3);
+        var cipher = (byte)((packet[ZeroTierPacketHeader.IndexFlags] & 0x38) >> 3);
         if (cipher == CipherAesGmacSiv)
         {
             if (key.Length < SymmetricKeyLength)
@@ -108,16 +104,16 @@ internal static class ZeroTierPacketCrypto
         Span<byte> mangledKey = stackalloc byte[MangledKeyLength];
         MangleKey(key.Slice(0, KeyLength), packet, mangledKey);
 
-        var payloadLength = packet.Length - IndexVerb;
+        var payloadLength = packet.Length - ZeroTierPacketHeader.IndexVerb;
         var keystreamLength = DiscardedKeystreamBytes + (cipher == CipherC25519Poly1305Salsa2012 ? payloadLength : 0);
         var keystream = new byte[keystreamLength];
         ZeroTierSalsa20.GenerateKeyStream12(mangledKey, packet.Slice(0, 8), keystream);
 
         Span<byte> tag = stackalloc byte[16];
-        ComputePoly1305Tag(packet.Slice(IndexVerb, payloadLength), keystream.AsSpan(0, MacKeyLength), tag);
+        ComputePoly1305Tag(packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength), keystream.AsSpan(0, MacKeyLength), tag);
 
         if (!CryptographicOperations.FixedTimeEquals(
-                packet.Slice(IndexMac, MacLength),
+                packet.Slice(ZeroTierPacketHeader.IndexMac, MacLength),
                 tag.Slice(0, MacLength)))
         {
             return false;
@@ -125,7 +121,7 @@ internal static class ZeroTierPacketCrypto
 
         if (cipher == CipherC25519Poly1305Salsa2012)
         {
-            XorInPlace(packet.Slice(IndexVerb, payloadLength), keystream.AsSpan(DiscardedKeystreamBytes));
+            XorInPlace(packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength), keystream.AsSpan(DiscardedKeystreamBytes));
         }
 
         return true;
@@ -133,7 +129,7 @@ internal static class ZeroTierPacketCrypto
 
     internal static void SetCipher(Span<byte> packet, byte cipher)
     {
-        var flags = packet[IndexFlags];
+        var flags = packet[ZeroTierPacketHeader.IndexFlags];
         flags = (byte)((flags & 0xC7) | ((cipher << 3) & 0x38));
         if (cipher == CipherC25519Poly1305Salsa2012)
         {
@@ -144,7 +140,7 @@ internal static class ZeroTierPacketCrypto
             flags &= unchecked((byte)~ZeroTierPacketHeader.FlagEncryptedDeprecated);
         }
 
-        packet[IndexFlags] = flags;
+        packet[ZeroTierPacketHeader.IndexFlags] = flags;
     }
 
     private static void MangleKey(ReadOnlySpan<byte> key, ReadOnlySpan<byte> packet, Span<byte> mangledKey)
@@ -169,7 +165,7 @@ internal static class ZeroTierPacketCrypto
             mangledKey[i] = (byte)(key[i] ^ packet[i]);
         }
 
-        mangledKey[18] = (byte)(key[18] ^ (packet[IndexFlags] & 0xF8));
+        mangledKey[18] = (byte)(key[18] ^ (packet[ZeroTierPacketHeader.IndexFlags] & 0xF8));
         mangledKey[19] = (byte)(key[19] ^ (packet.Length & 0xFF));
         mangledKey[20] = (byte)(key[20] ^ ((packet.Length >> 8) & 0xFF));
 

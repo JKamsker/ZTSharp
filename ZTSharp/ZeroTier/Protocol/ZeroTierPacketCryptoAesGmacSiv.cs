@@ -28,7 +28,7 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
         Span<byte> k1 = stackalloc byte[ZeroTierPacketCrypto.KeyLength];
         DeriveAesGmacSivKeys(key48, k0, k1);
 
-        var payloadLength = packet.Length - ZeroTierPacketCrypto.IndexVerb;
+        var payloadLength = packet.Length - ZeroTierPacketHeader.IndexVerb;
 
         Span<byte> nonce = stackalloc byte[AesGmacSivNonceLength];
         packet.Slice(0, 8).CopyTo(nonce);
@@ -36,8 +36,8 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
 
         var authData = new byte[AesGmacSivAadPaddedLength + payloadLength];
         packet.Slice(8, 10).CopyTo(authData.AsSpan(0, 10));
-        authData[10] = (byte)(packet[ZeroTierPacketCrypto.IndexFlags] & 0xF8);
-        packet.Slice(ZeroTierPacketCrypto.IndexVerb, payloadLength).CopyTo(authData.AsSpan(AesGmacSivAadPaddedLength));
+        authData[10] = (byte)(packet[ZeroTierPacketHeader.IndexFlags] & 0xF8);
+        packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength).CopyTo(authData.AsSpan(AesGmacSivAadPaddedLength));
 
         Span<byte> gmacTag = stackalloc byte[AesGmacSivTagLength];
         ComputeGmacTag(k0, nonce, authData, gmacTag);
@@ -59,12 +59,12 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
         aes.EncryptEcb(ivMac, encryptedIvMac, PaddingMode.None);
 
         encryptedIvMac.Slice(0, 8).CopyTo(packet.Slice(0, 8));
-        encryptedIvMac.Slice(8, 8).CopyTo(packet.Slice(ZeroTierPacketCrypto.IndexMac, 8));
+        encryptedIvMac.Slice(8, 8).CopyTo(packet.Slice(ZeroTierPacketHeader.IndexMac, 8));
 
         Span<byte> ctrIv = stackalloc byte[AesBlockLength];
         encryptedIvMac.CopyTo(ctrIv);
         ctrIv[12] &= 0x7F;
-        AesCtrXorInPlace(aes, ctrIv, packet.Slice(ZeroTierPacketCrypto.IndexVerb, payloadLength));
+        AesCtrXorInPlace(aes, ctrIv, packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength));
     }
 
     public static bool Dearmor(Span<byte> packet, ReadOnlySpan<byte> key48)
@@ -82,7 +82,7 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
 
         Span<byte> encryptedIvMac = stackalloc byte[AesBlockLength];
         packet.Slice(0, 8).CopyTo(encryptedIvMac);
-        packet.Slice(ZeroTierPacketCrypto.IndexMac, 8).CopyTo(encryptedIvMac.Slice(8, 8));
+        packet.Slice(ZeroTierPacketHeader.IndexMac, 8).CopyTo(encryptedIvMac.Slice(8, 8));
 
         using var aes = Aes.Create();
         aes.Key = k1.ToArray();
@@ -94,8 +94,8 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
         encryptedIvMac.CopyTo(ctrIv);
         ctrIv[12] &= 0x7F;
 
-        var payloadLength = packet.Length - ZeroTierPacketCrypto.IndexVerb;
-        AesCtrXorInPlace(aes, ctrIv, packet.Slice(ZeroTierPacketCrypto.IndexVerb, payloadLength));
+        var payloadLength = packet.Length - ZeroTierPacketHeader.IndexVerb;
+        AesCtrXorInPlace(aes, ctrIv, packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength));
 
         Span<byte> nonce = stackalloc byte[AesGmacSivNonceLength];
         ivMac.Slice(0, 8).CopyTo(nonce);
@@ -103,8 +103,8 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
 
         var authData = new byte[AesGmacSivAadPaddedLength + payloadLength];
         packet.Slice(8, 10).CopyTo(authData.AsSpan(0, 10));
-        authData[10] = (byte)(packet[ZeroTierPacketCrypto.IndexFlags] & 0xF8);
-        packet.Slice(ZeroTierPacketCrypto.IndexVerb, payloadLength).CopyTo(authData.AsSpan(AesGmacSivAadPaddedLength));
+        authData[10] = (byte)(packet[ZeroTierPacketHeader.IndexFlags] & 0xF8);
+        packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength).CopyTo(authData.AsSpan(AesGmacSivAadPaddedLength));
 
         Span<byte> gmacTag = stackalloc byte[AesGmacSivTagLength];
         ComputeGmacTag(k0, nonce, authData, gmacTag);
