@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
@@ -80,7 +79,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         var ipv4Packet = ipPacket;
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var packet = ZeroTierExtFramePacketBuilder.BuildIpv4Packet(
             packetId,
             destination: _remoteNodeId,
@@ -352,7 +351,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
 
     private Task SendExtFrameAsync(ushort etherType, ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
     {
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var packet = BuildExtFramePacket(packetId, etherType, frame);
 
         var directEndpoints = _directEndpoints.Endpoints;
@@ -412,13 +411,6 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
 
         _disposed = true;
         await _udp.DisposeAsync().ConfigureAwait(false);
-    }
-
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
 
 }
