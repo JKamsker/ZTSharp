@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -107,103 +106,11 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
             }
         }
 
-        if (TryParseNodeId(host, out var parsed))
+        if (NodeId.TryParse(host, out var parsed))
         {
-            return parsed;
+            return parsed.Value;
         }
 
         throw new HttpRequestException($"Could not resolve host '{host}' to a managed node id.");
     }
-
-    private static bool TryParseNodeId(string value, out ulong nodeId)
-    {
-        nodeId = 0;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var trimmed = value.AsSpan().Trim();
-        var hasHexPrefix = false;
-        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            hasHexPrefix = true;
-            trimmed = trimmed.Slice(2);
-        }
-
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        var treatAsHex = hasHexPrefix || trimmed.Length == 10 || ContainsHexLetters(trimmed);
-        if (treatAsHex)
-        {
-            if (!IsHex(trimmed))
-            {
-                return false;
-            }
-
-            if (!ulong.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var parsed) ||
-                parsed == 0 ||
-                parsed > NodeId.MaxValue)
-            {
-                return false;
-            }
-
-            nodeId = parsed;
-            return true;
-        }
-
-        if (!ulong.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedDec) ||
-            parsedDec == 0 ||
-            parsedDec > NodeId.MaxValue)
-        {
-            return false;
-        }
-
-        nodeId = parsedDec;
-        return true;
-    }
-
-    private static bool ContainsHexLetters(ReadOnlySpan<char> value)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (c is >= 'a' and <= 'f' or >= 'A' and <= 'F')
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsHex(ReadOnlySpan<char> value)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (c is >= '0' and <= '9')
-            {
-                continue;
-            }
-
-            if (c is >= 'a' and <= 'f')
-            {
-                continue;
-            }
-
-            if (c is >= 'A' and <= 'F')
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
 }
