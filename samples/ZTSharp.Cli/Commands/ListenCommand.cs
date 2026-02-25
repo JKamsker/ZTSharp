@@ -140,13 +140,7 @@ internal static class ListenCommand
         }
         finally
         {
-            try
-            {
-                await listenCts.CancelAsync().ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            await listenCts.CancelAsync().ConfigureAwait(false);
 
             if (acceptors is not null && acceptors.Count != 0)
             {
