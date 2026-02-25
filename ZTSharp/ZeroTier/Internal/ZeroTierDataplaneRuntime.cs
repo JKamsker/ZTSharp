@@ -10,8 +10,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 {
-    private const int IndexVerb = 27;
-
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
@@ -36,8 +34,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZeroTierDataplaneRouteRegistry _routes;
     private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
     private readonly ZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
+    private readonly ZeroTierDataplaneRxLoops _rxLoops;
 
-    private int _traceRxRemaining = 200;
     private bool _disposed;
 
     public ZeroTierDataplaneRuntime(
@@ -115,9 +113,10 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localManagedIpsV6: _localManagedIpsV6);
         _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip);
         _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets);
+        _rxLoops = new ZeroTierDataplaneRxLoops(_udp, _rootNodeId, _rootKey, _localIdentity.NodeId, _rootClient, _peerDatagrams);
 
-        _dispatcherLoop = Task.Run(DispatcherLoopAsync, CancellationToken.None);
-        _peerLoop = Task.Run(PeerLoopAsync, CancellationToken.None);
+        _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
+        _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);
     }
 
     public NodeId NodeId => _localIdentity.NodeId;
@@ -250,97 +249,6 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         _cts.Dispose();
         _peerSecurity.Dispose();
-    }
-
-    private async Task DispatcherLoopAsync()
-    {
-        var token = _cts.Token;
-        while (!token.IsCancellationRequested)
-        {
-            ZeroTierUdpDatagram datagram;
-            try
-            {
-                datagram = await _udp.ReceiveAsync(token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (ObjectDisposedException)
-            {
-                return;
-            }
-
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
-            {
-                continue;
-            }
-
-            if (decoded.Header.Destination != _localIdentity.NodeId)
-            {
-                continue;
-            }
-
-            if (ZeroTierTrace.Enabled && _traceRxRemaining > 0)
-            {
-                _traceRxRemaining--;
-                ZeroTierTrace.WriteLine(
-                    $"[zerotier] RX raw: src={decoded.Header.Source} dst={decoded.Header.Destination} cipher={decoded.Header.CipherSuite} flags=0x{decoded.Header.Flags:x2} verbRaw=0x{decoded.Header.VerbRaw:x2} via {datagram.RemoteEndPoint}.");
-            }
-
-            if (decoded.Header.Source == _rootNodeId)
-            {
-                if (!ZeroTierPacketCrypto.Dearmor(packetBytes, _rootKey))
-                {
-                    continue;
-                }
-
-                if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-                {
-                    if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
-                    {
-                        continue;
-                    }
-
-                    packetBytes = uncompressed;
-                }
-
-                var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
-                var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
-
-                _rootClient.TryDispatchResponse(verb, payload);
-                continue;
-            }
-
-            if (!_peerQueue.Writer.TryWrite(datagram))
-            {
-                return;
-            }
-        }
-    }
-
-    private async Task PeerLoopAsync()
-    {
-        var token = _cts.Token;
-        while (!token.IsCancellationRequested)
-        {
-            ZeroTierUdpDatagram datagram;
-            try
-            {
-                datagram = await _peerQueue.Reader.ReadAsync(token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (ChannelClosedException)
-            {
-                return;
-            }
-
-            await _peerDatagrams.ProcessAsync(datagram, token).ConfigureAwait(false);
-        }
     }
 
     private Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
