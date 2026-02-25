@@ -103,7 +103,9 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
                 throw new InvalidOperationException("Socket is already initialized.");
             }
 
-            var normalized = await NormalizeLocalEndpointAsync(ip, cancellationToken).ConfigureAwait(false);
+            var normalized = await ManagedSocketEndpointNormalizer
+                .NormalizeLocalEndpointAsync(_zt, AddressFamily, ip, cancellationToken)
+                .ConfigureAwait(false);
 
             if (SocketType == SocketType.Dgram)
             {
@@ -232,7 +234,9 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
             var local = _localEndPoint;
             if (local is not null)
             {
-                local = await NormalizeLocalEndpointAsync(local, cancellationToken).ConfigureAwait(false);
+                local = await ManagedSocketEndpointNormalizer
+                    .NormalizeLocalEndpointAsync(_zt, AddressFamily, local, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             Stream connected;
@@ -391,26 +395,5 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
         {
             throw new NotSupportedException("Operation is only supported on UDP datagram sockets.");
         }
-    }
-
-    private async ValueTask<IPEndPoint> NormalizeLocalEndpointAsync(IPEndPoint localEndPoint, CancellationToken cancellationToken)
-    {
-        var address = localEndPoint.Address;
-
-        if (AddressFamily == AddressFamily.InterNetwork && address.Equals(IPAddress.Any))
-        {
-            await _zt.JoinAsync(cancellationToken).ConfigureAwait(false);
-            address = _zt.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork)
-                      ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
-        }
-
-        if (AddressFamily == AddressFamily.InterNetworkV6 && address.Equals(IPAddress.IPv6Any))
-        {
-            await _zt.JoinAsync(cancellationToken).ConfigureAwait(false);
-            address = _zt.ManagedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6)
-                      ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
-        }
-
-        return new IPEndPoint(address, localEndPoint.Port);
     }
 }
