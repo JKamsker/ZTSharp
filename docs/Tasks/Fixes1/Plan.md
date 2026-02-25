@@ -3,7 +3,7 @@
 ## Maintenance (this file)
 - [x] Normalize formatting (indentation, separators, ASCII punctuation)
 - [x] Convert Phase 0-2 items to checkboxes
-- [ ] Convert Phase 3-5 items to checkboxes
+- [x] Convert Phase 3-5 items to checkboxes
 - [ ] Convert Phase 6-7 items to checkboxes
 
 ## Summary
@@ -205,8 +205,8 @@ Files
 
 Changes
 
-- Change ZeroTierUdpDatagram.Payload to byte[] (internal type).
-- Update callers to work on the original array in-place for dearmor/decompress.
+- [ ] Change `ZeroTierUdpDatagram.Payload` to `byte[]` (internal type).
+- [ ] Update callers to work on the original array in-place for dearmor/decompress.
 
 ### 3.2 Bound all dataplane queues and drop instead of killing loops
 
@@ -219,11 +219,11 @@ Files
 
 Decisions
 
-- Capacities:
-    - UDP incoming: 2048 datagrams, DropOldest.
-    - Peer queue: 2048 datagrams, DropOldest.
-    - Per-route incoming: 256 packets, DropOldest.
-- When channel write fails due to completion: exit loop; when due to full: drop and continue.
+- [ ] Capacities:
+  - [ ] UDP incoming: 2048 datagrams, DropOldest.
+  - [ ] Peer queue: 2048 datagrams, DropOldest.
+  - [ ] Per-route incoming: 256 packets, DropOldest.
+- [ ] When channel write fails due to completion: exit loop; when due to full: drop and continue.
 
 ### 3.3 Keep peer loop alive on faults
 
@@ -233,7 +233,7 @@ File
 
 Changes
 
-- Wrap _peerDatagrams.ProcessAsync(...) in try/catch; swallow/log non-cancellation exceptions and continue.
+- [ ] Wrap `_peerDatagrams.ProcessAsync(...)` in try/catch; swallow/log non-cancellation exceptions and continue.
 
 ### 3.4 Avoid ingress HOL blocking on WHOIS
 
@@ -244,17 +244,17 @@ Files
 
 Changes
 
-- Add TryGetPeerKey(...) fast path.
-- For non-HELLO packets where key missing:
-    - kick off background EnsurePeerKeyAsync(peerNodeId) with rate limiting + negative caching,
-    - drop current packet (peer will retransmit).
-- Replace global _peerKeyLock with per-peer in-flight task map:
-    - ConcurrentDictionary<NodeId, Task<byte[]>> _inflightKeys
-    - on failure, remove so retries possible.
-- Add bounded cache + TTL eviction:
-    - Max entries: 4096
-    - TTL: 30 minutes
-    - Negative TTL for failed WHOIS: 30 seconds
+- [ ] Add `TryGetPeerKey(...)` fast path.
+- [ ] For non-HELLO packets where key missing:
+  - [ ] Kick off background `EnsurePeerKeyAsync(peerNodeId)` with rate limiting + negative caching.
+  - [ ] Drop current packet (peer will retransmit).
+- [ ] Replace global `_peerKeyLock` with per-peer in-flight task map:
+  - [ ] `ConcurrentDictionary<NodeId, Task<byte[]>> _inflightKeys`.
+  - [ ] On failure, remove so retries are possible.
+- [ ] Add bounded cache + TTL eviction:
+  - [ ] Max entries: 4096.
+  - [ ] TTL: 30 minutes.
+  - [ ] Negative TTL for failed WHOIS: 30 seconds.
 
 ### 3.5 Harden HELLO handling against CPU DoS
 
@@ -264,8 +264,8 @@ File
 
 Changes
 
-- Reorder: parse minimum identity/public key -> compute shared key -> MAC/auth (Dearmor) -> only then run LocallyValidate().
-- Clamp stored peer protocol version to supported range (<= ZeroTierHelloClient.AdvertisedProtocolVersion).
+- [ ] Reorder: parse minimum identity/public key -> compute shared key -> MAC/auth (Dearmor) -> only then run `LocallyValidate()`.
+- [ ] Clamp stored peer protocol version to supported range (`<= ZeroTierHelloClient.AdvertisedProtocolVersion`).
 
 ### 3.6 Root endpoint filtering (root-relayed mode hardening)
 
@@ -275,8 +275,8 @@ File
 
 Changes
 
-- Pass _rootEndpoint into RxLoops; drop any datagrams not from that endpoint (prevents external injection).
-- Additionally, for "source == rootNodeId" path, require endpoint match before attempting root dearmor.
+- [ ] Pass `_rootEndpoint` into RxLoops; drop any datagrams not from that endpoint (prevents external injection).
+- [ ] Additionally, for `"source == rootNodeId"` path, require endpoint match before attempting root dearmor.
 
 ### 3.7 Fix ResolveNodeId cache bug
 
@@ -286,7 +286,7 @@ File
 
 Changes
 
-- After selecting remoteNodeId, store cache[managedIp] = remoteNodeId (optionally with TTL if using a richer cache).
+- [ ] After selecting remoteNodeId, store `cache[managedIp] = remoteNodeId` (optionally with TTL if using a richer cache).
 
 ### 3.8 IPv6 scoped route key collision
 
@@ -296,16 +296,16 @@ File
 
 Changes
 
-- Reject scoped/link-local addresses (ScopeId != 0) for route keys (throw NotSupportedException) to avoid collisions.
+- [ ] Reject scoped/link-local addresses (`ScopeId != 0`) for route keys (throw `NotSupportedException`) to avoid collisions.
 
 ### Tests (Phase 3)
 
 Add/extend:
 
-- Drop/queue tests: bounded queues don't grow unbounded under flood (use synthetic loops).
-- PeerLoop resilience: inject a peer processor that throws once; loop continues.
-- Root endpoint filtering: spoofed packets from non-root endpoint are dropped before crypto/WHOIS.
-- ResolveNodeId caching: second resolve hits cache (mock gather).
+- [ ] Drop/queue tests: bounded queues don't grow unbounded under flood (use synthetic loops).
+- [ ] PeerLoop resilience: inject a peer processor that throws once; loop continues.
+- [ ] Root endpoint filtering: spoofed packets from non-root endpoint are dropped before crypto/WHOIS.
+- [ ] ResolveNodeId caching: second resolve hits cache (mock gather).
 
 Acceptance: dataplane remains responsive under malformed/flood input; memory bounded; no loop death on single exception.
 
@@ -321,13 +321,13 @@ File
 
 Changes
 
-- Replace _disposed bool with int _disposeState.
-- DisposeAsync:
-    - Interlocked.Exchange guard (idempotent).
-    - Acquire _joinLock then _runtimeLock to avoid deadlock with Join->Runtime order.
-    - Dispose runtime safely.
-    - Dispose semaphores after locks acquired/released (no in-flight releasers).
-- Ensure all public methods call a single ThrowIfDisposed().
+- [ ] Replace `_disposed` bool with `int _disposeState`.
+- [ ] `DisposeAsync`:
+  - [ ] `Interlocked.Exchange` guard (idempotent).
+  - [ ] Acquire `_joinLock` then `_runtimeLock` to avoid deadlock with Join->Runtime order.
+  - [ ] Dispose runtime safely.
+  - [ ] Dispose semaphores after locks acquired/released (no in-flight releasers).
+- [ ] Ensure all public methods call a single `ThrowIfDisposed()`.
 
 ### 4.2 ZeroTierTcpListener dispose actually waits + AcceptAsync throws ObjectDisposedException
 
@@ -338,9 +338,9 @@ Files
 
 Changes
 
-- Fix ActiveTaskSet.WaitAsync snapshot race: if snapshot empty but _tasks not empty, continue looping; do not return early.
-- In ZeroTierTcpListener.DisposeAsync, wait using CancellationToken.None (optionally with a bounded timeout token distinct from _shutdown).
-- Wrap AcceptAsync to translate ChannelClosedException -> ObjectDisposedException.
+- [ ] Fix `ActiveTaskSet.WaitAsync` snapshot race: if snapshot empty but `_tasks` not empty, continue looping; do not return early.
+- [ ] In `ZeroTierTcpListener.DisposeAsync`, wait using `CancellationToken.None` (optionally with a bounded timeout token distinct from `_shutdown`).
+- [ ] Wrap `AcceptAsync` to translate `ChannelClosedException` -> `ObjectDisposedException`.
 
 ### 4.3 Normalize IPAddress.Any/IPv6Any for ListenTcpAsync and BindUdpAsync
 
@@ -351,7 +351,7 @@ Files
 
 Changes
 
-- If caller passes Any/IPv6Any, map to default managed IP of that family (same policy as ManagedSocketEndpointNormalizer).
+- [ ] If caller passes Any/IPv6Any, map to default managed IP of that family (same policy as `ManagedSocketEndpointNormalizer`).
 
 ### 4.4 Reject invalid remote endpoints early
 
@@ -361,7 +361,7 @@ File
 
 Changes
 
-- Reject IPAddress.Any, IPv6Any, multicast, and broadcast (where applicable) with clear exceptions.
+- [ ] Reject `IPAddress.Any`, `IPv6Any`, multicast, and broadcast (where applicable) with clear exceptions.
 
 ### 4.5 Populate ManagedSocket.LocalEndPoint after connect without explicit bind
 
@@ -373,16 +373,16 @@ Files
 
 Changes
 
-- Add internal connect path returning (Stream Stream, IPEndPoint LocalEndpoint).
-- Public ZeroTierSocket.ConnectTcpAsync still returns Stream.
-- ManagedTcpSocketBackend.ConnectAsync uses internal path so _localEndPoint is set to the chosen ephemeral endpoint.
+- [ ] Add internal connect path returning `(Stream Stream, IPEndPoint LocalEndpoint)`.
+- [ ] Public `ZeroTierSocket.ConnectTcpAsync` still returns `Stream`.
+- [ ] `ManagedTcpSocketBackend.ConnectAsync` uses internal path so `_localEndPoint` is set to the chosen ephemeral endpoint.
 
 ### Tests (Phase 4)
 
-- Dispose concurrency: concurrent JoinAsync/ConnectTcpAsync + DisposeAsync does not throw unexpected ObjectDisposedException.
-- Listener dispose: ensure dispose waits for tracked tasks (create a slow accept handler).
-- Any normalization: ListenTcpAsync(IPAddress.Any, port) succeeds post-join.
-- ManagedSocket LocalEndPoint set after connect.
+- [ ] Dispose concurrency: concurrent JoinAsync/ConnectTcpAsync + DisposeAsync does not throw unexpected ObjectDisposedException.
+- [ ] Listener dispose: ensure dispose waits for tracked tasks (create a slow accept handler).
+- [ ] Any normalization: ListenTcpAsync(IPAddress.Any, port) succeeds post-join.
+- [ ] ManagedSocket LocalEndPoint set after connect.
 
 Acceptance: no disposal races; API semantics consistent and predictable.
 
@@ -396,26 +396,25 @@ Files
 
 - ZTSharp/ZeroTier/Internal/ZeroTierPlanetLoader.cs
 - ZTSharp/ZeroTier/Protocol/ZeroTierWorldCodec.cs
-- Add ZTSharp/ZeroTier/Protocol/ZeroTierWorldSignature.cs (or similar helper)
+- ZTSharp/ZeroTier/Protocol/ZeroTierWorldSignature.cs (new helper; name TBD)
 
 Decisions
 
-- MaxWorldBytes = 16384 hard cap for any planet/roots bytes loaded from disk/state.
+- [ ] MaxWorldBytes = 16384 hard cap for any planet/roots bytes loaded from disk/state.
 
 Changes
 
-- ZeroTierWorldCodec.Decode:
-    - Reject inputs > MaxWorldBytes with FormatException.
-- ZeroTierPlanetLoader.Load:
-    - Always decode embedded default first when PlanetSource=EmbeddedDefault.
-    - If state candidate present, decode only if size <= cap and structure valid.
-    - Verify candidate as a valid update of embedded default when possible:
-        - same Type and Id,
-        - Timestamp strictly newer,
-        - signature verifies using embedded default's UpdatesMustBeSignedBy over SerializeForSign(candidate) (sentinel prefix/suffix + world fields
-          excluding signature, matching upstream World::serialize(forSign=true)).
-    - If verification fails, ignore candidate and use embedded default.
-- PlanetSource=FilePath: still enforce size cap + structural validity, but treat as trusted (no chain validation).
+- [ ] `ZeroTierWorldCodec.Decode`:
+  - [ ] Reject inputs `> MaxWorldBytes` with `FormatException`.
+- [ ] `ZeroTierPlanetLoader.Load`:
+  - [ ] Always decode embedded default first when PlanetSource=EmbeddedDefault.
+  - [ ] If state candidate present, decode only if size <= cap and structure valid.
+  - [ ] Verify candidate as a valid update of embedded default when possible:
+    - [ ] Same Type and Id.
+    - [ ] Timestamp strictly newer.
+    - [ ] Signature verifies using embedded default's `UpdatesMustBeSignedBy` over `SerializeForSign(candidate)` (sentinel prefix/suffix + world fields excluding signature, matching upstream `World::serialize(forSign=true)`).
+  - [ ] If verification fails, ignore candidate and use embedded default.
+- [ ] PlanetSource=FilePath: still enforce size cap + structural validity, but treat as trusted (no chain validation).
 
 ### 5.2 Cap network config dictionary total length to prevent OOM
 
@@ -425,12 +424,12 @@ File
 
 Decisions
 
-- MaxNetworkConfigBytes = 1 * 1024 * 1024.
+- [ ] MaxNetworkConfigBytes = 1 * 1024 * 1024.
 
 Changes
 
-- Before allocating dictionary = new byte[configTotalLength], reject if configTotalLength == 0 or > MaxNetworkConfigBytes.
-- Ensure configTotalLength fits int.
+- [ ] Before allocating `dictionary = new byte[configTotalLength]`, reject if `configTotalLength == 0` or `configTotalLength > MaxNetworkConfigBytes`.
+- [ ] Ensure `configTotalLength` fits `int`.
 
 ### 5.3 X25519 all-zero shared secret guard
 
@@ -440,8 +439,7 @@ File
 
 Changes
 
-- After CalculateAgreement, if rawKey is all-zero, throw CryptographicException (or return failure via new TryAgree internal helper) and treat peer
-  identity invalid.
+- [ ] After CalculateAgreement, if rawKey is all-zero, throw `CryptographicException` (or return failure via new `TryAgree` internal helper) and treat peer identity invalid.
 
 ### 5.4 Cap PUSH_DIRECT_PATHS parse output
 
@@ -451,14 +449,14 @@ File
 
 Changes
 
-- Clamp parsed path count to a small maximum (e.g., 32) even if packet claims more.
+- [ ] Clamp parsed path count to a small maximum (e.g., 32) even if packet claims more.
 
 ### Tests (Phase 5)
 
-- World signature helper: create synthetic ZeroTierWorld + sign key, verify SerializeForSign + VerifySignature succeeds; invalid byte flip fails.
-- PlanetLoader hardened behavior: invalid/oversized state planet ignored in favor of embedded.
-- NetworkConfig cap: absurd totalLength rejected without allocation.
-- All-zero shared secret: known small-order pubkey causes failure.
+- [ ] World signature helper: create synthetic ZeroTierWorld + sign key, verify SerializeForSign + VerifySignature succeeds; invalid byte flip fails.
+- [ ] PlanetLoader hardened behavior: invalid/oversized state planet ignored in favor of embedded.
+- [ ] NetworkConfig cap: absurd totalLength rejected without allocation.
+- [ ] All-zero shared secret: known small-order pubkey causes failure.
 
 Acceptance: planet loading is bounded and hardened; config fetch cannot OOM; crypto rejects invalid DH.
 
