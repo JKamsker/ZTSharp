@@ -5,8 +5,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplanePeerDatagramProcessor
 {
-    private const int IndexVerb = 27;
-
     private readonly NodeId _localNodeId;
     private readonly ZeroTierDataplanePeerSecurity _peerSecurity;
     private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
@@ -55,7 +53,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
             return;
         }
 
-        if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+        if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
         {
             if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
             {
@@ -68,4 +66,3 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         await _peerPackets.HandleAsync(peerNodeId, packetBytes, cancellationToken).ConfigureAwait(false);
     }
 }
-

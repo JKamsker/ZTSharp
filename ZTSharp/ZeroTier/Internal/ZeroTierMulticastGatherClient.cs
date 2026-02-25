@@ -8,7 +8,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierMulticastGatherClient
 {
-    private const int IndexVerb = 27;
     private const int IndexPayload = ZeroTierPacketHeader.Length;
 
     private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
@@ -111,7 +110,7 @@ internal static class ZeroTierMulticastGatherClient
                 continue;
             }
 
-            if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+            if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
             {
                 if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
                 {
@@ -121,7 +120,7 @@ internal static class ZeroTierMulticastGatherClient
                 packetBytes = uncompressed;
             }
 
-            var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
+            var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
             if (verb == ZeroTierVerb.Error)
             {
                 if (packetBytes.Length < IndexPayload + 1 + 8 + 1)

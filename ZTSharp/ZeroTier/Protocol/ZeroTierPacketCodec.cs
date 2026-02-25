@@ -10,10 +10,6 @@ internal static class ZeroTierPacketCodec
     private const int IndexPacketId = 0;
     private const int IndexDestination = 8;
     private const int IndexSource = 13;
-    private const int IndexFlags = 18;
-    private const int IndexMac = 19;
-    private const int IndexVerb = 27;
-    private const int IndexPayload = 28;
 
     public static bool TryDecode(ReadOnlyMemory<byte> packet, out ZeroTierPacketView decoded)
     {
@@ -28,9 +24,9 @@ internal static class ZeroTierPacketCodec
             PacketId: ReadUInt64(span, IndexPacketId),
             Destination: new NodeId(ReadUInt40(span.Slice(IndexDestination, AddressLength))),
             Source: new NodeId(ReadUInt40(span.Slice(IndexSource, AddressLength))),
-            Flags: span[IndexFlags],
-            Mac: ReadUInt64(span, IndexMac),
-            VerbRaw: span[IndexVerb]);
+            Flags: span[ZeroTierPacketHeader.IndexFlags],
+            Mac: ReadUInt64(span, ZeroTierPacketHeader.IndexMac),
+            VerbRaw: span[ZeroTierPacketHeader.IndexVerb]);
 
         decoded = new ZeroTierPacketView(packet, header);
         return true;
@@ -38,16 +34,16 @@ internal static class ZeroTierPacketCodec
 
     public static byte[] Encode(in ZeroTierPacketHeader header, ReadOnlySpan<byte> payload)
     {
-        var packet = new byte[IndexPayload + payload.Length];
+        var packet = new byte[ZeroTierPacketHeader.IndexPayload + payload.Length];
         var span = packet.AsSpan();
 
         WriteUInt64(span, IndexPacketId, header.PacketId);
         WriteUInt40(span.Slice(IndexDestination, AddressLength), header.Destination.Value);
         WriteUInt40(span.Slice(IndexSource, AddressLength), header.Source.Value);
-        span[IndexFlags] = header.Flags;
-        WriteUInt64(span, IndexMac, header.Mac);
-        span[IndexVerb] = header.VerbRaw;
-        payload.CopyTo(span.Slice(IndexPayload));
+        span[ZeroTierPacketHeader.IndexFlags] = header.Flags;
+        WriteUInt64(span, ZeroTierPacketHeader.IndexMac, header.Mac);
+        span[ZeroTierPacketHeader.IndexVerb] = header.VerbRaw;
+        payload.CopyTo(span.Slice(ZeroTierPacketHeader.IndexPayload));
 
         return packet;
     }

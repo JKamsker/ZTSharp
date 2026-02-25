@@ -6,8 +6,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRxLoops
 {
-    private const int IndexVerb = 27;
-
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly byte[] _rootKey;
@@ -81,7 +79,7 @@ internal sealed class ZeroTierDataplaneRxLoops
                     continue;
                 }
 
-                if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+                if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
                 {
                     if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
                     {
@@ -91,7 +89,7 @@ internal sealed class ZeroTierDataplaneRxLoops
                     packetBytes = uncompressed;
                 }
 
-                var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
+                var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
                 var payload = packetBytes.AsSpan(ZeroTierPacketHeader.Length);
 
                 _rootClient.TryDispatchResponse(verb, payload);
@@ -127,4 +125,3 @@ internal sealed class ZeroTierDataplaneRxLoops
         }
     }
 }
-

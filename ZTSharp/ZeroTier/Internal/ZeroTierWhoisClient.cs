@@ -7,7 +7,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierWhoisClient
 {
-    private const int IndexVerb = 27;
     private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
     private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
@@ -64,7 +63,7 @@ internal static class ZeroTierWhoisClient
             }
 
             var packetBytes = received.Value.PacketBytes;
-            if ((ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F) != ZeroTierVerb.Ok)
+            if ((ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F) != ZeroTierVerb.Ok)
             {
                 continue;
             }
@@ -108,4 +107,3 @@ internal static class ZeroTierWhoisClient
         destination[4] = (byte)(value & 0xFF);
     }
 }
-

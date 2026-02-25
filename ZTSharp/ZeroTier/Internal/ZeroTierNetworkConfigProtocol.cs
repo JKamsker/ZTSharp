@@ -7,7 +7,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierNetworkConfigProtocol
 {
-    private const int IndexVerb = 27;
     private const int IndexPayload = ZeroTierPacketHeader.Length;
 
     private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
@@ -96,7 +95,7 @@ internal static class ZeroTierNetworkConfigProtocol
 
             var packetBytes = received.Value.PacketBytes;
 
-            var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
+            var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
             var payloadStart = -1;
 
             if (verb == ZeroTierVerb.Error)

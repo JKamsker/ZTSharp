@@ -6,7 +6,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierIpv4LinkReceiver
 {
-    private const int IndexVerb = 27;
     private const ushort EtherTypeArp = 0x0806;
 
     private readonly ZeroTierUdpTransport _udp;
@@ -107,7 +106,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
                 continue;
             }
 
-            if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+            if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
             {
                 if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
                 {
@@ -117,7 +116,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
                 packetBytes = uncompressed;
             }
 
-            var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
+            var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
             if (packetBytes.Length < ZeroTierPacketHeader.Length)
             {
                 continue;
@@ -296,4 +295,3 @@ internal sealed class ZeroTierIpv4LinkReceiver
         return new ValueTask(_sender.SendExtFrameAsync(EtherTypeArp, reply, cancellationToken));
     }
 }
-

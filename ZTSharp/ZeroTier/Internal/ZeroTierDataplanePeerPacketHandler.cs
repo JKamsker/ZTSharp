@@ -6,7 +6,6 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplanePeerPacketHandler
 {
-    private const int IndexVerb = 27;
     private const ushort EtherTypeArp = 0x0806;
 
     private readonly ulong _networkId;
@@ -23,12 +22,12 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
 
     public async ValueTask HandleAsync(NodeId peerNodeId, byte[] packetBytes, CancellationToken cancellationToken)
     {
-        if (packetBytes.Length <= IndexVerb)
+        if (packetBytes.Length <= ZeroTierPacketHeader.IndexVerb)
         {
             return;
         }
 
-        var verb = (ZeroTierVerb)(packetBytes[IndexVerb] & 0x1F);
+        var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
         var payload = packetBytes.AsMemory(ZeroTierPacketHeader.Length);
 
         switch (verb)
@@ -204,4 +203,3 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
         return true;
     }
 }
-
