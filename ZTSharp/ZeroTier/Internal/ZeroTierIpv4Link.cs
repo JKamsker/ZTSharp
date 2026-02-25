@@ -96,7 +96,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         if (ZeroTierTrace.Enabled && _traceTxRemaining > 0)
         {
             _traceTxRemaining--;
-            ZeroTierTrace.WriteLine($"[zerotier] TX EXT_FRAME: direct={FormatEndpoints(directEndpoints)} relay={_relayEndpoint}.");
+            ZeroTierTrace.WriteLine($"[zerotier] TX EXT_FRAME: direct={ZeroTierDirectEndpointSelection.Format(directEndpoints)} relay={_relayEndpoint}.");
         }
 
         foreach (var endpoint in directEndpoints)
@@ -213,10 +213,10 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                     {
                         if (ZeroTierRendezvousCodec.TryParse(payload, out var rendezvous) && rendezvous.With == _remoteNodeId)
                         {
-                            var endpoints = NormalizeDirectEndpoints([rendezvous.Endpoint], maxEndpoints: 8);
+                            var endpoints = ZeroTierDirectEndpointSelection.Normalize([rendezvous.Endpoint], _relayEndpoint, maxEndpoints: 8);
                             if (ZeroTierTrace.Enabled)
                             {
-                                ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS: {rendezvous.With} endpoints: {FormatEndpoints(endpoints)} via {datagram.RemoteEndPoint}.");
+                                ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS: {rendezvous.With} endpoints: {ZeroTierDirectEndpointSelection.Format(endpoints)} via {datagram.RemoteEndPoint}.");
                             }
 
                             _directEndpoints = endpoints;
@@ -241,7 +241,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                             continue;
                         }
 
-                        var endpoints = NormalizeDirectEndpoints(paths.Select(p => p.Endpoint), maxEndpoints: 8);
+                        var endpoints = ZeroTierDirectEndpointSelection.Normalize(paths.Select(p => p.Endpoint), _relayEndpoint, maxEndpoints: 8);
                         if (endpoints.Length == 0)
                         {
                             continue;
@@ -249,7 +249,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
 
                         if (ZeroTierTrace.Enabled)
                         {
-                            ZeroTierTrace.WriteLine($"[zerotier] RX PUSH_DIRECT_PATHS: endpoints: {FormatEndpoints(endpoints)} (candidates: {paths.Length}).");
+                            ZeroTierTrace.WriteLine($"[zerotier] RX PUSH_DIRECT_PATHS: endpoints: {ZeroTierDirectEndpointSelection.Format(endpoints)} (candidates: {paths.Length}).");
                         }
 
                         _directEndpoints = endpoints;
@@ -268,7 +268,7 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
                             continue;
                         }
 
-                        if (!TryParseMulticastFramePayload(payload, out var networkId, out var etherType, out var frame))
+                        if (!ZeroTierMulticastFramePayload.TryParse(payload, out var networkId, out var etherType, out var frame))
                         {
                             ZeroTierTrace.WriteLine("[zerotier] Drop: failed to parse MULTICAST_FRAME payload.");
                             continue;
@@ -390,69 +390,9 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         }
     }
 
-    private static bool TryParseMulticastFramePayload(
-        ReadOnlySpan<byte> payload,
-        out ulong networkId,
-        out ushort etherType,
-        out ReadOnlySpan<byte> frame)
-    {
-        networkId = 0;
-        etherType = 0;
-        frame = default;
-
-        if (payload.Length < 8 + 1 + 6 + 4 + 2)
-        {
-            return false;
-        }
-
-        networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(0, 8));
-        var flags = payload[8];
-
-        var ptr = 9;
-
-        if ((flags & 0x01) != 0)
-        {
-            if (!ZeroTierCertificateOfMembershipCodec.TryGetSerializedLength(payload.Slice(ptr), out var comLen))
-            {
-                return false;
-            }
-
-            ptr += comLen;
-        }
-
-        if ((flags & 0x02) != 0)
-        {
-            if (payload.Length < ptr + 4)
-            {
-                return false;
-            }
-
-            ptr += 4;
-        }
-
-        if ((flags & 0x04) != 0)
-        {
-            if (payload.Length < ptr + 6)
-            {
-                return false;
-            }
-
-            ptr += 6;
-        }
-
-        if (payload.Length < ptr + 6 + 4 + 2)
-        {
-            return false;
-        }
-
-        etherType = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(ptr + 6 + 4, 2));
-        frame = payload.Slice(ptr + 6 + 4 + 2);
-        return true;
-    }
-
     private ValueTask HandleArpFrameAsync(ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
     {
-        if (!TryParseArpRequest(frame, out var senderMac, out var senderIp, out var targetIp))
+        if (!ZeroTierArp.TryParseRequest(frame, out var senderMac, out var senderIp, out var targetIp))
         {
             return ValueTask.CompletedTask;
         }
@@ -462,62 +402,8 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
             return ValueTask.CompletedTask;
         }
 
-        var reply = BuildArpReply(senderMac, senderIp);
+        var reply = ZeroTierArp.BuildReply(_from, _localManagedIpV4, senderMac, senderIp);
         return new ValueTask(SendExtFrameAsync(EtherTypeArp, reply, cancellationToken));
-    }
-
-    private static bool TryParseArpRequest(
-        ReadOnlySpan<byte> packet,
-        out ReadOnlySpan<byte> senderMac,
-        out ReadOnlySpan<byte> senderIp,
-        out ReadOnlySpan<byte> targetIp)
-    {
-        senderMac = default;
-        senderIp = default;
-        targetIp = default;
-
-        if (packet.Length < 28)
-        {
-            return false;
-        }
-
-        var htype = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(0, 2));
-        var ptype = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(2, 2));
-        var hlen = packet[4];
-        var plen = packet[5];
-        var oper = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(6, 2));
-
-        if (htype != 1 || ptype != ZeroTierFrameCodec.EtherTypeIpv4 || hlen != 6 || plen != 4 || oper != 1)
-        {
-            return false;
-        }
-
-        senderMac = packet.Slice(8, 6);
-        senderIp = packet.Slice(14, 4);
-        targetIp = packet.Slice(24, 4);
-        return true;
-    }
-
-    private byte[] BuildArpReply(ReadOnlySpan<byte> requesterMac, ReadOnlySpan<byte> requesterIp)
-    {
-        var reply = new byte[28];
-        var span = reply.AsSpan();
-
-        BinaryPrimitives.WriteUInt16BigEndian(span.Slice(0, 2), 1); // HTYPE ethernet
-        BinaryPrimitives.WriteUInt16BigEndian(span.Slice(2, 2), ZeroTierFrameCodec.EtherTypeIpv4); // PTYPE IPv4
-        span[4] = 6; // HLEN
-        span[5] = 4; // PLEN
-        BinaryPrimitives.WriteUInt16BigEndian(span.Slice(6, 2), 2); // OPER reply
-
-        Span<byte> localMac = stackalloc byte[6];
-        _from.CopyTo(localMac);
-
-        localMac.CopyTo(span.Slice(8, 6)); // SHA
-        _localManagedIpV4.CopyTo(span.Slice(14, 4)); // SPA
-        requesterMac.CopyTo(span.Slice(18, 6)); // THA
-        requesterIp.CopyTo(span.Slice(24, 4)); // TPA
-
-        return reply;
     }
 
     private Task SendExtFrameAsync(ushort etherType, ReadOnlySpan<byte> frame, CancellationToken cancellationToken)
@@ -571,147 +457,6 @@ internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
         var packet = ZeroTierPacketCodec.Encode(header, payload);
         ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_sharedKey, _remoteProtocolVersion), encryptPayload: true);
         return packet;
-    }
-
-    private IPEndPoint[] NormalizeDirectEndpoints(IEnumerable<IPEndPoint> endpoints, int maxEndpoints)
-    {
-        var publicV4 = new List<IPEndPoint>();
-        var publicV6 = new List<IPEndPoint>();
-        var privateV4 = new List<IPEndPoint>();
-        var privateV6 = new List<IPEndPoint>();
-
-        foreach (var endpoint in endpoints)
-        {
-            if (endpoint.Port is < 1 or > ushort.MaxValue)
-            {
-                continue;
-            }
-
-            if (endpoint.Equals(_relayEndpoint))
-            {
-                continue;
-            }
-
-            var isPublic = IsPublicAddress(endpoint.Address);
-            if (endpoint.AddressFamily == AddressFamily.InterNetwork)
-            {
-                (isPublic ? publicV4 : privateV4).Add(endpoint);
-            }
-            else if (endpoint.AddressFamily == AddressFamily.InterNetworkV6)
-            {
-                (isPublic ? publicV6 : privateV6).Add(endpoint);
-            }
-        }
-
-        var ordered = publicV4
-            .Concat(publicV6)
-            .Concat(privateV4)
-            .Concat(privateV6);
-
-        var unique = new List<IPEndPoint>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var endpoint in ordered)
-        {
-            var key = endpoint.Address + ":" + endpoint.Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (!seen.Add(key))
-            {
-                continue;
-            }
-
-            unique.Add(endpoint);
-            if (unique.Count >= maxEndpoints)
-            {
-                break;
-            }
-        }
-
-        return unique.ToArray();
-    }
-
-    private static bool IsPublicAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return false;
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-            if (bytes.Length != 4)
-            {
-                return false;
-            }
-
-            if (bytes[0] == 10)
-            {
-                return false;
-            }
-
-            if (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
-            {
-                return false;
-            }
-
-            if (bytes[0] == 192 && bytes[1] == 168)
-            {
-                return false;
-            }
-
-            if (bytes[0] == 169 && bytes[1] == 254)
-            {
-                return false;
-            }
-
-            if (bytes[0] == 100 && bytes[1] is >= 64 and <= 127)
-            {
-                return false;
-            }
-
-            if (bytes[0] == 0 || bytes[0] >= 224)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            if (address.IsIPv6LinkLocal ||
-                address.IsIPv6Multicast ||
-                address.IsIPv6SiteLocal ||
-                address.Equals(IPAddress.IPv6Loopback))
-            {
-                return false;
-            }
-
-            var bytes = address.GetAddressBytes();
-            if (bytes.Length != 16)
-            {
-                return false;
-            }
-
-            // fc00::/7 Unique Local Address (ULA)
-            if ((bytes[0] & 0xFE) == 0xFC)
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string FormatEndpoints(IPEndPoint[] endpoints)
-    {
-        if (endpoints.Length == 0)
-        {
-            return "<none>";
-        }
-
-        return string.Join(", ", endpoints.Select(endpoint => endpoint.ToString()));
     }
 
     public async ValueTask DisposeAsync()
