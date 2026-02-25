@@ -57,7 +57,9 @@ internal static class ZeroTierNetworkConfigProtocol
             (NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)? received;
             try
             {
-                received = await ReceiveAndDecryptAsync(udp, rootNodeId, rootKey, timeoutCts.Token).ConfigureAwait(false);
+                received = await ZeroTierDecryptingPacketReceiver
+                    .ReceiveAndDecryptAsync(udp, rootNodeId, rootKey, timeoutCts.Token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -161,7 +163,9 @@ internal static class ZeroTierNetworkConfigProtocol
             (NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)? received;
             try
             {
-                received = await ReceiveAndDecryptAsync(udp, controllerNodeId, controllerKey, timeoutCts.Token).ConfigureAwait(false);
+                received = await ZeroTierDecryptingPacketReceiver
+                    .ReceiveAndDecryptAsync(udp, controllerNodeId, controllerKey, timeoutCts.Token)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -317,43 +321,6 @@ internal static class ZeroTierNetworkConfigProtocol
         return networkId is null
             ? $"{message}"
             : $"{message} (network: 0x{networkId:x16})";
-    }
-
-    private static async Task<(NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)?> ReceiveAndDecryptAsync(
-        ZeroTierUdpTransport udp,
-        NodeId expectedSource,
-        byte[] key,
-        CancellationToken cancellationToken)
-    {
-        var datagram = await udp.ReceiveAsync(cancellationToken).ConfigureAwait(false);
-
-        var packetBytes = datagram.Payload.ToArray();
-        if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
-        {
-            return null;
-        }
-
-        if (packet.Header.Source != expectedSource)
-        {
-            return null;
-        }
-
-        if (!ZeroTierPacketCrypto.Dearmor(packetBytes, key))
-        {
-            return null;
-        }
-
-        if ((packetBytes[IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-        {
-            if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
-            {
-                return null;
-            }
-
-            packetBytes = uncompressed;
-        }
-
-        return (packet.Header.Source, datagram.RemoteEndPoint, packetBytes);
     }
 
     private static ulong GeneratePacketId()
