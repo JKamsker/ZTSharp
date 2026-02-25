@@ -65,155 +65,151 @@ internal static class ZeroTierNetworkConfigProtocol
 
         await udp.SendAsync(rootEndpoint, reqPacket, cancellationToken).ConfigureAwait(false);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "Config chunks", WaitForConfigAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        byte[]? dictionary = null;
-        var receivedLength = 0;
-        var totalLength = 0u;
-        var updateId = 0UL;
-        var receivedOffsets = new HashSet<uint>();
-
-        while (true)
+        async ValueTask<(byte[] DictionaryBytes, IPAddress[] ManagedIps)> WaitForConfigAsync(CancellationToken token)
         {
-            (NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)? received;
-            try
+            byte[]? dictionary = null;
+            var receivedLength = 0;
+            var totalLength = 0u;
+            var updateId = 0UL;
+            var receivedOffsets = new HashSet<uint>();
+
+            while (true)
             {
-                received = await ZeroTierDecryptingPacketReceiver
-                    .ReceiveAndDecryptAsync(udp, controllerNodeId, controllerKey, timeoutCts.Token)
+                var received = await ZeroTierDecryptingPacketReceiver
+                    .ReceiveAndDecryptAsync(udp, controllerNodeId, controllerKey, token)
                     .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for config chunks after {timeout}.");
-            }
 
-            if (received is null)
-            {
-                continue;
-            }
-
-            var packetBytes = received.Value.PacketBytes;
-
-            var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
-            var payloadStart = -1;
-
-            if (verb == ZeroTierVerb.Error)
-            {
-                if (packetBytes.Length < IndexPayload + 1 + 8 + 1)
+                if (received is null)
                 {
                     continue;
                 }
 
-                var inReVerb = (ZeroTierVerb)(packetBytes[IndexPayload] & 0x1F);
-                if (inReVerb != ZeroTierVerb.NetworkConfigRequest)
+                var packetBytes = received.Value.PacketBytes;
+
+                var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
+                var payloadStart = -1;
+
+                if (verb == ZeroTierVerb.Error)
+                {
+                    if (packetBytes.Length < IndexPayload + 1 + 8 + 1)
+                    {
+                        continue;
+                    }
+
+                    var inReVerb = (ZeroTierVerb)(packetBytes[IndexPayload] & 0x1F);
+                    if (inReVerb != ZeroTierVerb.NetworkConfigRequest)
+                    {
+                        continue;
+                    }
+
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
+                    if (inRePacketId != reqPacketId)
+                    {
+                        continue;
+                    }
+
+                    var errorCode = packetBytes[IndexPayload + 1 + 8];
+                    ulong? errorNetworkId = null;
+                    if (packetBytes.Length >= IndexPayload + 1 + 8 + 1 + 8)
+                    {
+                        errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
+                    }
+
+                    throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, errorNetworkId));
+                }
+
+                if (verb == ZeroTierVerb.Ok)
+                {
+                    var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
+                    if (inReVerb != ZeroTierVerb.NetworkConfigRequest)
+                    {
+                        continue;
+                    }
+
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
+                    if (inRePacketId != reqPacketId)
+                    {
+                        continue;
+                    }
+
+                    payloadStart = OkIndexPayload;
+                }
+                else if (verb == ZeroTierVerb.NetworkConfig)
+                {
+                    payloadStart = IndexPayload;
+                }
+                else
                 {
                     continue;
                 }
 
-                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1, 8));
-                if (inRePacketId != reqPacketId)
+                if (!ZeroTierNetworkConfigParsing.TryParseConfigChunk(
+                        packetBytes,
+                        payloadStart,
+                        out var chunkNetworkId,
+                        out var chunkData,
+                        out var configUpdateId,
+                        out var configTotalLength,
+                        out var chunkIndex,
+                        out var signatureData,
+                        out var signatureMessage))
                 {
                     continue;
                 }
 
-                var errorCode = packetBytes[IndexPayload + 1 + 8];
-                ulong? errorNetworkId = null;
-                if (packetBytes.Length >= IndexPayload + 1 + 8 + 1 + 8)
-                {
-                    errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
-                }
-
-                throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, errorNetworkId));
-            }
-
-            if (verb == ZeroTierVerb.Ok)
-            {
-                var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-                if (inReVerb != ZeroTierVerb.NetworkConfigRequest)
+                if (chunkNetworkId != networkId)
                 {
                     continue;
                 }
 
-                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-                if (inRePacketId != reqPacketId)
+                if (signatureData is not null)
+                {
+                    if (!ZeroTierC25519.VerifySignature(controllerIdentity.PublicKey, signatureMessage, signatureData))
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    configUpdateId = reqPacketId;
+                    configTotalLength = (uint)chunkData.Length;
+                    chunkIndex = 0;
+                }
+
+                if (dictionary is null)
+                {
+                    dictionary = new byte[configTotalLength];
+                    totalLength = configTotalLength;
+                    updateId = configUpdateId;
+                }
+
+                if (configUpdateId != updateId || configTotalLength != totalLength)
                 {
                     continue;
                 }
 
-                payloadStart = OkIndexPayload;
-            }
-            else if (verb == ZeroTierVerb.NetworkConfig)
-            {
-                payloadStart = IndexPayload;
-            }
-            else
-            {
-                continue;
-            }
-
-            if (!ZeroTierNetworkConfigParsing.TryParseConfigChunk(
-                    packetBytes,
-                    payloadStart,
-                    out var chunkNetworkId,
-                    out var chunkData,
-                    out var configUpdateId,
-                    out var configTotalLength,
-                    out var chunkIndex,
-                    out var signatureData,
-                    out var signatureMessage))
-            {
-                continue;
-            }
-
-            if (chunkNetworkId != networkId)
-            {
-                continue;
-            }
-
-            if (signatureData is not null)
-            {
-                if (!ZeroTierC25519.VerifySignature(controllerIdentity.PublicKey, signatureMessage, signatureData))
+                if ((ulong)chunkIndex + (ulong)chunkData.Length > totalLength)
                 {
                     continue;
                 }
-            }
-            else
-            {
-                configUpdateId = reqPacketId;
-                configTotalLength = (uint)chunkData.Length;
-                chunkIndex = 0;
-            }
 
-            if (dictionary is null)
-            {
-                dictionary = new byte[configTotalLength];
-                totalLength = configTotalLength;
-                updateId = configUpdateId;
-            }
+                if (!receivedOffsets.Add(chunkIndex))
+                {
+                    continue;
+                }
 
-            if (configUpdateId != updateId || configTotalLength != totalLength)
-            {
-                continue;
-            }
+                chunkData.CopyTo(dictionary.AsSpan((int)chunkIndex, chunkData.Length));
+                receivedLength += chunkData.Length;
 
-            if ((ulong)chunkIndex + (ulong)chunkData.Length > totalLength)
-            {
-                continue;
-            }
-
-            if (!receivedOffsets.Add(chunkIndex))
-            {
-                continue;
-            }
-
-            chunkData.CopyTo(dictionary.AsSpan((int)chunkIndex, chunkData.Length));
-            receivedLength += chunkData.Length;
-
-            if ((uint)receivedLength == totalLength)
-            {
-                var managedIps = ZeroTierNetworkConfigParsing.ParseManagedIps(dictionary);
-                return (dictionary, managedIps);
+                if ((uint)receivedLength == totalLength)
+                {
+                    var managedIps = ZeroTierNetworkConfigParsing.ParseManagedIps(dictionary);
+                    return (dictionary, managedIps);
+                }
             }
         }
     }
