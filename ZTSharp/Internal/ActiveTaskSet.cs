@@ -23,6 +23,11 @@ internal sealed class ActiveTaskSet
     {
         while (!_tasks.IsEmpty)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             var snapshot = new List<Task>(_tasks.Count);
             foreach (var task in _tasks.Values)
             {
@@ -36,7 +41,7 @@ internal sealed class ActiveTaskSet
 
             try
             {
-                await Task.WhenAll(snapshot).ConfigureAwait(false);
+                await Task.WhenAll(snapshot).WaitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

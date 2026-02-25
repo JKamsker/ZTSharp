@@ -55,6 +55,11 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(remotePort));
         }
 
+        if (mss == 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(mss), "TCP MSS must be greater than zero.");
+        }
+
         _link = link;
         _localAddress = localAddress;
         _remoteAddress = remoteAddress;

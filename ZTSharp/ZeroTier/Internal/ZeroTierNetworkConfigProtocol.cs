@@ -124,6 +124,11 @@ internal static class ZeroTierNetworkConfigProtocol
 
                 if (verb == ZeroTierVerb.Ok)
                 {
+                    if (packetBytes.Length < OkIndexPayload)
+                    {
+                        continue;
+                    }
+
                     var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
                     if (inReVerb != ZeroTierVerb.NetworkConfigRequest)
                     {

@@ -78,7 +78,8 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
             return;
         }
 
-        if (UserSpaceTcpSequenceNumbers.GreaterThan(ack, _sendUna))
+        if (UserSpaceTcpSequenceNumbers.GreaterThan(ack, _sendUna) &&
+            UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendNext, ack))
         {
             _sendUna = ack;
             _ackTcs?.TrySetResult(true);
@@ -115,8 +116,8 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
                 var chunk = remaining.Length > maxChunkSize ? remaining.Slice(0, maxChunkSize) : remaining;
                 remaining = remaining.Slice(chunk.Length);
 
-                var seq = _sendNext;
-                var expectedAck = unchecked(_sendNext + (uint)chunk.Length);
+                var seq = AllocateNextSequence((uint)chunk.Length);
+                var expectedAck = _sendNext;
 
                 await SendTcpWithRetriesAsync(
                         seq,
@@ -127,8 +128,6 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
                         expectedAck,
                         cancellationToken)
                     .ConfigureAwait(false);
-
-                _sendNext = expectedAck;
             }
         }
         finally
@@ -169,8 +168,8 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var finSeq = _sendNext;
-            var expectedAck = unchecked(finSeq + 1);
+            var finSeq = AllocateNextSequence(bytes: 1);
+            var expectedAck = _sendNext;
 
             await SendTcpWithRetriesAsync(
                     seq: finSeq,
@@ -181,8 +180,6 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
                     expectedAck,
                     cancellationToken)
                 .ConfigureAwait(false);
-
-            _sendNext = expectedAck;
         }
         finally
         {

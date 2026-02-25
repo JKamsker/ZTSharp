@@ -12,7 +12,7 @@ internal sealed class OverlayTcpIncomingBuffer
     public bool RemoteClosed => _remoteClosed;
 
     public bool TryWrite(ReadOnlyMemory<byte> segment)
-        => _incoming.Writer.TryWrite(segment);
+        => segment.Length > 0 && _incoming.Writer.TryWrite(segment);
 
     public void MarkRemoteClosed()
     {
@@ -63,4 +63,3 @@ internal sealed class OverlayTcpIncomingBuffer
         return toCopy;
     }
 }
-
