@@ -20,15 +20,6 @@ internal sealed class EventLoop : IDisposable
         }
     }
 
-    private struct TimerItem
-    {
-        public long Id;
-        public long DueTimestamp;
-        public long PeriodTicks;
-        public WorkItemCallback Callback;
-        public object? State;
-    }
-
     public readonly struct TimerHandle
     {
         private readonly EventLoop? _owner;
@@ -49,16 +40,11 @@ internal sealed class EventLoop : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Thread _thread;
     private readonly int _pollIntervalMs;
+    private readonly EventLoopTimerQueue _timers;
 
     private WorkItem[] _workBuffer;
     private int _workHead;
     private int _workCount;
-
-    private TimerItem[] _timerHeap;
-    private int _timerCount;
-
-    private long _nextTimerId;
-    private HashSet<long>? _cancelledTimers;
     private bool _disposed;
 
     public EventLoop(
@@ -75,7 +61,7 @@ internal sealed class EventLoop : IDisposable
             : Math.Clamp((int)pollInterval.TotalMilliseconds, 1, int.MaxValue);
 
         _workBuffer = ArrayPool<WorkItem>.Shared.Rent(initialWorkItemCapacity);
-        _timerHeap = ArrayPool<TimerItem>.Shared.Rent(initialTimerCapacity);
+        _timers = new EventLoopTimerQueue(initialTimerCapacity);
 
         _thread = new Thread(Run)
         {
@@ -103,19 +89,12 @@ internal sealed class EventLoop : IDisposable
         ArgumentNullException.ThrowIfNull(callback);
         ArgumentOutOfRangeException.ThrowIfLessThan(dueTime, TimeSpan.Zero);
 
-        var id = Interlocked.Increment(ref _nextTimerId);
         var dueTimestamp = Stopwatch.GetTimestamp() + ToStopwatchTicks(dueTime);
+        long id;
         lock (_gate)
         {
             ThrowIfDisposed();
-            InsertTimerNoLock(new TimerItem
-            {
-                Id = id,
-                DueTimestamp = dueTimestamp,
-                PeriodTicks = 0,
-                Callback = callback,
-                State = state
-            });
+            id = _timers.Schedule(dueTimestamp, periodTicks: 0, callback, state);
         }
 
         _signal.Set();
@@ -128,19 +107,12 @@ internal sealed class EventLoop : IDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(period, TimeSpan.Zero);
 
         var periodTicks = ToStopwatchTicks(period);
-        var id = Interlocked.Increment(ref _nextTimerId);
         var dueTimestamp = Stopwatch.GetTimestamp() + periodTicks;
+        long id;
         lock (_gate)
         {
             ThrowIfDisposed();
-            InsertTimerNoLock(new TimerItem
-            {
-                Id = id,
-                DueTimestamp = dueTimestamp,
-                PeriodTicks = periodTicks,
-                Callback = callback,
-                State = state
-            });
+            id = _timers.Schedule(dueTimestamp, periodTicks, callback, state);
         }
 
         _signal.Set();
@@ -156,9 +128,7 @@ internal sealed class EventLoop : IDisposable
                 return false;
             }
 
-            _cancelledTimers ??= new HashSet<long>();
-            _cancelledTimers.Add(id);
-            return RemoveTimerNoLock(id);
+            return _timers.Cancel(id);
         }
     }
 
@@ -226,7 +196,7 @@ internal sealed class EventLoop : IDisposable
         }
     }
 
-    private void ExecuteTimerItem(in TimerItem timer, CancellationToken cancellationToken)
+    private void ExecuteTimerItem(in EventLoopTimerQueue.TimerItem timer, CancellationToken cancellationToken)
     {
         try
         {
@@ -259,14 +229,7 @@ internal sealed class EventLoop : IDisposable
                 return;
             }
 
-            if (_cancelledTimers is not null && _cancelledTimers.Remove(timer.Id))
-            {
-                return;
-            }
-
-            var rescheduled = timer;
-            rescheduled.DueTimestamp = Stopwatch.GetTimestamp() + timer.PeriodTicks;
-            InsertTimerNoLock(rescheduled);
+            _timers.TryReschedulePeriodic(timer, Stopwatch.GetTimestamp());
         }
 
         _signal.Set();
@@ -274,37 +237,14 @@ internal sealed class EventLoop : IDisposable
 
     private int GetWaitMilliseconds(long nowTimestamp)
     {
-        if (_pollIntervalMs == 0)
-        {
-            return 0;
-        }
-
         lock (_gate)
         {
-            if (_disposed || _workCount > 0)
+            if (_disposed)
             {
                 return 0;
             }
 
-            while (_timerCount > 0)
-            {
-                var next = _timerHeap[0];
-                if (_cancelledTimers is null || !_cancelledTimers.Remove(next.Id))
-                {
-                    var delta = next.DueTimestamp - nowTimestamp;
-                    if (delta <= 0)
-                    {
-                        return 0;
-                    }
-
-                    var deltaMs = (int)Math.Min(delta * 1000 / Stopwatch.Frequency, int.MaxValue);
-                    return Math.Min(_pollIntervalMs, Math.Max(1, deltaMs));
-                }
-
-                PopTimerNoLock();
-            }
-
-            return _pollIntervalMs;
+            return _timers.GetWaitMilliseconds(nowTimestamp, _pollIntervalMs, hasPendingWork: _workCount > 0);
         }
     }
 
@@ -331,37 +271,17 @@ internal sealed class EventLoop : IDisposable
         }
     }
 
-    private bool TryDequeueDueTimer(long nowTimestamp, out TimerItem timer)
+    private bool TryDequeueDueTimer(long nowTimestamp, out EventLoopTimerQueue.TimerItem timer)
     {
         lock (_gate)
         {
-            if (_disposed || _timerCount == 0)
+            if (_disposed)
             {
                 timer = default;
                 return false;
             }
 
-            while (_timerCount > 0)
-            {
-                var next = _timerHeap[0];
-                if (_cancelledTimers is not null && _cancelledTimers.Remove(next.Id))
-                {
-                    PopTimerNoLock();
-                    continue;
-                }
-
-                if (next.DueTimestamp > nowTimestamp)
-                {
-                    timer = default;
-                    return false;
-                }
-
-                timer = PopTimerNoLock();
-                return true;
-            }
-
-            timer = default;
-            return false;
+            return _timers.TryDequeueDue(nowTimestamp, out timer);
         }
     }
 
@@ -400,103 +320,6 @@ internal sealed class EventLoop : IDisposable
         ArrayPool<WorkItem>.Shared.Return(_workBuffer);
         _workBuffer = rented;
         _workHead = 0;
-    }
-
-    private void InsertTimerNoLock(in TimerItem timer)
-    {
-        if (_timerCount == _timerHeap.Length)
-        {
-            GrowTimerHeapNoLock(_timerHeap.Length * 2);
-        }
-
-        var index = _timerCount++;
-        _timerHeap[index] = timer;
-        while (index > 0)
-        {
-            var parent = (index - 1) >> 1;
-            if (_timerHeap[parent].DueTimestamp <= _timerHeap[index].DueTimestamp)
-            {
-                break;
-            }
-
-            (_timerHeap[parent], _timerHeap[index]) = (_timerHeap[index], _timerHeap[parent]);
-            index = parent;
-        }
-    }
-
-    private TimerItem PopTimerNoLock()
-    {
-        var timer = _timerHeap[0];
-        var lastIndex = --_timerCount;
-        if (_timerCount == 0)
-        {
-            _timerHeap[0] = default;
-            return timer;
-        }
-
-        _timerHeap[0] = _timerHeap[lastIndex];
-        _timerHeap[lastIndex] = default;
-        HeapifyDownNoLock(0);
-        return timer;
-    }
-
-    private bool RemoveTimerNoLock(long id)
-    {
-        for (var i = 0; i < _timerCount; i++)
-        {
-            if (_timerHeap[i].Id != id)
-            {
-                continue;
-            }
-
-            var lastIndex = --_timerCount;
-            if (i == lastIndex)
-            {
-                _timerHeap[i] = default;
-                return true;
-            }
-
-            _timerHeap[i] = _timerHeap[lastIndex];
-            _timerHeap[lastIndex] = default;
-            HeapifyDownNoLock(i);
-            return true;
-        }
-
-        return false;
-    }
-
-    private void HeapifyDownNoLock(int index)
-    {
-        while (true)
-        {
-            var left = (index << 1) + 1;
-            if (left >= _timerCount)
-            {
-                break;
-            }
-
-            var right = left + 1;
-            var smallest = right < _timerCount && _timerHeap[right].DueTimestamp < _timerHeap[left].DueTimestamp
-                ? right
-                : left;
-
-            if (_timerHeap[index].DueTimestamp <= _timerHeap[smallest].DueTimestamp)
-            {
-                break;
-            }
-
-            (_timerHeap[index], _timerHeap[smallest]) = (_timerHeap[smallest], _timerHeap[index]);
-            index = smallest;
-        }
-    }
-
-    private void GrowTimerHeapNoLock(int newSize)
-    {
-        var rented = ArrayPool<TimerItem>.Shared.Rent(newSize);
-        Array.Copy(_timerHeap, rented, _timerCount);
-        Array.Clear(_timerHeap, 0, _timerHeap.Length);
-        ArrayPool<TimerItem>.Shared.Return(_timerHeap);
-        _timerHeap = rented;
     }
 
     private static long ToStopwatchTicks(TimeSpan duration)
@@ -538,14 +361,11 @@ internal sealed class EventLoop : IDisposable
 
         _signal.Dispose();
         _cts.Dispose();
+        _timers.Dispose();
 
         Array.Clear(_workBuffer, 0, _workBuffer.Length);
         ArrayPool<WorkItem>.Shared.Return(_workBuffer);
         _workBuffer = Array.Empty<WorkItem>();
-
-        Array.Clear(_timerHeap, 0, _timerHeap.Length);
-        ArrayPool<TimerItem>.Shared.Return(_timerHeap);
-        _timerHeap = Array.Empty<TimerItem>();
     }
 
     private void ThrowIfDisposed()
