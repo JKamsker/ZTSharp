@@ -97,7 +97,7 @@ internal static class ExposeCommand
         overlayListenPort ??= localPort;
         target ??= ("127.0.0.1", localPort);
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+        statePath ??= CliDefaults.CreateTemporaryStatePath();
 
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>

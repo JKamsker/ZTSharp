@@ -58,7 +58,7 @@ internal static class UdpSendCommand
             throw new InvalidOperationException("Missing --data <text>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+        statePath ??= CliDefaults.CreateTemporaryStatePath();
         var networkId = CliParsing.ParseNetworkId(networkText);
         stack = CliParsing.NormalizeStack(stack);
 
@@ -147,4 +147,3 @@ internal static class UdpSendCommand
         }
     }
 }
-

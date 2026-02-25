@@ -93,7 +93,7 @@ internal static class CallCommand
             throw new InvalidOperationException("Missing --url <url>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-cli", "node-" + Guid.NewGuid().ToString("N"));
+        statePath ??= CliDefaults.CreateTemporaryStatePath();
         var networkId = CliParsing.ParseNetworkId(networkText);
         stack = CliParsing.NormalizeStack(stack);
 
