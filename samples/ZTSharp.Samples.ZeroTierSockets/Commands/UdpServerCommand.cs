@@ -52,7 +52,7 @@ internal static class UdpServerCommand
             throw new InvalidOperationException("Missing --port <port>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-samples", "zerotier-udp-server");
+        statePath ??= SampleDefaults.GetDefaultStatePath("zerotier-udp-server");
         var networkId = SampleParsing.ParseNetworkId(networkText);
 
         using var cts = ConsoleCancellation.Setup();
@@ -104,4 +104,3 @@ internal static class UdpServerCommand
         }
     }
 }
-

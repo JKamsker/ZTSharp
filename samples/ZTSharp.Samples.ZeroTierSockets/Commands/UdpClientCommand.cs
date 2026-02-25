@@ -51,7 +51,7 @@ internal static class UdpClientCommand
             throw new InvalidOperationException("Missing --message <text>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-samples", "zerotier-udp-client");
+        statePath ??= SampleDefaults.GetDefaultStatePath("zerotier-udp-client");
         var networkId = SampleParsing.ParseNetworkId(networkText);
         var remote = SampleParsing.ParseToEndpoint(toText);
 
@@ -93,4 +93,3 @@ internal static class UdpClientCommand
         }
     }
 }
-

@@ -50,7 +50,7 @@ internal static class TcpEchoClientCommand
             throw new InvalidOperationException("Missing --message <text>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-samples", "zerotier-echo-client");
+        statePath ??= SampleDefaults.GetDefaultStatePath("zerotier-echo-client");
         var networkId = SampleParsing.ParseNetworkId(networkText);
         var remote = SampleParsing.ParseToEndpoint(toText);
 
@@ -98,4 +98,3 @@ internal static class TcpEchoClientCommand
         }
     }
 }
-

@@ -42,7 +42,7 @@ internal static class HttpGetCommand
             throw new InvalidOperationException("Missing/invalid --url <url>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-samples", "zerotier-http-get");
+        statePath ??= SampleDefaults.GetDefaultStatePath("zerotier-http-get");
         var networkId = SampleParsing.ParseNetworkId(networkText);
 
         using var cts = ConsoleCancellation.Setup();
@@ -80,4 +80,3 @@ internal static class HttpGetCommand
         }
     }
 }
-

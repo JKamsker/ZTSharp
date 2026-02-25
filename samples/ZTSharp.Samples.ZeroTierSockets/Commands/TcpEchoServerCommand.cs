@@ -53,7 +53,7 @@ internal static class TcpEchoServerCommand
             throw new InvalidOperationException("Missing --port <port>.");
         }
 
-        statePath ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-samples", "zerotier-echo-server");
+        statePath ??= SampleDefaults.GetDefaultStatePath("zerotier-echo-server");
         var networkId = SampleParsing.ParseNetworkId(networkText);
 
         using var cts = ConsoleCancellation.Setup();
@@ -136,4 +136,3 @@ internal static class TcpEchoServerCommand
         }
     }
 }
-
