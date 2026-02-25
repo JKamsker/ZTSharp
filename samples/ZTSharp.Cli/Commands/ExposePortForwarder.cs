@@ -58,7 +58,7 @@ internal sealed class ExposePortForwarder
     private async Task HandleConnectionAsync(Stream accepted, CancellationToken cancellationToken)
     {
         var overlayStream = accepted;
-        var localClient = new TcpClient { NoDelay = true };
+        using var localClient = new TcpClient { NoDelay = true };
 
         try
         {
@@ -102,8 +102,6 @@ internal sealed class ExposePortForwarder
         }
         finally
         {
-            localClient.Dispose();
-
             await overlayStream.DisposeAsync().ConfigureAwait(false);
         }
     }
