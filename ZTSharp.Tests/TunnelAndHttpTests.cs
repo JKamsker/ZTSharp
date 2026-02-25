@@ -143,7 +143,7 @@ public sealed class TunnelAndHttpTests
             var forwarderTask = Task.Run(() => forwarder.RunAsync(cts.Token), cts.Token);
 
             using var httpClient = new HttpClient(new OverlayHttpMessageHandler(clientNode, networkId));
-            var uri = new Uri($"http://{serverNode.NodeId}:28080/hello");
+            var uri = new Uri($"http://{serverNode.NodeId.Value:x10}:28080/hello");
             var text = await httpClient.GetStringAsync(uri, cts.Token);
             Assert.Equal("zt-ok", text);
 
