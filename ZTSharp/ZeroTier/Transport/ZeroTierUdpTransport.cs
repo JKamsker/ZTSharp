@@ -52,7 +52,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
 
-    public IPEndPoint LocalEndpoint => NormalizeEndpointForLocalDelivery((IPEndPoint)_udp.Client.LocalEndPoint!);
+    public IPEndPoint LocalEndpoint => NormalizeEndpoint((IPEndPoint)_udp.Client.LocalEndPoint!);
 
     public ValueTask<ZeroTierUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
     {
@@ -143,7 +143,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             }
 
             if (!_incoming.Writer.TryWrite(new ZeroTierUdpDatagram(
-                    NormalizeEndpointForRemoteDelivery(result.RemoteEndPoint),
+                    NormalizeEndpoint(result.RemoteEndPoint),
                     result.Buffer)))
             {
                 return;
@@ -176,22 +176,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         return udpFallback;
     }
 
-    private static IPEndPoint NormalizeEndpointForLocalDelivery(IPEndPoint endpoint)
-    {
-        if (endpoint.Address.Equals(IPAddress.Any))
-        {
-            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
-        }
-
-        if (endpoint.Address.Equals(IPAddress.IPv6Any))
-        {
-            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
-        }
-
-        return endpoint;
-    }
-
-    private static IPEndPoint NormalizeEndpointForRemoteDelivery(IPEndPoint endpoint)
+    private static IPEndPoint NormalizeEndpoint(IPEndPoint endpoint)
     {
         if (endpoint.Address.Equals(IPAddress.Any))
         {
