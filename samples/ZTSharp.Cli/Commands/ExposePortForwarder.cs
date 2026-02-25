@@ -66,33 +66,7 @@ internal sealed class ExposePortForwarder
             var localStream = localClient.GetStream();
             try
             {
-                using var bridgeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                var token = bridgeCts.Token;
-
-#pragma warning disable CA2025 // Streams are disposed after the copy tasks complete.
-                var overlayToLocal = StreamUtilities.CopyAsync(overlayStream, localStream, token);
-                var localToOverlay = StreamUtilities.CopyAsync(localStream, overlayStream, token);
-#pragma warning restore CA2025
-
-                try
-                {
-                    _ = await Task.WhenAny(overlayToLocal, localToOverlay).ConfigureAwait(false);
-                }
-                finally
-                {
-                    await bridgeCts.CancelAsync().ConfigureAwait(false);
-
-                    try
-                    {
-                        await Task.WhenAll(overlayToLocal, localToOverlay).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                    }
-                    catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
-                    {
-                    }
-                }
+                await StreamUtilities.BridgeDuplexAsync(overlayStream, localStream, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
