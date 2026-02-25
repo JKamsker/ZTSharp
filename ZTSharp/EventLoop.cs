@@ -265,13 +265,7 @@ internal sealed class EventLoop : IDisposable
             _disposed = true;
         }
 
-        try
-        {
-            _cts.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
+        _cts.Cancel();
 
         _signal.Set();
         if (Thread.CurrentThread != _thread)
