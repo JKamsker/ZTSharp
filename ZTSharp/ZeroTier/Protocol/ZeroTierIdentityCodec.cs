@@ -60,7 +60,7 @@ internal static class ZeroTierIdentityCodec
             throw new FormatException("Identity data is too short.");
         }
 
-        var nodeId = ReadUInt40(data.Slice(0, AddressLength));
+        var nodeId = ZeroTierBinaryPrimitives.ReadUInt40BigEndian(data.Slice(0, AddressLength));
         var type = data[AddressLength];
         if (type != IdentityTypeC25519)
         {
@@ -90,21 +90,6 @@ internal static class ZeroTierIdentityCodec
 
         bytesRead = total;
         return new ZeroTierIdentity(new NodeId(nodeId), publicKey, privateKey);
-    }
-
-    private static ulong ReadUInt40(ReadOnlySpan<byte> data)
-    {
-        if (data.Length < AddressLength)
-        {
-            throw new ArgumentException("Address must be at least 5 bytes.", nameof(data));
-        }
-
-        return
-            ((ulong)data[0] << 32) |
-            ((ulong)data[1] << 24) |
-            ((ulong)data[2] << 16) |
-            ((ulong)data[3] << 8) |
-            data[4];
     }
 
 }

@@ -22,8 +22,8 @@ internal static class ZeroTierPacketCodec
         var span = packet.Span;
         var header = new ZeroTierPacketHeader(
             PacketId: ReadUInt64(span, IndexPacketId),
-            Destination: new NodeId(ReadUInt40(span.Slice(IndexDestination, AddressLength))),
-            Source: new NodeId(ReadUInt40(span.Slice(IndexSource, AddressLength))),
+            Destination: new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(span.Slice(IndexDestination, AddressLength))),
+            Source: new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(span.Slice(IndexSource, AddressLength))),
             Flags: span[ZeroTierPacketHeader.IndexFlags],
             Mac: ReadUInt64(span, ZeroTierPacketHeader.IndexMac),
             VerbRaw: span[ZeroTierPacketHeader.IndexVerb]);
@@ -56,21 +56,6 @@ internal static class ZeroTierPacketCodec
     private static void WriteUInt64(Span<byte> span, int index, ulong value)
     {
         BinaryPrimitives.WriteUInt64BigEndian(span.Slice(index, UInt64Length), value);
-    }
-
-    private static ulong ReadUInt40(ReadOnlySpan<byte> value)
-    {
-        if (value.Length < AddressLength)
-        {
-            throw new ArgumentException("Address must be at least 5 bytes.", nameof(value));
-        }
-
-        return
-            ((ulong)value[0] << 32) |
-            ((ulong)value[1] << 24) |
-            ((ulong)value[2] << 16) |
-            ((ulong)value[3] << 8) |
-            value[4];
     }
 
 }

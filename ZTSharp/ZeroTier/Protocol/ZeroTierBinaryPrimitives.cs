@@ -2,6 +2,21 @@ namespace ZTSharp.ZeroTier.Protocol;
 
 internal static class ZeroTierBinaryPrimitives
 {
+    public static ulong ReadUInt40BigEndian(ReadOnlySpan<byte> value)
+    {
+        if (value.Length < 5)
+        {
+            throw new ArgumentException("Value must be at least 5 bytes.", nameof(value));
+        }
+
+        return
+            ((ulong)value[0] << 32) |
+            ((ulong)value[1] << 24) |
+            ((ulong)value[2] << 16) |
+            ((ulong)value[3] << 8) |
+            value[4];
+    }
+
     public static void WriteUInt40BigEndian(Span<byte> destination, ulong value)
     {
         if (destination.Length < 5)
@@ -16,4 +31,3 @@ internal static class ZeroTierBinaryPrimitives
         destination[4] = (byte)(value & 0xFF);
     }
 }
-
