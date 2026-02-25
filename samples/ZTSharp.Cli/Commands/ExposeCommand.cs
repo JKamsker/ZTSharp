@@ -155,7 +155,7 @@ internal static class ExposeCommand
                 Console.WriteLine($"Advertise UDP: {advertisedEndpoint}");
             }
 
-            Console.WriteLine($"Expose: http://{node.NodeId}:{overlayListenPort}/ -> {target.Value.Host}:{target.Value.Port}");
+            Console.WriteLine($"Expose: http://{CliOutput.FormatNodeIdHost(node.NodeId)}:{overlayListenPort}/ -> {target.Value.Host}:{target.Value.Port}");
 
             var forwarder = new OverlayTcpPortForwarder(
                 node,
