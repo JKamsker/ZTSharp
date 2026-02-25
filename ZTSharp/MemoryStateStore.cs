@@ -87,15 +87,7 @@ public sealed class MemoryStateStore : IStateStore
 
     private static string NormalizeKey(string key)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        var normalized = key.Replace('\\', '/').TrimStart('/');
-        var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Any(part => part == "." || part == ".."))
-        {
-            throw new ArgumentException($"Invalid key path: {key}", nameof(key));
-        }
-
-        normalized = string.Join('/', parts);
+        var normalized = StateStoreKeyNormalization.NormalizeKey(key);
         if (StateStorePlanetAliases.IsPlanetAlias(normalized))
         {
             normalized = StateStorePlanetAliases.PlanetKey;
