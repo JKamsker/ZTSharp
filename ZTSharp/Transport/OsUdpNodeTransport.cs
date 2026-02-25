@@ -187,13 +187,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                     CancellationToken.None)
                 .ConfigureAwait(false);
         }
-        catch (ObjectDisposedException)
-        {
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (SocketException)
+        catch (Exception ex) when (ex is ObjectDisposedException or OperationCanceledException or SocketException)
         {
         }
     }
@@ -205,7 +199,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         {
             await _receiverLoop.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_receiverCts.IsCancellationRequested)
         {
         }
 
