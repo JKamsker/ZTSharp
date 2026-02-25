@@ -14,7 +14,8 @@ internal static class ZeroTierExtFramePacketBuilder
         ZeroTierMac from,
         ushort etherType,
         ReadOnlySpan<byte> frame,
-        ReadOnlySpan<byte> sharedKey)
+        ReadOnlySpan<byte> sharedKey,
+        byte remoteProtocolVersion)
     {
         var extFrameFlags = (byte)(0x01 | (ZeroTierTrace.Enabled ? 0x10 : 0x00));
         var payload = ZeroTierFrameCodec.EncodeExtFramePayload(
@@ -32,10 +33,10 @@ internal static class ZeroTierExtFramePacketBuilder
             Source: source,
             Flags: 0,
             Mac: 0,
-            VerbRaw: (byte)ZeroTierVerb.ExtFrame);
+             VerbRaw: (byte)ZeroTierVerb.ExtFrame);
 
         var packet = ZeroTierPacketCodec.Encode(header, payload);
-        ZeroTierPacketCrypto.Armor(packet, sharedKey, encryptPayload: true);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(sharedKey, remoteProtocolVersion), encryptPayload: true);
         return packet;
     }
 
@@ -48,7 +49,8 @@ internal static class ZeroTierExtFramePacketBuilder
         ZeroTierMac to,
         ZeroTierMac from,
         ReadOnlySpan<byte> ipv4Packet,
-        ReadOnlySpan<byte> sharedKey)
+        ReadOnlySpan<byte> sharedKey,
+        byte remoteProtocolVersion)
         => BuildPacket(
             packetId,
             destination,
@@ -59,5 +61,6 @@ internal static class ZeroTierExtFramePacketBuilder
             from,
             ZeroTierFrameCodec.EtherTypeIpv4,
             ipv4Packet,
-            sharedKey);
+            sharedKey,
+            remoteProtocolVersion);
 }

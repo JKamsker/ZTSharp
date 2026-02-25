@@ -38,8 +38,10 @@ public sealed class ZeroTierExtFramePacketBuilderTests
             to,
             from,
             ipv4Packet,
-            sharedKey);
+            sharedKey,
+            remoteProtocolVersion: 11);
 
+        Assert.Equal(1, (packet[18] & 0x38) >> 3);
         Assert.True(ZeroTierPacketCrypto.Dearmor(packet, sharedKey));
         Assert.Equal(ZeroTierVerb.ExtFrame, (ZeroTierVerb)(packet[27] & 0x1F));
 
@@ -62,4 +64,3 @@ public sealed class ZeroTierExtFramePacketBuilderTests
         Assert.Equal(ipv4Packet, frame.ToArray());
     }
 }
-

@@ -19,7 +19,7 @@ internal readonly record struct ZeroTierHelloOk(
 
 internal static class ZeroTierHelloClient
 {
-    internal const byte AdvertisedProtocolVersion = 11; // <12 avoids AES-GMAC-SIV (v12+), which is not implemented.
+    internal const byte AdvertisedProtocolVersion = 12;
     internal const byte AdvertisedMajorVersion = 1;
     internal const byte AdvertisedMinorVersion = 12;
     internal const ushort AdvertisedRevision = 0;
@@ -195,7 +195,7 @@ internal static class ZeroTierHelloClient
         }
     }
 
-    public static async Task HelloAsync(
+    public static async Task<byte> HelloAsync(
         ZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
@@ -297,7 +297,8 @@ internal static class ZeroTierHelloClient
                 continue;
             }
 
-            return;
+            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
+            return remoteProto;
         }
     }
 

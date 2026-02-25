@@ -10,6 +10,7 @@ internal sealed class ZeroTierPeerKeyCache : IDisposable
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
+    private readonly byte _rootProtocolVersion;
     private readonly ZeroTierIdentity _localIdentity;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly Dictionary<NodeId, ZeroTierIdentity> _identities = new();
@@ -20,6 +21,7 @@ internal sealed class ZeroTierPeerKeyCache : IDisposable
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
+        byte rootProtocolVersion,
         ZeroTierIdentity localIdentity)
     {
         ArgumentNullException.ThrowIfNull(udp);
@@ -36,6 +38,7 @@ internal sealed class ZeroTierPeerKeyCache : IDisposable
         _rootNodeId = rootNodeId;
         _rootEndpoint = rootEndpoint;
         _rootKey = rootKey;
+        _rootProtocolVersion = rootProtocolVersion;
         _localIdentity = localIdentity;
     }
 
@@ -67,6 +70,7 @@ internal sealed class ZeroTierPeerKeyCache : IDisposable
                         _rootNodeId,
                         _rootEndpoint,
                         _rootKey,
+                        _rootProtocolVersion,
                         _localIdentity.NodeId,
                         peer,
                         timeout,
