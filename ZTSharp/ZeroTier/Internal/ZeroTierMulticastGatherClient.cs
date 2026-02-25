@@ -146,7 +146,7 @@ internal static class ZeroTierMulticastGatherClient
                     errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
                 }
 
-                throw new InvalidOperationException(FormatMulticastGatherError(errorCode, errorNetworkId));
+                throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(errorInReVerb, errorCode, errorNetworkId));
             }
 
             if (verb != ZeroTierVerb.Ok)
@@ -184,27 +184,6 @@ internal static class ZeroTierMulticastGatherClient
 
             return (totalKnown, members);
         }
-    }
-
-    private static string FormatMulticastGatherError(byte errorCode, ulong? networkId)
-    {
-        var message = errorCode switch
-        {
-            0x01 => "Invalid MULTICAST_GATHER request.",
-            0x02 => "Bad/unsupported protocol version for MULTICAST_GATHER.",
-            0x03 => "Object not found for MULTICAST_GATHER.",
-            0x04 => "Identity collision reported by peer.",
-            0x05 => "Peer does not support MULTICAST_GATHER.",
-            0x06 => "Network membership certificate required (COM update needed).",
-            0x07 => "Network access denied (not authorized).",
-            0x08 => "Unwanted multicast.",
-            0x09 => "Network authentication required (external/2FA).",
-            _ => $"Unknown error for MULTICAST_GATHER (0x{errorCode:x2})."
-        };
-
-        return networkId is null
-            ? $"{message}"
-            : $"{message} (network: 0x{networkId:x16})";
     }
 
 }

@@ -124,7 +124,7 @@ internal static class ZeroTierNetworkConfigProtocol
                     errorNetworkId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(IndexPayload + 1 + 8 + 1, 8));
                 }
 
-                throw new InvalidOperationException(FormatNetworkConfigRequestError(errorCode, errorNetworkId));
+                throw new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, errorNetworkId));
             }
 
             if (verb == ZeroTierVerb.Ok)
@@ -218,24 +218,4 @@ internal static class ZeroTierNetworkConfigProtocol
         }
     }
 
-    private static string FormatNetworkConfigRequestError(byte errorCode, ulong? networkId)
-    {
-        var message = errorCode switch
-        {
-            0x01 => "Invalid NETWORK_CONFIG_REQUEST.",
-            0x02 => "Bad/unsupported protocol version for NETWORK_CONFIG_REQUEST.",
-            0x03 => "Controller object not found for NETWORK_CONFIG_REQUEST.",
-            0x04 => "Identity collision reported by controller.",
-            0x05 => "Controller does not support NETWORK_CONFIG_REQUEST.",
-            0x06 => "Network membership certificate required (COM update needed).",
-            0x07 => "Network access denied (not authorized).",
-            0x08 => "Unwanted multicast (unexpected for NETWORK_CONFIG_REQUEST).",
-            0x09 => "Network authentication required (external/2FA).",
-            _ => $"Unknown error for NETWORK_CONFIG_REQUEST (0x{errorCode:x2})."
-        };
-
-        return networkId is null
-            ? $"{message}"
-            : $"{message} (network: 0x{networkId:x16})";
-    }
 }
