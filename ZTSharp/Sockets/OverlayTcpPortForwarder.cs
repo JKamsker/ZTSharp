@@ -203,6 +203,7 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         }
         catch (ObjectDisposedException)
         {
+            return;
         }
     }
 }
