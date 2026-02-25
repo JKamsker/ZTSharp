@@ -12,13 +12,13 @@ public sealed class OverlayTcpTests
 
         await using var serverNode = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore()
         });
 
         await using var clientNode = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore()
         });
 
@@ -71,4 +71,3 @@ public sealed class OverlayTcpTests
         return readTotal;
     }
 }
-

@@ -14,7 +14,7 @@ public sealed class ZeroTierSocketPersistenceTests
     {
         Assert.True(ZeroTierIdentity.TryParse(KnownGoodIdentity, out var identity));
 
-        var stateRoot = Path.Combine(Path.GetTempPath(), "zt-zero-tier-test-" + Guid.NewGuid());
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-zero-tier-test-");
         Directory.CreateDirectory(stateRoot);
 
         var networkId = 0x9ad07d01093a69e3UL;
@@ -56,7 +56,7 @@ public sealed class ZeroTierSocketPersistenceTests
     {
         Assert.True(ZeroTierIdentity.TryParse(KnownGoodIdentity, out var identity));
 
-        var stateRoot = Path.Combine(Path.GetTempPath(), "zt-zero-tier-test-" + Guid.NewGuid());
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-zero-tier-test-");
         Directory.CreateDirectory(stateRoot);
 
         var networkId = 0x9ad07d01093a69e3UL;

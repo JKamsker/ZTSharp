@@ -8,7 +8,7 @@ public sealed class ResilienceAndCancellationTests
         var store = new BlockOnFlushStore();
         await using var node = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = store
         });
 
@@ -27,7 +27,7 @@ public sealed class ResilienceAndCancellationTests
         var store = new BlockOnNetworkWriteStore();
         await using var node = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = store
         });
 

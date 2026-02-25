@@ -61,14 +61,14 @@ public class ExternalZtNetTests
 
             await using var node1 = new Node(new NodeOptions
             {
-                StateRootPath = Path.Combine(Path.GetTempPath(), "zt-e2e-node-" + Guid.NewGuid()),
+                StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-e2e-node-"),
                 StateStore = node1Store,
                 TransportMode = TransportMode.OsUdp
             });
 
             await using var node2 = new Node(new NodeOptions
             {
-                StateRootPath = Path.Combine(Path.GetTempPath(), "zt-e2e-node-" + Guid.NewGuid()),
+                StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-e2e-node-"),
                 StateStore = node2Store,
                 TransportMode = TransportMode.OsUdp
             });

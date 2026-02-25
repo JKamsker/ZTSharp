@@ -64,7 +64,7 @@ public sealed class ZeroTierApiTests
     {
         await using var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-test-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-test-"),
             NetworkId = 1
         });
 

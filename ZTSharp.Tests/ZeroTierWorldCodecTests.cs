@@ -72,7 +72,7 @@ public sealed class ZeroTierWorldCodecTests
     [Fact]
     public void EmbeddedDefault_PrefersPlanetFromLibztState_WhenPresent()
     {
-        var stateRoot = Path.Combine(Path.GetTempPath(), "zt-zero-tier-planet-test-" + Guid.NewGuid());
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-zero-tier-planet-test-");
         var libztDir = Path.Combine(stateRoot, "libzt");
         var libztRootsPath = Path.Combine(libztDir, "roots");
 

@@ -7,7 +7,7 @@ public sealed class StateStoreTests
     [Fact]
     public async Task FileStore_UsesRootsAlias()
     {
-        var path = Path.Combine(Path.GetTempPath(), "zt-store-alias-" + Guid.NewGuid());
+        var path = TestTempPaths.CreateGuidSuffixed("zt-store-alias-");
         try
         {
             var store = new FileStateStore(path);
@@ -58,4 +58,3 @@ public sealed class StateStoreTests
         Assert.Contains("roots", listed);
     }
 }
-

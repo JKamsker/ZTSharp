@@ -10,7 +10,7 @@ public sealed class NodeLifecycleTests
         var store = new MemoryStateStore();
         var node = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = store
         });
 
@@ -34,7 +34,7 @@ public sealed class NodeLifecycleTests
         NodeId firstId;
         var options = new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = store
         };
 
@@ -58,7 +58,7 @@ public sealed class NodeLifecycleTests
     public async Task Node_RecoversNetworksAcrossRestart()
     {
         var store = new MemoryStateStore();
-        var stateRoot = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid());
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-node-");
         var networkId = 1357911UL;
 
         await using (var first = new Node(new NodeOptions
@@ -90,7 +90,7 @@ public sealed class NodeLifecycleTests
         var store = new MemoryStateStore();
         await using var node = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = store
         });
 
@@ -116,4 +116,3 @@ public sealed class NodeLifecycleTests
         Assert.True(sawStarted);
     }
 }
-

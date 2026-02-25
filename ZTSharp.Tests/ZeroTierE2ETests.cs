@@ -22,7 +22,7 @@ public sealed class ZeroTierE2ETests
         }
 
         var state = Environment.GetEnvironmentVariable("LIBZT_ZEROTIER_STATE");
-        state ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-zerotier-e2e", Guid.NewGuid().ToString("N"));
+        state ??= TestTempPaths.CreateGuidSubdirectory("libzt-dotnet-zerotier-e2e");
 
         var networkId = ParseNetworkId(networkText);
         var url = new Uri(urlText, UriKind.Absolute);
@@ -57,7 +57,7 @@ public sealed class ZeroTierE2ETests
         }
 
         var state = Environment.GetEnvironmentVariable("LIBZT_ZEROTIER_STATE");
-        state ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-zerotier-e2e", Guid.NewGuid().ToString("N"));
+        state ??= TestTempPaths.CreateGuidSubdirectory("libzt-dotnet-zerotier-e2e");
 
         var networkId = ParseNetworkId(networkText);
         var url = new Uri(urlText, UriKind.Absolute);
@@ -92,7 +92,7 @@ public sealed class ZeroTierE2ETests
         }
 
         var state = Environment.GetEnvironmentVariable("LIBZT_ZEROTIER_STATE");
-        state ??= Path.Combine(Path.GetTempPath(), "libzt-dotnet-zerotier-e2e", Guid.NewGuid().ToString("N"));
+        state ??= TestTempPaths.CreateGuidSubdirectory("libzt-dotnet-zerotier-e2e");
 
         var networkId = ParseNetworkId(networkText);
         var echoEndpoint = ParseIpEndPoint(echoText);
