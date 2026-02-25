@@ -38,7 +38,7 @@ public sealed class TunnelAndHttpTests
                 using var stream = tcp.GetStream();
 
                 var buffer = new byte[4];
-                var read = await ReadExactAsync(stream, buffer, buffer.Length, cts.Token).ConfigureAwait(false);
+                var read = await StreamTestHelpers.ReadExactAsync(stream, buffer, buffer.Length, cts.Token).ConfigureAwait(false);
                 if (read == 0)
                 {
                     return;
@@ -63,7 +63,7 @@ public sealed class TunnelAndHttpTests
             await stream.WriteAsync("ping"u8.ToArray(), cts.Token);
 
             var reply = new byte[4];
-            var replyRead = await ReadExactAsync(stream, reply, reply.Length, cts.Token);
+            var replyRead = await StreamTestHelpers.ReadExactAsync(stream, reply, reply.Length, cts.Token);
             Assert.Equal(reply.Length, replyRead);
             Assert.True(reply.AsSpan().SequenceEqual("ping"u8));
 
@@ -259,22 +259,4 @@ public sealed class TunnelAndHttpTests
         });
     }
 
-    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, int length, CancellationToken cancellationToken)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await stream.ReadAsync(
-                buffer.AsMemory(readTotal, length - readTotal),
-                cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
-    }
 }

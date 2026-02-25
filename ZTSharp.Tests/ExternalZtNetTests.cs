@@ -134,13 +134,13 @@ public class ExternalZtNetTests
 
             await clientStream.WriteAsync(ping);
             var serverBuffer = new byte[ping.Length];
-            var serverRead = await ReadExactAsync(serverStream, serverBuffer, ping.Length, CancellationToken.None);
+            var serverRead = await StreamTestHelpers.ReadExactAsync(serverStream, serverBuffer, ping.Length, CancellationToken.None);
             Assert.Equal(ping.Length, serverRead);
             Assert.True(serverBuffer.AsSpan().SequenceEqual(ping));
 
             await serverStream.WriteAsync(pong);
             var clientBuffer = new byte[pong.Length];
-            var clientRead = await ReadExactAsync(clientStream, clientBuffer, pong.Length, CancellationToken.None);
+            var clientRead = await StreamTestHelpers.ReadExactAsync(clientStream, clientBuffer, pong.Length, CancellationToken.None);
             Assert.Equal(pong.Length, clientRead);
             Assert.True(clientBuffer.AsSpan().SequenceEqual(pong));
         }
@@ -149,29 +149,6 @@ public class ExternalZtNetTests
             var deleteResult = await RunZtNetCommandAsync($"--yes --quiet network delete {networkIdText}");
             Assert.Equal(0, deleteResult.ExitCode);
         }
-    }
-
-    private static async Task<int> ReadExactAsync(
-        Stream stream,
-        byte[] buffer,
-        int length,
-        CancellationToken cancellationToken)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await stream.ReadAsync(
-                buffer.AsMemory(readTotal, length - readTotal),
-                cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
     }
 
     private static string? ParseNetworkId(string output)

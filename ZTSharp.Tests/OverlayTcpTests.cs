@@ -43,31 +43,14 @@ public sealed class OverlayTcpTests
 
         await clientStream.WriteAsync(request);
         var serverBuffer = new byte[request.Length];
-        var serverRead = await ReadExactAsync(serverStream, serverBuffer, request.Length);
+        var serverRead = await StreamTestHelpers.ReadExactAsync(serverStream, serverBuffer, request.Length, CancellationToken.None);
         Assert.Equal(request.Length, serverRead);
         Assert.True(serverBuffer.AsSpan().SequenceEqual(request));
 
         await serverStream.WriteAsync(response);
         var clientBuffer = new byte[response.Length];
-        var clientRead = await ReadExactAsync(clientStream, clientBuffer, response.Length);
+        var clientRead = await StreamTestHelpers.ReadExactAsync(clientStream, clientBuffer, response.Length, CancellationToken.None);
         Assert.Equal(response.Length, clientRead);
         Assert.True(clientBuffer.AsSpan().SequenceEqual(response));
-    }
-
-    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, int length)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await stream.ReadAsync(buffer.AsMemory(readTotal, length - readTotal));
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
     }
 }
