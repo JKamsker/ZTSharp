@@ -85,20 +85,5 @@ internal static class HttpUtilities
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static int IndexOfHttpHeaderTerminator(ReadOnlySpan<byte> buffer)
-    {
-        for (var i = 0; i <= buffer.Length - 4; i++)
-        {
-            if (buffer[i] == (byte)'\r' &&
-                buffer[i + 1] == (byte)'\n' &&
-                buffer[i + 2] == (byte)'\r' &&
-                buffer[i + 3] == (byte)'\n')
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
+    private static int IndexOfHttpHeaderTerminator(ReadOnlySpan<byte> buffer) => buffer.IndexOf("\r\n\r\n"u8);
 }
-
