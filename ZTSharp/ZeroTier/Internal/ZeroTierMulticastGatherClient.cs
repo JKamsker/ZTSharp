@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Net;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -65,7 +64,7 @@ internal static class ZeroTierMulticastGatherClient
 
         var payload = ZeroTierMulticastGatherCodec.EncodeRequestPayload(networkId, group, gatherLimit, inlineCom.Span);
 
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var header = new ZeroTierPacketHeader(
             PacketId: packetId,
             Destination: rootNodeId,
@@ -208,10 +207,4 @@ internal static class ZeroTierMulticastGatherClient
             : $"{message} (network: 0x{networkId:x16})";
     }
 
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
-    }
 }

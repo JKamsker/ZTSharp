@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -217,7 +216,7 @@ internal sealed class ZeroTierDataplaneRootClient
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var header = new ZeroTierPacketHeader(
             PacketId: packetId,
             Destination: _rootNodeId,
@@ -256,13 +255,6 @@ internal sealed class ZeroTierDataplaneRootClient
         {
             pending.TryRemove(packetId, out _);
         }
-    }
-
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
 
     private static void WriteUInt40(Span<byte> destination, ulong value)

@@ -2,7 +2,6 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -127,7 +126,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
         _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
 
         var okPacket = ZeroTierHelloOkPacketBuilder.BuildPacket(
-            packetId: GeneratePacketId(),
+            packetId: ZeroTierPacketIdGenerator.GeneratePacketId(),
             destination: peerNodeId,
             source: _localNodeId,
             inRePacketId: helloPacketId,
@@ -150,12 +149,5 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     public void Dispose()
     {
         _peerKeyLock.Dispose();
-    }
-
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
     }
 }

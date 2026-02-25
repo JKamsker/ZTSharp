@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Net;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -43,7 +42,7 @@ internal static class ZeroTierMulticastLikeClient
             offset += 4;
         }
 
-        var packetId = GeneratePacketId();
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
         var header = new ZeroTierPacketHeader(
             PacketId: packetId,
             Destination: rootNodeId,
@@ -57,10 +56,4 @@ internal static class ZeroTierMulticastLikeClient
         await udp.SendAsync(rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
     }
 
-    private static ulong GeneratePacketId()
-    {
-        Span<byte> buffer = stackalloc byte[8];
-        RandomNumberGenerator.Fill(buffer);
-        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
-    }
 }
