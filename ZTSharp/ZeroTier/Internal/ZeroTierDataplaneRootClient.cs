@@ -1,0 +1,294 @@
+using System.Buffers.Binary;
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Net;
+using System.Security.Cryptography;
+using ZTSharp.ZeroTier.Protocol;
+using ZTSharp.ZeroTier.Transport;
+
+namespace ZTSharp.ZeroTier.Internal;
+
+internal sealed class ZeroTierDataplaneRootClient
+{
+    private readonly ZeroTierUdpTransport _udp;
+    private readonly NodeId _rootNodeId;
+    private readonly IPEndPoint _rootEndpoint;
+    private readonly byte[] _rootKey;
+    private readonly byte _rootProtocolVersion;
+    private readonly NodeId _localNodeId;
+    private readonly ulong _networkId;
+    private readonly byte[] _inlineCom;
+
+    private readonly ConcurrentDictionary<ulong, TaskCompletionSource<ZeroTierIdentity>> _pendingWhois = new();
+    private readonly ConcurrentDictionary<ulong, TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>> _pendingGather = new();
+
+    public ZeroTierDataplaneRootClient(
+        ZeroTierUdpTransport udp,
+        NodeId rootNodeId,
+        IPEndPoint rootEndpoint,
+        byte[] rootKey,
+        byte rootProtocolVersion,
+        NodeId localNodeId,
+        ulong networkId,
+        byte[] inlineCom)
+    {
+        ArgumentNullException.ThrowIfNull(udp);
+        ArgumentNullException.ThrowIfNull(rootEndpoint);
+        ArgumentNullException.ThrowIfNull(rootKey);
+        ArgumentNullException.ThrowIfNull(inlineCom);
+
+        _udp = udp;
+        _rootNodeId = rootNodeId;
+        _rootEndpoint = rootEndpoint;
+        _rootKey = rootKey;
+        _rootProtocolVersion = rootProtocolVersion;
+        _localNodeId = localNodeId;
+        _networkId = networkId;
+        _inlineCom = inlineCom;
+    }
+
+    public async Task<NodeId> ResolveNodeIdAsync(
+        IPAddress managedIp,
+        ConcurrentDictionary<IPAddress, NodeId> cache,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(managedIp);
+        ArgumentNullException.ThrowIfNull(cache);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (cache.TryGetValue(managedIp, out var cachedNodeId))
+        {
+            if (ZeroTierTrace.Enabled)
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {cachedNodeId} (cache).");
+            }
+
+            return cachedNodeId;
+        }
+
+        var group = ZeroTierMulticastGroup.DeriveForAddressResolution(managedIp);
+        var (totalKnown, members) = await MulticastGatherAsync(group, gatherLimit: 32, cancellationToken).ConfigureAwait(false);
+        if (members.Length == 0)
+        {
+            throw new InvalidOperationException($"Could not resolve '{managedIp}' to a ZeroTier node id (no multicast-gather results).");
+        }
+
+        var remoteNodeId = members[0];
+        if (ZeroTierTrace.Enabled)
+        {
+            var list = string.Join(", ", members.Take(8).Select(member => member.ToString()));
+            var suffix = members.Length > 8 ? ", ..." : string.Empty;
+            ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {_rootNodeId} via {_rootEndpoint}).");
+        }
+
+        return remoteNodeId;
+    }
+
+    public bool TryDispatchResponse(ZeroTierVerb verb, ReadOnlySpan<byte> payload)
+    {
+        switch (verb)
+        {
+            case ZeroTierVerb.Ok:
+                {
+                    if (payload.Length < 1 + 8)
+                    {
+                        return false;
+                    }
+
+                    var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1, 8));
+
+                    if (inReVerb == ZeroTierVerb.Whois &&
+                        _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
+                    {
+                        try
+                        {
+                            var identity = ZeroTierIdentityCodec.Deserialize(payload.Slice(1 + 8), out _);
+                            whoisTcs.TrySetResult(identity);
+                        }
+                        catch (FormatException ex)
+                        {
+                            whoisTcs.TrySetException(ex);
+                        }
+
+                        return true;
+                    }
+
+                    if (inReVerb == ZeroTierVerb.MulticastGather &&
+                        _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
+                    {
+                        if (!ZeroTierMulticastGatherCodec.TryParseOkPayload(
+                                payload.Slice(1 + 8),
+                                out var okNetworkId,
+                                out _,
+                                out var totalKnown,
+                                out var members) ||
+                            okNetworkId != _networkId)
+                        {
+                            gatherTcs.TrySetException(new InvalidOperationException("Invalid MULTICAST_GATHER OK payload."));
+                            return true;
+                        }
+
+                        gatherTcs.TrySetResult((totalKnown, members));
+                        return true;
+                    }
+
+                    return false;
+                }
+            case ZeroTierVerb.Error:
+                {
+                    if (payload.Length < 1 + 8 + 1)
+                    {
+                        return false;
+                    }
+
+                    var inReVerb = (ZeroTierVerb)(payload[0] & 0x1F);
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1, 8));
+                    var errorCode = payload[1 + 8];
+                    ulong? networkId = null;
+                    if (payload.Length >= 1 + 8 + 1 + 8)
+                    {
+                        networkId = BinaryPrimitives.ReadUInt64BigEndian(payload.Slice(1 + 8 + 1, 8));
+                    }
+
+                    if (inReVerb == ZeroTierVerb.Whois &&
+                        _pendingWhois.TryRemove(inRePacketId, out var whoisTcs))
+                    {
+                        whoisTcs.TrySetException(new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, networkId)));
+                        return true;
+                    }
+
+                    if (inReVerb == ZeroTierVerb.MulticastGather &&
+                        _pendingGather.TryRemove(inRePacketId, out var gatherTcs))
+                    {
+                        gatherTcs.TrySetException(new InvalidOperationException(ZeroTierErrorFormatting.FormatError(inReVerb, errorCode, networkId)));
+                        return true;
+                    }
+
+                    return false;
+                }
+            default:
+                return false;
+        }
+    }
+
+    public async Task<ZeroTierIdentity> WhoisAsync(NodeId targetNodeId, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be positive.");
+        }
+
+        var payload = new byte[5];
+        WriteUInt40(payload, targetNodeId.Value);
+
+        var packetId = GeneratePacketId();
+        var header = new ZeroTierPacketHeader(
+            PacketId: packetId,
+            Destination: _rootNodeId,
+            Source: _localNodeId,
+            Flags: 0,
+            Mac: 0,
+            VerbRaw: (byte)ZeroTierVerb.Whois);
+
+        var packet = ZeroTierPacketCodec.Encode(header, payload);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_rootKey, _rootProtocolVersion), encryptPayload: true);
+        packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
+
+        var tcs = new TaskCompletionSource<ZeroTierIdentity>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_pendingWhois.TryAdd(packetId, tcs))
+        {
+            throw new InvalidOperationException("Packet id collision while sending WHOIS.");
+        }
+
+        try
+        {
+            await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(timeout);
+
+            try
+            {
+                return await tcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Timed out waiting for WHOIS response after {timeout}.");
+            }
+        }
+        finally
+        {
+            _pendingWhois.TryRemove(packetId, out _);
+        }
+    }
+
+    public async Task<(uint TotalKnown, NodeId[] Members)> MulticastGatherAsync(
+        ZeroTierMulticastGroup group,
+        uint gatherLimit,
+        CancellationToken cancellationToken)
+    {
+        var payload = ZeroTierMulticastGatherCodec.EncodeRequestPayload(_networkId, group, gatherLimit, _inlineCom);
+
+        var packetId = GeneratePacketId();
+        var header = new ZeroTierPacketHeader(
+            PacketId: packetId,
+            Destination: _rootNodeId,
+            Source: _localNodeId,
+            Flags: 0,
+            Mac: 0,
+            VerbRaw: (byte)ZeroTierVerb.MulticastGather);
+
+        var packet = ZeroTierPacketCodec.Encode(header, payload);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(_rootKey, _rootProtocolVersion), encryptPayload: true);
+        packetId = BinaryPrimitives.ReadUInt64BigEndian(packet.AsSpan(0, 8));
+
+        var tcs = new TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_pendingGather.TryAdd(packetId, tcs))
+        {
+            throw new InvalidOperationException("Packet id collision while sending MULTICAST_GATHER.");
+        }
+
+        try
+        {
+            await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            try
+            {
+                return await tcs.Task.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Timed out waiting for MULTICAST_GATHER response after {TimeSpan.FromSeconds(5)}.");
+            }
+        }
+        finally
+        {
+            _pendingGather.TryRemove(packetId, out _);
+        }
+    }
+
+    private static ulong GeneratePacketId()
+    {
+        Span<byte> buffer = stackalloc byte[8];
+        RandomNumberGenerator.Fill(buffer);
+        return BinaryPrimitives.ReadUInt64BigEndian(buffer);
+    }
+
+    private static void WriteUInt40(Span<byte> destination, ulong value)
+    {
+        if (destination.Length < 5)
+        {
+            throw new ArgumentException("Destination must be at least 5 bytes.", nameof(destination));
+        }
+
+        destination[0] = (byte)((value >> 32) & 0xFF);
+        destination[1] = (byte)((value >> 24) & 0xFF);
+        destination[2] = (byte)((value >> 16) & 0xFF);
+        destination[3] = (byte)((value >> 8) & 0xFF);
+        destination[4] = (byte)(value & 0xFF);
+    }
+}
