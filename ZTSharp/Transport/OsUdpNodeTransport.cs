@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
-using System.Buffers.Binary;
+using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Transport;
 
@@ -17,20 +17,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ulong NodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
 
-    private enum ControlFrameType : byte
-    {
-        PeerHello = 1,
-        PeerHelloResponse = 2
-    }
-
     private static readonly ConcurrentDictionary<ulong, ConcurrentDictionary<ulong, IPEndPoint>> _networkDirectory = new();
-    private const int ControlMagicLength = 4;
-    private const int ControlFrameTypeOffset = ControlMagicLength;
-    private const int ControlFrameNodeOffset = ControlMagicLength + 1;
-    private const int ControlFrameNodeLength = sizeof(ulong);
-    private const int ControlFrameLength = ControlMagicLength + 1 + ControlFrameNodeLength;
-
-    private static ReadOnlySpan<byte> ControlMagic => "ZTC1"u8;
 
     private readonly UdpClient _udp;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -107,7 +94,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     {
         get
         {
-            return NormalizeEndpointForLocalDelivery((IPEndPoint)_udp.Client.LocalEndPoint!);
+            return NormalizeEndpoint((IPEndPoint)_udp.Client.LocalEndPoint!);
         }
     }
 
@@ -123,7 +110,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         var registrationId = Guid.NewGuid();
-        var advertisedEndpoint = localEndpoint is null ? LocalEndpoint : NormalizeEndpointForRemoteDelivery(localEndpoint);
+        var advertisedEndpoint = localEndpoint is null ? LocalEndpoint : NormalizeEndpoint(localEndpoint);
         _localNodeIds[networkId] = nodeId;
         var subscribers = _networkSubscribers.GetOrAdd(
             networkId,
@@ -160,7 +147,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                 networkId,
                 nodeId,
                 peer.Value,
-                ControlFrameType.PeerHello,
+                OsUdpPeerDiscoveryProtocol.FrameType.PeerHello,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -263,7 +250,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
         ArgumentNullException.ThrowIfNull(endpoint);
 
-        var remoteEndpoint = NormalizeEndpointForRemoteDelivery(endpoint);
+        var remoteEndpoint = NormalizeEndpoint(endpoint);
         var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
         peers[nodeId] = remoteEndpoint;
 
@@ -283,7 +270,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                     networkId,
                     localNodeId,
                     remoteEndpoint,
-                    ControlFrameType.PeerHello,
+                    OsUdpPeerDiscoveryProtocol.FrameType.PeerHello,
                     CancellationToken.None)
                 .ConfigureAwait(false);
         }
@@ -356,20 +343,20 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                 continue;
             }
 
-            if (TryParseControlPayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
+            if (OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
             {
                 if (_enablePeerDiscovery && discoveredNodeId != 0)
                 {
                     RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
                     if (_localNodeIds.TryGetValue(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
                     {
-                        if (controlFrameType == ControlFrameType.PeerHello)
+                        if (controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello)
                         {
                             await SendDiscoveryFrameAsync(
                                 networkId,
                                 localNodeId,
                                 result.RemoteEndPoint,
-                                ControlFrameType.PeerHelloResponse,
+                                OsUdpPeerDiscoveryProtocol.FrameType.PeerHelloResponse,
                                 token).ConfigureAwait(false);
                         }
                     }
@@ -404,13 +391,13 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ulong networkId,
         ulong nodeId,
         IPEndPoint endpoint,
-        ControlFrameType frameType,
+        OsUdpPeerDiscoveryProtocol.FrameType frameType,
         CancellationToken cancellationToken)
     {
-        Span<byte> payload = stackalloc byte[ControlFrameLength];
-        WriteControlPayload(frameType, nodeId, payload);
+        Span<byte> payload = stackalloc byte[OsUdpPeerDiscoveryProtocol.PayloadLength];
+        OsUdpPeerDiscoveryProtocol.WritePayload(frameType, nodeId, payload);
 
-        var frame = ArrayPool<byte>.Shared.Rent(NodeFrameCodec.GetEncodedLength(ControlFrameLength));
+        var frame = ArrayPool<byte>.Shared.Rent(NodeFrameCodec.GetEncodedLength(OsUdpPeerDiscoveryProtocol.PayloadLength));
         try
         {
             if (!NodeFrameCodec.TryEncode(networkId, nodeId, payload, frame, out var frameLength))
@@ -428,65 +415,16 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         }
     }
 
-    private static void WriteControlPayload(ControlFrameType frameType, ulong nodeId, Span<byte> payload)
-    {
-        ControlMagic.CopyTo(payload);
-        payload[ControlFrameTypeOffset] = (byte)frameType;
-        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(ControlFrameNodeOffset), nodeId);
-    }
-
-    private static bool TryParseControlPayload(
-        ReadOnlySpan<byte> payload,
-        out ControlFrameType frameType,
-        out ulong nodeId)
-    {
-        frameType = ControlFrameType.PeerHello;
-        nodeId = 0;
-        if (payload.Length < ControlFrameLength)
-        {
-            return false;
-        }
-
-        if (!payload.Slice(0, ControlMagicLength).SequenceEqual(ControlMagic))
-        {
-            return false;
-        }
-
-        frameType = (ControlFrameType)payload[ControlFrameTypeOffset];
-        if (frameType != ControlFrameType.PeerHello && frameType != ControlFrameType.PeerHelloResponse)
-        {
-            return false;
-        }
-
-        nodeId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(ControlFrameNodeOffset, ControlFrameNodeLength));
-        return true;
-    }
-
     private void RegisterDiscoveredPeer(ulong networkId, ulong sourceNodeId, IPEndPoint remoteEndpoint)
     {
-        var endpoint = NormalizeEndpointForRemoteDelivery(remoteEndpoint);
+        var endpoint = NormalizeEndpoint(remoteEndpoint);
         var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
         peers[sourceNodeId] = endpoint;
         var directoryPeers = _networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, IPEndPoint>());
         directoryPeers[sourceNodeId] = endpoint;
     }
 
-    private static IPEndPoint NormalizeEndpointForLocalDelivery(IPEndPoint endpoint)
-    {
-        if (endpoint.Address.Equals(IPAddress.Any))
-        {
-            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
-        }
-
-        if (endpoint.Address.Equals(IPAddress.IPv6Any))
-        {
-            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
-        }
-
-        return endpoint;
-    }
-
-    private static IPEndPoint NormalizeEndpointForRemoteDelivery(IPEndPoint endpoint)
+    private static IPEndPoint NormalizeEndpoint(IPEndPoint endpoint)
     {
         if (endpoint.Address.Equals(IPAddress.Any))
         {
