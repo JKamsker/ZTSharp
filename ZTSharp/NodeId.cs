@@ -80,7 +80,7 @@ public readonly record struct NodeId(ulong Value)
         return new NodeId(parsed);
     }
 
-    public override string ToString() => $"0x{Value:x10}";
+    public override string ToString() => $"0x{ToHexString()}";
 
     private static bool ContainsHexLetters(ReadOnlySpan<char> value)
     {
