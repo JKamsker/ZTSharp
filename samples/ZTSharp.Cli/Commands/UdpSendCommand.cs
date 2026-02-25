@@ -127,18 +127,25 @@ internal static class UdpSendCommand
         }
         finally
         {
-            if (udp is not null)
-            {
-                try
-                {
-                    await udp.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-            }
+            await DisposeUdpQuietlyAsync(udp).ConfigureAwait(false);
 
             await socket.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async ValueTask DisposeUdpQuietlyAsync(ZeroTierUdpSocket? udp)
+    {
+        if (udp is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await udp.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
         }
     }
 }
