@@ -91,9 +91,9 @@ internal sealed class NodePeerService
     }
 
     private static string BuildPeerFileKey(ulong networkId, ulong peerNodeId)
-        => $"{NodeStoreKeys.PeersDirectory}/{networkId}/{peerNodeId}.peer";
+        => $"{NodeStoreKeys.PeersDirectoryPrefix}{networkId}/{peerNodeId}.peer";
 
-    private static string BuildPeersNetworkPrefix(ulong networkId) => $"{NodeStoreKeys.PeersDirectory}/{networkId}/";
+    private static string BuildPeersNetworkPrefix(ulong networkId) => $"{NodeStoreKeys.PeersDirectoryPrefix}{networkId}/";
 
     private static bool TryParsePeerKey(ReadOnlySpan<char> prefix, string key, out ulong peerNodeId)
     {

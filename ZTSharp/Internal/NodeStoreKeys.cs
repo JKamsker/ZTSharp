@@ -11,5 +11,5 @@ internal static class NodeStoreKeys
     public const string NetworkAddressesSuffix = ".addr";
 
     public const string PeersDirectory = "peers.d";
+    public const string PeersDirectoryPrefix = "peers.d/";
 }
-
