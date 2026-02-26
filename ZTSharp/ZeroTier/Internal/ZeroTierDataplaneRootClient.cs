@@ -50,14 +50,14 @@ internal sealed class ZeroTierDataplaneRootClient
 
     public async Task<NodeId> ResolveNodeIdAsync(
         IPAddress managedIp,
-        ConcurrentDictionary<IPAddress, NodeId> cache,
+        ManagedIpToNodeIdCache cache,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(managedIp);
         ArgumentNullException.ThrowIfNull(cache);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (cache.TryGetValue(managedIp, out var cachedNodeId))
+        if (cache.TryGet(managedIp, out var cachedNodeId))
         {
             if (ZeroTierTrace.Enabled)
             {
@@ -82,7 +82,7 @@ internal sealed class ZeroTierDataplaneRootClient
             ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {_rootNodeId} via {_rootEndpoint}).");
         }
 
-        cache[managedIp] = remoteNodeId;
+        cache.SetResolved(managedIp, remoteNodeId);
         return remoteNodeId;
     }
 

@@ -11,15 +11,22 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
     private readonly ZeroTierDataplaneRuntime _sender;
     private readonly ZeroTierMac _localMac;
     private readonly IPAddress[] _localManagedIpsV6;
+    private readonly ManagedIpToNodeIdCache _managedIpToNodeId;
 
-    public ZeroTierDataplaneIcmpv6Handler(ZeroTierDataplaneRuntime sender, ZeroTierMac localMac, IPAddress[] localManagedIpsV6)
+    public ZeroTierDataplaneIcmpv6Handler(
+        ZeroTierDataplaneRuntime sender,
+        ZeroTierMac localMac,
+        IPAddress[] localManagedIpsV6,
+        ManagedIpToNodeIdCache managedIpToNodeId)
     {
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
+        ArgumentNullException.ThrowIfNull(managedIpToNodeId);
 
         _sender = sender;
         _localMac = localMac;
         _localManagedIpsV6 = localManagedIpsV6;
+        _managedIpToNodeId = managedIpToNodeId;
     }
 
     public async ValueTask HandleAsync(
@@ -49,6 +56,8 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
             {
                 return;
             }
+
+            _managedIpToNodeId.LearnFromNeighbor(sourceIp, peerNodeId);
 
             var reply = icmpSpan.ToArray();
             reply[0] = 129; // Echo Reply
@@ -92,6 +101,8 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
             {
                 return;
             }
+
+            _managedIpToNodeId.LearnFromNeighbor(sourceIp, peerNodeId);
 
             var na = new byte[32];
             var span = na.AsSpan();

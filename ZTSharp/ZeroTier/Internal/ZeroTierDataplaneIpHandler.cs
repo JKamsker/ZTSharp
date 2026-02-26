@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -12,7 +11,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 {
     private readonly ZeroTierDataplaneRuntime _sender;
     private readonly ZeroTierDataplaneRouteRegistry _routes;
-    private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId;
+    private readonly ManagedIpToNodeIdCache _managedIpToNodeId;
     private readonly ZeroTierDataplaneIcmpv6Handler _icmpv6;
     private readonly ZeroTierTcpRstSender _tcpRst;
 
@@ -25,7 +24,7 @@ internal sealed class ZeroTierDataplaneIpHandler
     public ZeroTierDataplaneIpHandler(
         ZeroTierDataplaneRuntime sender,
         ZeroTierDataplaneRouteRegistry routes,
-        ConcurrentDictionary<IPAddress, NodeId> managedIpToNodeId,
+        ManagedIpToNodeIdCache managedIpToNodeId,
         ZeroTierDataplaneIcmpv6Handler icmpv6,
         ulong networkId,
         ZeroTierMac localMac,
@@ -80,11 +79,6 @@ internal sealed class ZeroTierDataplaneIpHandler
         if (!isUnicastToUs && !isMulticast)
         {
             return;
-        }
-
-        if (!IsUnspecifiedIpv6(src))
-        {
-            _managedIpToNodeId[src] = peerNodeId;
         }
 
         if (nextHeader == Icmpv6Codec.ProtocolNumber)
@@ -203,8 +197,6 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        _managedIpToNodeId[src] = peerNodeId;
-
         if (protocol == UdpCodec.ProtocolNumber)
         {
             if (!UdpCodec.TryParseWithChecksum(src, dst, ipPayload, out _, out var udpDstPort, out _))
@@ -311,6 +303,8 @@ internal sealed class ZeroTierDataplaneIpHandler
         {
             return ValueTask.CompletedTask;
         }
+
+        _managedIpToNodeId.LearnFromNeighbor(new IPAddress(senderIp), peerNodeId);
 
         if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
         {

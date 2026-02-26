@@ -17,7 +17,7 @@ public sealed class ZeroTierIcmpv6ChecksumTests
 
         await using var runtime = CreateRuntime(localV4, localManagedIpsV6: new[] { localV6 });
         var localMac = ZeroTierMac.FromAddress(runtime.NodeId, networkId: 1);
-        var handler = new ZeroTierDataplaneIcmpv6Handler(runtime, localMac, new[] { localV6 });
+        var handler = new ZeroTierDataplaneIcmpv6Handler(runtime, localMac, new[] { localV6 }, new ManagedIpToNodeIdCache());
 
         var sourceIp = IPAddress.Parse("fd00::1");
         var destinationIp = IPAddress.Parse("ff02::1:ff00:2");
@@ -39,7 +39,7 @@ public sealed class ZeroTierIcmpv6ChecksumTests
 
         await using var runtime = CreateRuntime(localV4, localManagedIpsV6: new[] { localV6 });
         var localMac = ZeroTierMac.FromAddress(runtime.NodeId, networkId: 1);
-        var handler = new ZeroTierDataplaneIcmpv6Handler(runtime, localMac, new[] { localV6 });
+        var handler = new ZeroTierDataplaneIcmpv6Handler(runtime, localMac, new[] { localV6 }, new ManagedIpToNodeIdCache());
 
         var sourceIp = IPAddress.Parse("fd00::1");
         var destinationIp = IPAddress.Parse("ff02::1:ff00:2");

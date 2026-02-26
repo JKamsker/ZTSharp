@@ -122,10 +122,14 @@ Primary goals:
   - Drop path: `Ipv6Codec.IsExtensionHeader` + early drop in `ZeroTierDataplaneIpHandler` (with `ZeroTierTrace` log).
 
 ### 2.3 IP->NodeId cache poisoning + unbounded growth
-- [ ] Repro + add test: spoof many src IPs -> cache growth is bounded (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
-- [ ] Fix: add capacity limit + eviction policy (and/or TTL) for `_managedIpToNodeId`
-- [ ] Fix: restrict learning rules (only from validated neighbor discovery / ARP, or only from specific authenticated/control flows)
-- [ ] Add test: spoofed src IP cannot poison resolution for an unrelated managed IP (within test harness constraints)
+- [x] Repro + add test: spoof many src IPs -> cache growth is bounded (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
+  - Tests: `ManagedIpToNodeIdCacheTests.LearnFromNeighbor_IsCapacityBounded`, `ManagedIpToNodeIdCacheTests.SpoofedIpv4SourceIp_DoesNotPopulateIpToNodeIdCache`
+- [x] Fix: add capacity limit + eviction policy (and/or TTL) for `_managedIpToNodeId`
+  - Implemented `ManagedIpToNodeIdCache` (capacity + TTL + eviction).
+- [x] Fix: restrict learning rules (only from validated neighbor discovery / ARP, or only from specific authenticated/control flows)
+  - Policy: learn only from ARP requests (IPv4) and validated ICMPv6 Echo/NS (IPv6); do not learn from arbitrary IP packet source addresses.
+- [x] Add test: spoofed src IP cannot poison resolution for an unrelated managed IP (within test harness constraints)
+  - Test: `ManagedIpToNodeIdCacheTests.SpoofedIpv4SourceIp_DoesNotOverrideResolvedCacheEntry`
 
 ### 2.4 ResolveNodeId stability (staleness + ambiguity)
 - [ ] Add test: multicast-gather returning multiple members does not permanently cache a wrong node (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRootClient.cs`)

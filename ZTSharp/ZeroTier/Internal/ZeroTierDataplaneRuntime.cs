@@ -36,7 +36,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly ZeroTierDataplanePeerSecurity _peerSecurity;
-    private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId = new();
+    private readonly ManagedIpToNodeIdCache _managedIpToNodeId = new();
     private readonly ZeroTierDataplaneRouteRegistry _routes;
     private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
     private readonly ZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
@@ -106,7 +106,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             inlineCom);
         _peerSecurity = new ZeroTierDataplanePeerSecurity(udp, _rootClient, localIdentity);
 
-        var icmpv6 = new ZeroTierDataplaneIcmpv6Handler(this, _localMac, _localManagedIpsV6);
+        var icmpv6 = new ZeroTierDataplaneIcmpv6Handler(this, _localMac, _localManagedIpsV6, _managedIpToNodeId);
         var ip = new ZeroTierDataplaneIpHandler(
             sender: this,
             routes: _routes,

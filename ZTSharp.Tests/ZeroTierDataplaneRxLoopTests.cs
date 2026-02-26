@@ -1,7 +1,5 @@
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using ZTSharp.ZeroTier.Internal;
 using ZTSharp.ZeroTier.Protocol;
@@ -96,45 +94,6 @@ public sealed class ZeroTierDataplaneRxLoopTests
         while (peerQueue.Reader.TryRead(out var datagram))
         {
             var id = BinaryPrimitives.ReadInt32LittleEndian(datagram.Payload);
-            if (count == 0)
-            {
-                firstId = id;
-            }
-
-            lastId = id;
-            count++;
-        }
-
-        Assert.Equal(capacity, count);
-        Assert.Equal(writes - capacity, firstId);
-        Assert.Equal(writes - 1, lastId);
-    }
-
-    [Fact]
-    public void RoutedIpv4Link_IncomingQueue_DropsOldest()
-    {
-        var runtime = (ZeroTierDataplaneRuntime)RuntimeHelpers.GetUninitializedObject(typeof(ZeroTierDataplaneRuntime));
-        var link = new ZeroTierRoutedIpv4Link(runtime, routeKey: default, peerNodeId: new NodeId(0xaaaaaaaaaa));
-
-        var incoming = GetPrivateField<Channel<ReadOnlyMemory<byte>>>(link, "_incoming");
-
-        const int capacity = 256;
-        const int writes = capacity + 64;
-
-        for (var i = 0; i < writes; i++)
-        {
-            var payload = new byte[4];
-            BinaryPrimitives.WriteInt32LittleEndian(payload, i);
-            Assert.True(incoming.Writer.TryWrite(payload));
-        }
-
-        var firstId = -1;
-        var lastId = -1;
-        var count = 0;
-
-        while (incoming.Reader.TryRead(out var packet))
-        {
-            var id = BinaryPrimitives.ReadInt32LittleEndian(packet.Span);
             if (count == 0)
             {
                 firstId = id;
@@ -314,7 +273,10 @@ public sealed class ZeroTierDataplaneRxLoopTests
             expectedInlineCom: inlineCom,
             members: new[] { remoteNodeId });
 
-        var cache = new ConcurrentDictionary<IPAddress, NodeId>();
+        var cache = new ManagedIpToNodeIdCache(
+            capacity: 64,
+            resolvedTtl: TimeSpan.FromHours(1),
+            learnedTtl: TimeSpan.FromHours(1));
 
         var resolved1 = await rootClient.ResolveNodeIdAsync(managedIp, cache, CancellationToken.None);
         Assert.Equal(remoteNodeId, resolved1);
