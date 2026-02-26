@@ -20,7 +20,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     private ZeroTierHelloOk? _upstreamRoot;
     private byte[]? _upstreamRootKey;
     private bool _joined;
-    private bool _disposed;
+    private int _disposeState;
 
     internal ZeroTierSocket(ZeroTierSocketOptions options, string statePath, ZeroTierIdentity identity, ZeroTierWorld planet)
     {
@@ -45,11 +45,12 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     public async Task JoinAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
 
         await _joinLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ThrowIfDisposed();
             if (_joined)
             {
                 return;
@@ -82,6 +83,8 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         Justification = "Handler ownership transfers to HttpClient, which is disposed by the caller.")]
     public HttpClient CreateHttpClient(Uri? baseAddress = null)
     {
+        ThrowIfDisposed();
+
         var handler = new ZeroTierHttpMessageHandler(this);
         var client = new HttpClient(handler, disposeHandler: true);
         if (baseAddress is not null)
@@ -96,12 +99,15 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         System.Net.Sockets.AddressFamily addressFamily,
         System.Net.Sockets.SocketType socketType,
         System.Net.Sockets.ProtocolType protocolType)
-        => new(this, addressFamily, socketType, protocolType);
+    {
+        ThrowIfDisposed();
+        return new Sockets.ManagedSocket(this, addressFamily, socketType, protocolType);
+    }
 
     public async ValueTask<ZeroTierTcpListener> ListenTcpAsync(int port, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
         return await ListenTcpAsync(GetDefaultLocalManagedAddressOrThrow(), port, cancellationToken).ConfigureAwait(false);
@@ -110,7 +116,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     public async ValueTask<ZeroTierTcpListener> ListenTcpAsync(IPAddress localAddress, int port, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
 
         return await ZeroTierSocketBindings.ListenTcpAsync(
                 ensureJoinedAsync: JoinAsync,
@@ -126,7 +132,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     public async ValueTask<ZeroTierUdpSocket> BindUdpAsync(int port, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
 
         await JoinAsync(cancellationToken).ConfigureAwait(false);
         return await BindUdpAsync(GetDefaultLocalManagedAddressOrThrow(), port, cancellationToken).ConfigureAwait(false);
@@ -138,7 +144,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
 
         return await ZeroTierSocketBindings.BindUdpAsync(
                 ensureJoinedAsync: JoinAsync,
@@ -156,7 +162,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(remote);
         cancellationToken.ThrowIfCancellationRequested();
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
         return ConnectTcpCoreAsync(local: null, remote, cancellationToken);
     }
 
@@ -166,7 +172,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(remote);
         cancellationToken.ThrowIfCancellationRequested();
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
         return ConnectTcpCoreAsync(local, remote, cancellationToken);
     }
 
@@ -188,33 +194,70 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
-
-        await _runtimeLock.WaitAsync().ConfigureAwait(false);
+        await _joinLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_runtime is not null)
+            await _runtimeLock.WaitAsync().ConfigureAwait(false);
+            try
             {
-                await _runtime.DisposeAsync().ConfigureAwait(false);
-                _runtime = null;
+                if (_runtime is not null)
+                {
+                    await _runtime.DisposeAsync().ConfigureAwait(false);
+                    _runtime = null;
+                }
+            }
+            finally
+            {
+                _runtimeLock.Dispose();
             }
         }
         finally
         {
-            _runtimeLock.Release();
-            _runtimeLock.Dispose();
             _joinLock.Dispose();
         }
     }
 
     private async ValueTask<Stream> ConnectTcpCoreAsync(IPEndPoint? local, IPEndPoint remote, CancellationToken cancellationToken)
     {
-        return await ZeroTierSocketTcpConnector.ConnectAsync(
+        var (stream, _) = await ConnectTcpCoreWithLocalEndpointAsync(local, remote, cancellationToken).ConfigureAwait(false);
+        return stream;
+    }
+
+    internal ValueTask<(Stream Stream, IPEndPoint LocalEndpoint)> ConnectTcpWithLocalEndpointAsync(
+        IPEndPoint remote,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        return ConnectTcpCoreWithLocalEndpointAsync(local: null, remote, cancellationToken);
+    }
+
+    internal ValueTask<(Stream Stream, IPEndPoint LocalEndpoint)> ConnectTcpWithLocalEndpointAsync(
+        IPEndPoint local,
+        IPEndPoint remote,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(local);
+        ArgumentNullException.ThrowIfNull(remote);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        return ConnectTcpCoreWithLocalEndpointAsync(local, remote, cancellationToken);
+    }
+
+    private async ValueTask<(Stream Stream, IPEndPoint LocalEndpoint)> ConnectTcpCoreWithLocalEndpointAsync(
+        IPEndPoint? local,
+        IPEndPoint remote,
+        CancellationToken cancellationToken)
+    {
+        return await ZeroTierSocketTcpConnector.ConnectWithLocalEndpointAsync(
                 ensureJoinedAsync: JoinAsync,
                 getManagedIps: () => ManagedIps,
                 getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
@@ -246,11 +289,12 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ThrowIfDisposed();
 
         await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ThrowIfDisposed();
             if (_runtime is not null)
             {
                 return _runtime;
@@ -280,4 +324,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             _runtimeLock.Release();
         }
     }
+
+    private void ThrowIfDisposed()
+        => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
 }

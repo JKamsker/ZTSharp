@@ -7,11 +7,33 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketTcpConnector
 {
+    public static async ValueTask<Stream> ConnectAsync(
+        Func<CancellationToken, Task> ensureJoinedAsync,
+        Func<IReadOnlyList<IPAddress>> getManagedIps,
+        Func<(IPAddress? LocalManagedIpV4, byte[] InlineCom)> getLocalManagedIpv4AndInlineCom,
+        Func<IPAddress?, byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
+        IPEndPoint? local,
+        IPEndPoint remote,
+        CancellationToken cancellationToken)
+    {
+        var (stream, _) = await ConnectWithLocalEndpointAsync(
+                ensureJoinedAsync,
+                getManagedIps,
+                getLocalManagedIpv4AndInlineCom,
+                getOrCreateRuntimeAsync,
+                local,
+                remote,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return stream;
+    }
+
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Ownership transfers to the returned Stream (disposes UserSpaceTcpClient, link, and UDP transport).")]
-    public static async ValueTask<Stream> ConnectAsync(
+    public static async ValueTask<(Stream Stream, IPEndPoint LocalEndpoint)> ConnectWithLocalEndpointAsync(
         Func<CancellationToken, Task> ensureJoinedAsync,
         Func<IReadOnlyList<IPAddress>> getManagedIps,
         Func<(IPAddress? LocalManagedIpV4, byte[] InlineCom)> getLocalManagedIpv4AndInlineCom,
@@ -37,6 +59,21 @@ internal static class ZeroTierSocketTcpConnector
             remote.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
         {
             throw new NotSupportedException($"Unsupported address family: {remote.Address.AddressFamily}.");
+        }
+
+        if (remote.Address.Equals(IPAddress.Any) || remote.Address.Equals(IPAddress.IPv6Any))
+        {
+            throw new ArgumentOutOfRangeException(nameof(remote), "Remote address must not be unspecified (Any/IPv6Any).");
+        }
+
+        if (remote.Address.Equals(IPAddress.Broadcast))
+        {
+            throw new ArgumentOutOfRangeException(nameof(remote), "Remote address must not be broadcast.");
+        }
+
+        if (IsMulticast(remote.Address))
+        {
+            throw new ArgumentOutOfRangeException(nameof(remote), "Remote address must not be multicast.");
         }
 
         if (IPAddress.IsLoopback(remote.Address))
@@ -114,6 +151,22 @@ internal static class ZeroTierSocketTcpConnector
             throw;
         }
 
-        return tcp.GetStream();
+        return (tcp.GetStream(), new IPEndPoint(localAddress, localPort));
+    }
+
+    private static bool IsMulticast(IPAddress address)
+    {
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            return address.IsIPv6Multicast;
+        }
+
+        if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var bytes = address.GetAddressBytes();
+            return bytes.Length == 4 && bytes[0] is >= 224 and <= 239;
+        }
+
+        return false;
     }
 }

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Linq;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Transport;
@@ -37,6 +38,17 @@ internal static class ZeroTierSocketBindings
 
         await ensureJoinedAsync(cancellationToken).ConfigureAwait(false);
         var managedIps = getManagedIps();
+        if (localAddress.Equals(IPAddress.Any))
+        {
+            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork)
+                           ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+        else if (localAddress.Equals(IPAddress.IPv6Any))
+        {
+            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6)
+                           ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+        }
+
         if (!managedIps.Contains(localAddress))
         {
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
@@ -77,6 +89,17 @@ internal static class ZeroTierSocketBindings
 
         await ensureJoinedAsync(cancellationToken).ConfigureAwait(false);
         var managedIps = getManagedIps();
+        if (localAddress.Equals(IPAddress.Any))
+        {
+            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork)
+                           ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+        else if (localAddress.Equals(IPAddress.IPv6Any))
+        {
+            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6)
+                           ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+        }
+
         if (!managedIps.Contains(localAddress))
         {
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");

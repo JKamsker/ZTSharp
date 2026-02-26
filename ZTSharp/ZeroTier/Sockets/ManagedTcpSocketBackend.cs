@@ -168,12 +168,13 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                     .ConfigureAwait(false);
             }
 
-            _stream = local is null
-                ? await Zt.ConnectTcpAsync(remoteIp, cancellationToken).ConfigureAwait(false)
-                : await Zt.ConnectTcpAsync(local, remoteIp, cancellationToken).ConfigureAwait(false);
+            (Stream stream, IPEndPoint localEndpoint) = local is null
+                ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, cancellationToken).ConfigureAwait(false)
+                : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, cancellationToken).ConfigureAwait(false);
 
+            _stream = stream;
             _remoteEndPoint = remoteIp;
-            _localEndPoint = local;
+            _localEndPoint = localEndpoint;
         }
         finally
         {
@@ -218,4 +219,3 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         }
     }
 }
-

@@ -21,9 +21,11 @@ internal sealed class ActiveTaskSet
 
     public async Task WaitAsync(CancellationToken cancellationToken = default)
     {
-        while (!_tasks.IsEmpty)
+        while (true)
         {
-            if (cancellationToken.IsCancellationRequested)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (_tasks.IsEmpty)
             {
                 return;
             }
@@ -36,17 +38,11 @@ internal sealed class ActiveTaskSet
 
             if (snapshot.Count == 0)
             {
-                return;
+                await Task.Yield();
+                continue;
             }
 
-            try
-            {
-                await Task.WhenAll(snapshot).WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
+            await Task.WhenAll(snapshot).WaitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 }

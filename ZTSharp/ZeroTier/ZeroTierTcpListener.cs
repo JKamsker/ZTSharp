@@ -43,7 +43,19 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
     public ValueTask<Stream> AcceptAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _acceptQueue.Reader.ReadAsync(cancellationToken);
+        return ReadFromQueueAsync(cancellationToken);
+
+        async ValueTask<Stream> ReadFromQueueAsync(CancellationToken token)
+        {
+            try
+            {
+                return await _acceptQueue.Reader.ReadAsync(token).ConfigureAwait(false);
+            }
+            catch (ChannelClosedException)
+            {
+                throw new ObjectDisposedException(typeof(ZeroTierTcpListener).FullName);
+            }
+        }
     }
 
     public async ValueTask<Stream> AcceptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -69,7 +81,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
 
-            await _connectionTasks.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+            await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {

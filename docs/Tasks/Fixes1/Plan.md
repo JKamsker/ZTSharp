@@ -328,13 +328,13 @@ File
 
 Changes
 
-- [ ] Replace `_disposed` bool with `int _disposeState`.
-- [ ] `DisposeAsync`:
-  - [ ] `Interlocked.Exchange` guard (idempotent).
-  - [ ] Acquire `_joinLock` then `_runtimeLock` to avoid deadlock with Join->Runtime order.
-  - [ ] Dispose runtime safely.
-  - [ ] Dispose semaphores after locks acquired/released (no in-flight releasers).
-- [ ] Ensure all public methods call a single `ThrowIfDisposed()`.
+- [x] Replace `_disposed` bool with `int _disposeState`.
+- [x] `DisposeAsync`:
+  - [x] `Interlocked.Exchange` guard (idempotent).
+  - [x] Acquire `_joinLock` then `_runtimeLock` to avoid deadlock with Join->Runtime order.
+  - [x] Dispose runtime safely.
+  - [x] Dispose semaphores after locks acquired/released (no in-flight releasers).
+- [x] Ensure all public methods call a single `ThrowIfDisposed()`.
 
 ### 4.2 ZeroTierTcpListener dispose actually waits + AcceptAsync throws ObjectDisposedException
 
@@ -345,9 +345,9 @@ Files
 
 Changes
 
-- [ ] Fix `ActiveTaskSet.WaitAsync` snapshot race: if snapshot empty but `_tasks` not empty, continue looping; do not return early.
-- [ ] In `ZeroTierTcpListener.DisposeAsync`, wait using `CancellationToken.None` (optionally with a bounded timeout token distinct from `_shutdown`).
-- [ ] Wrap `AcceptAsync` to translate `ChannelClosedException` -> `ObjectDisposedException`.
+- [x] Fix `ActiveTaskSet.WaitAsync` snapshot race: if snapshot empty but `_tasks` not empty, continue looping; do not return early.
+- [x] In `ZeroTierTcpListener.DisposeAsync`, wait using `CancellationToken.None` (optionally with a bounded timeout token distinct from `_shutdown`).
+- [x] Wrap `AcceptAsync` to translate `ChannelClosedException` -> `ObjectDisposedException`.
 
 ### 4.3 Normalize IPAddress.Any/IPv6Any for ListenTcpAsync and BindUdpAsync
 
@@ -358,7 +358,7 @@ Files
 
 Changes
 
-- [ ] If caller passes Any/IPv6Any, map to default managed IP of that family (same policy as `ManagedSocketEndpointNormalizer`).
+- [x] If caller passes Any/IPv6Any, map to default managed IP of that family (same policy as `ManagedSocketEndpointNormalizer`).
 
 ### 4.4 Reject invalid remote endpoints early
 
@@ -368,7 +368,7 @@ File
 
 Changes
 
-- [ ] Reject `IPAddress.Any`, `IPv6Any`, multicast, and broadcast (where applicable) with clear exceptions.
+- [x] Reject `IPAddress.Any`, `IPv6Any`, multicast, and broadcast (where applicable) with clear exceptions.
 
 ### 4.5 Populate ManagedSocket.LocalEndPoint after connect without explicit bind
 
@@ -380,9 +380,9 @@ Files
 
 Changes
 
-- [ ] Add internal connect path returning `(Stream Stream, IPEndPoint LocalEndpoint)`.
-- [ ] Public `ZeroTierSocket.ConnectTcpAsync` still returns `Stream`.
-- [ ] `ManagedTcpSocketBackend.ConnectAsync` uses internal path so `_localEndPoint` is set to the chosen ephemeral endpoint.
+- [x] Add internal connect path returning `(Stream Stream, IPEndPoint LocalEndpoint)`.
+- [x] Public `ZeroTierSocket.ConnectTcpAsync` still returns `Stream`.
+- [x] `ManagedTcpSocketBackend.ConnectAsync` uses internal path so `_localEndPoint` is set to the chosen ephemeral endpoint.
 
 ### Tests (Phase 4)
 
