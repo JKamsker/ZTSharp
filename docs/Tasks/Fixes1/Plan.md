@@ -90,9 +90,9 @@ Apply
 - [x] `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs` Save/TryLoad:
   - [x] Catch `IOException`/`UnauthorizedAccessException` in `TryLoad` and return `false`.
   - [x] Use atomic write in `Save`.
-- [ ] `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs` PersistNetworkState:
-  - [ ] Atomic write for `.netconf.dict` and `.ips.txt` (write temp then replace).
-  - [ ] Add max-size cap when loading `.netconf.dict` (see Phase 5.2 constants).
+- [x] `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs` PersistNetworkState:
+  - [x] Atomic write for `.netconf.dict` and `.ips.txt` (write temp then replace).
+  - [x] Add max-size cap when loading `.netconf.dict` (see Phase 5.2 constants).
 
 ### 1.4 Fix StateStore list edge cases (duplicates/case)
 

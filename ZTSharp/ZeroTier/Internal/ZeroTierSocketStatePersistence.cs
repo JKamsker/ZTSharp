@@ -1,9 +1,13 @@
 using System.Net;
+using System.Text;
+using ZTSharp.Internal;
 
 namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketStatePersistence
 {
+    private const long MaxNetworkConfigBytes = 1L * 1024 * 1024;
+
     public static IPAddress[] LoadManagedIps(string statePath, ulong networkId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(statePath);
@@ -54,6 +58,12 @@ internal static class ZeroTierSocketStatePersistence
 
         try
         {
+            var fileInfo = new FileInfo(path);
+            if (fileInfo.Length == 0 || fileInfo.Length > int.MaxValue || fileInfo.Length > MaxNetworkConfigBytes)
+            {
+                return null;
+            }
+
             return File.ReadAllBytes(path);
         }
         catch (IOException)
@@ -81,10 +91,15 @@ internal static class ZeroTierSocketStatePersistence
         Directory.CreateDirectory(networksDir);
 
         var dictPath = Path.Combine(networksDir, $"{networkId:x16}.netconf.dict");
-        File.WriteAllBytes(dictPath, dictionaryBytes);
+        AtomicFile.WriteAllBytes(dictPath, dictionaryBytes);
 
         var ipsPath = Path.Combine(networksDir, $"{networkId:x16}.ips.txt");
-        File.WriteAllLines(ipsPath, managedIps.Select(ip => ip.ToString()));
+        var ipsText = new StringBuilder();
+        foreach (var ip in managedIps)
+        {
+            ipsText.AppendLine(ip.ToString());
+        }
+
+        AtomicFile.WriteAllBytes(ipsPath, Encoding.UTF8.GetBytes(ipsText.ToString()));
     }
 }
-
