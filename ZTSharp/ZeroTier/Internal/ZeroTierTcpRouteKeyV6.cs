@@ -31,6 +31,11 @@ internal readonly record struct ZeroTierTcpRouteKeyV6(
         ArgumentNullException.ThrowIfNull(localAddress);
         ArgumentNullException.ThrowIfNull(remoteAddress);
 
+        if (localAddress.ScopeId != 0 || remoteAddress.ScopeId != 0)
+        {
+            throw new NotSupportedException("Scoped IPv6 addresses are not supported by this route key.");
+        }
+
         Span<byte> localBytes = stackalloc byte[16];
         if (!localAddress.TryWriteBytes(localBytes, out var localWritten) || localWritten != 16)
         {
@@ -63,4 +68,3 @@ internal readonly record struct ZeroTierTcpRouteKeyV6(
         return new IPAddress(bytes).ToString();
     }
 }
-

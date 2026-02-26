@@ -303,7 +303,7 @@ File
 
 Changes
 
-- [ ] Reject scoped/link-local addresses (`ScopeId != 0`) for route keys (throw `NotSupportedException`) to avoid collisions.
+- [x] Reject scoped/link-local addresses (`ScopeId != 0`) for route keys (throw `NotSupportedException`) to avoid collisions.
 
 ### Tests (Phase 3)
 
