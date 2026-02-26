@@ -214,8 +214,8 @@ Primary goals:
 - [x] Fix: ensure join/runtime creation uses internal cancellation and dispose can abort in-flight operations
 
 ### 3.4 UDP socket dispose idempotency
-- [ ] Add test: concurrent `DisposeAsync` calls never throw and do not race (`ZTSharp/ZeroTier/ZeroTierUdpSocket.cs`)
-- [ ] Fix: make `ZeroTierUdpSocket.DisposeAsync` idempotent (interlocked guard; don't dispose semaphore inside `finally`)
+- [x] Add test: concurrent `DisposeAsync` calls never throw and do not race (`ZTSharp/ZeroTier/ZeroTierUdpSocket.cs`)
+- [x] Fix: make `ZeroTierUdpSocket.DisposeAsync` idempotent (interlocked guard; don't dispose semaphore inside `finally`)
 
 ### 3.5 Timeout helper exception semantics
 - [ ] Add test: an inner `OperationCanceledException` not caused by caller token is not always mapped to `TimeoutException` (`ZTSharp/ZeroTier/Internal/ZeroTierTimeouts.cs`)
