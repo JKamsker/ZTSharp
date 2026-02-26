@@ -276,8 +276,8 @@ Primary goals:
 - [x] Fix: remove Any->Loopback rewriting for general-purpose transports; treat "unspecified remote endpoint" as invalid input (fail fast)
 
 ### 5.2 Canonicalize IPv4-mapped IPv6 endpoints
-- [ ] Add test: peer endpoint equality and "public/private" classification is stable across v4 vs v4-mapped-v6 (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
-- [ ] Fix: canonicalize endpoints consistently (e.g., map v4-mapped-v6 -> v4) before comparing/storing/selecting
+- [x] Add test: peer endpoint equality and "public/private" classification is stable across v4 vs v4-mapped-v6 (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
+- [x] Fix: canonicalize endpoints consistently (e.g., map v4-mapped-v6 -> v4) before comparing/storing/selecting
 
 ### 5.3 OS UDP receive-loop resilience
 - [ ] Add test: non-`ConnectionReset` `SocketException` does not kill OS UDP receive loop (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)

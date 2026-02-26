@@ -66,7 +66,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 ## Phase 5 - Transport + platform
 
 - [x] 5.1 Wildcard local endpoint not rewritten to loopback: new tests in `ZTSharp.Tests`
-- [ ] 5.2 IPv4-mapped IPv6 canonicalization: new tests in `ZTSharp.Tests`
+- [x] 5.2 IPv4-mapped IPv6 canonicalization: new tests in `ZTSharp.Tests`
 - [ ] 5.3 OS UDP receive loop survives socket exceptions: new tests in `ZTSharp.Tests`
 - [ ] 5.4 Windows IOCTL behavior verified: Windows-only tests or diagnostics
 - [ ] 5.5 Dual-mode bind fallback resilience (IPv6-only before IPv4): new tests in `ZTSharp.Tests`
