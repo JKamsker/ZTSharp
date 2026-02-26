@@ -314,8 +314,9 @@ Primary goals:
 - [ ] Add tests: spoofed `SourceNodeId` frames do not reach overlay TCP/UDP handlers (`ZTSharp.Tests`)
 
 ### 6.7 Network leave ordering (transport subscription leak)
-- [ ] Add test: `LeaveNetworkAsync` failure does not lose registration and does not leak transport subscription (`ZTSharp/Internal/NodeNetworkService.cs`)
-- [ ] Fix: remove registration only after successful transport leave (or add compensating cleanup on failure)
+- [x] Add test: `LeaveNetworkAsync` failure does not lose registration and does not leak transport subscription (`ZTSharp/Internal/NodeNetworkService.cs`)
+  - Test: `NodeNetworkLeaveOrderingTests.LeaveNetworkAsync_FailedLeave_DoesNotLoseRegistration_AndRetryUnsubscribes`
+- [x] Fix: remove registration only after successful transport leave (or add compensating cleanup on failure)
 
 ### 6.8 InMemory transport cancellation-token semantics
 - [x] Add test: canceling sender token does not cause partial fanout/receiver drops in InMemory transport (`ZTSharp/Transport/InMemoryNodeTransport.cs`)

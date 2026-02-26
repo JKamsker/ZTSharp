@@ -85,9 +85,10 @@ internal sealed class NodeNetworkService
     public async Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken)
     {
         var key = BuildNetworkFileKey(networkId);
-        if (_networkRegistrations.TryRemove(networkId, out var registration))
+        if (_networkRegistrations.TryGetValue(networkId, out var registration))
         {
             await _transport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
+            _networkRegistrations.TryRemove(networkId, out _);
         }
 
         var removed = _joinedNetworks.TryRemove(networkId, out _);
