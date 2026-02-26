@@ -31,14 +31,25 @@ internal static class ZeroTierSocketFactory
             throw new ArgumentOutOfRangeException(nameof(options), "Invalid PlanetSource value.");
         }
 
-        var statePath = Path.Combine(options.StateRootPath, "zerotier");
+        var normalizedStateRootPath = Path.GetFullPath(options.StateRootPath);
+        var normalizedOptions = new ZeroTierSocketOptions
+        {
+            StateRootPath = normalizedStateRootPath,
+            NetworkId = options.NetworkId,
+            JoinTimeout = options.JoinTimeout,
+            LoggerFactory = options.LoggerFactory,
+            PlanetSource = options.PlanetSource,
+            PlanetFilePath = options.PlanetFilePath
+        };
+
+        var statePath = Path.Combine(normalizedOptions.StateRootPath, "zerotier");
         Directory.CreateDirectory(statePath);
 
         var identityPath = Path.Combine(statePath, "identity.bin");
         if (!ZeroTierIdentityStore.TryLoad(identityPath, out var identity))
         {
             if (!File.Exists(identityPath) &&
-                ZeroTierSocketIdentityMigration.TryLoadLibztIdentity(options.StateRootPath, out identity))
+                ZeroTierSocketIdentityMigration.TryLoadLibztIdentity(normalizedOptions.StateRootPath, out identity))
             {
                 ZeroTierIdentityStore.Save(identityPath, identity);
             }
@@ -53,9 +64,9 @@ internal static class ZeroTierSocketFactory
             throw new InvalidOperationException($"Invalid identity at '{identityPath}'. Delete it to regenerate.");
         }
 
-        var planet = ZeroTierPlanetLoader.Load(options, cancellationToken);
+        var planet = ZeroTierPlanetLoader.Load(normalizedOptions, cancellationToken);
 
-        return Task.FromResult(new ZeroTierSocket(options, statePath, identity, planet));
+        return Task.FromResult(new ZeroTierSocket(normalizedOptions, statePath, identity, planet));
     }
 }
 

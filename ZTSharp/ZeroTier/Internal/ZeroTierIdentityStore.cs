@@ -95,5 +95,6 @@ internal static class ZeroTierIdentityStore
         identity.PrivateKey.CopyTo(bytes.AsSpan(5 + 8 + ZeroTierIdentity.PublicKeyLength, ZeroTierIdentity.PrivateKeyLength));
 
         AtomicFile.WriteAllBytes(path, bytes);
+        SecretFilePermissions.TryHardenSecretFile(path);
     }
 }

@@ -258,10 +258,10 @@ Primary goals:
 - [x] Evaluate file sharing on Windows: ensure readers/writers use `FileShare.Delete` where appropriate
 
 ### 4.5 State root path policy + secret material permissions
-- [ ] Add test: relative `StateRootPath` is normalized to a stable full path (or explicitly documented) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
-- [ ] Fix: normalize state-root to full path early; avoid CWD-dependent persistence surprises (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
-- [ ] Decide + document: file permission/ACL policy for secret identity files (best-effort hardening where feasible) (`ZTSharp/Internal/NodeIdentityService.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
-- [ ] Add tests/notes: ensure atomic replace does not accidentally weaken permissions (platform-dependent)
+- [x] Add test: relative `StateRootPath` is normalized to a stable full path (or explicitly documented) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
+- [x] Fix: normalize state-root to full path early; avoid CWD-dependent persistence surprises (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
+- [x] Decide + document: file permission/ACL policy for secret identity files (best-effort hardening where feasible) (`ZTSharp/Internal/NodeIdentityService.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
+- [x] Add tests/notes: ensure atomic replace does not accidentally weaken permissions (platform-dependent)
 
 ### 4.6 Key normalization edge cases (cross-platform)
 - [ ] Add tests: invalid filename chars / reserved device names don't cause traversal or confusing collisions (Windows/macOS/Linux) (`ZTSharp/StateStoreKeyNormalization.cs`, `ZTSharp/StateStorePrefixNormalization.cs`)

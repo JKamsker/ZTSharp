@@ -71,6 +71,11 @@ public sealed class FileStateStore : IStateStore
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
         await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(normalized, Internal.NodeStoreKeys.IdentitySecretKey, StringComparison.OrdinalIgnoreCase))
+        {
+            Internal.SecretFilePermissions.TryHardenSecretFile(path);
+        }
     }
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
