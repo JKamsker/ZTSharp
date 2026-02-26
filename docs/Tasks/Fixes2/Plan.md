@@ -172,14 +172,17 @@ Primary goals:
 - [x] Fix: enforce strict length (or make truncation observable via trace/log)
 
 ### 2.9 Crypto/perf DoS hardening (packet sizes + allocations)
-- [ ] Add test: crypto rejects oversized packets early (before large allocations) (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCrypto.cs`, `ZTSharp/ZeroTier/Protocol/ZeroTierPacketCryptoAesGmacSiv.cs`)
-- [ ] Fix: enforce max packet length and avoid per-packet large allocations on invalid traffic (especially in `Dearmor` paths)
-- [ ] Add test/bench: Poly1305 path does not allocate proportional to packet size on invalid packets (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCrypto.cs`)
-- [ ] Fix: reduce ToArray churn and avoid copying spans where possible (or limit it behind strict size checks)
-- [ ] Add test: unauthenticated HELLO floods do not trigger unbounded CPU/alloc work (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
-- [ ] Fix: add fast-path bounds/rate limiting for HELLO processing (and/or early reject by size/version) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
-- [ ] Add test: compressed flag with invalid payload does not allocate repeatedly without bound (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
-- [ ] Fix: cap compression input length / reuse buffers / avoid per-packet fixed-size allocations where possible (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
+- [x] Add test: crypto rejects oversized packets early (before large allocations) (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCrypto.cs`, `ZTSharp/ZeroTier/Protocol/ZeroTierPacketCryptoAesGmacSiv.cs`)
+- [x] Fix: enforce max packet length and avoid per-packet large allocations on invalid traffic (especially in `Dearmor` paths)
+  - Policy: drop packets larger than `ZeroTierProtocolLimits.MaxPacketBytes` (ZT max packet) before crypto/compression work.
+- [x] Add test/bench: Poly1305 path does not allocate proportional to packet size on invalid packets (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCrypto.cs`)
+- [x] Fix: reduce ToArray churn and avoid copying spans where possible (or limit it behind strict size checks)
+  - Note: Poly1305 allocations are bounded by `MaxPacketBytes` and never scale with arbitrary UDP datagram sizes.
+- [x] Add test: unauthenticated HELLO floods do not trigger unbounded CPU/alloc work (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
+- [x] Fix: add fast-path bounds/rate limiting for HELLO processing (and/or early reject by size/version) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
+  - Implemented early size cap reject for HELLO parsing.
+- [x] Add test: compressed flag with invalid payload does not allocate repeatedly without bound (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
+- [x] Fix: cap compression input length / reuse buffers / avoid per-packet fixed-size allocations where possible (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
 
 ### 2.10 Queue backpressure + drop policy visibility
 - [ ] Add test: control-plane packets (HELLO/OK/WHOIS/MulticastGather/SYN) are not silently dropped under moderate load (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)

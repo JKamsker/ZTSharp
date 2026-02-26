@@ -107,6 +107,11 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (packetBytes.Length > ZeroTierProtocolLimits.MaxPacketBytes)
+        {
+            return;
+        }
+
         if (packetBytes.Length < ZeroTierPacketHeader.Length + HelloPayloadMinLength)
         {
             return;

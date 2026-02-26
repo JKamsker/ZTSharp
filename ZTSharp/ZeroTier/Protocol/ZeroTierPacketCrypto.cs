@@ -27,6 +27,11 @@ internal static class ZeroTierPacketCrypto
             throw new ArgumentException("Packet is too short.", nameof(packet));
         }
 
+        if (packet.Length > ZeroTierProtocolLimits.MaxPacketBytes)
+        {
+            throw new ArgumentException($"Packet length exceeds max {ZeroTierProtocolLimits.MaxPacketBytes} bytes.", nameof(packet));
+        }
+
         if (key.Length < KeyLength)
         {
             throw new ArgumentException($"Key must be at least {KeyLength} bytes.", nameof(key));
@@ -76,6 +81,11 @@ internal static class ZeroTierPacketCrypto
     public static bool Dearmor(Span<byte> packet, ReadOnlySpan<byte> key)
     {
         if (packet.Length < ZeroTierPacketHeader.Length)
+        {
+            return false;
+        }
+
+        if (packet.Length > ZeroTierProtocolLimits.MaxPacketBytes)
         {
             return false;
         }
