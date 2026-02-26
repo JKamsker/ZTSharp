@@ -22,8 +22,9 @@ Primary goals:
 
 ## Phase 0 - Baseline / reproducibility
 
-- [ ] Record baseline: `dotnet build -c Release` and `dotnet test -c Release` (OS + date + summary)
-- [ ] Add a single “Fixes2” tracking checklist mapping each fix → test(s) (`docs/Tasks/Fixes2/Tracking.md`)
+- [x] Record baseline: `dotnet build -c Release` and `dotnet test -c Release` (OS + date + summary)
+  - 2026-02-26 (Windows 10.0.26200, win-x64, .NET SDK 10.0.100): `dotnet build -c Release` OK (0 warnings, 0 errors); `dotnet test -c Release` OK (136 passed, 6 skipped, 0 failed)
+- [x] Add a single “Fixes2” tracking checklist mapping each fix → test(s) (`docs/Tasks/Fixes2/Tracking.md`)
 - [ ] Add a short “repro harness” note for each critical hang (how to reproduce locally)
 - [ ] Verify Fixes2 scope covers all batch-1 + batch-2 findings (no missing bullets vs consolidated list)
 
