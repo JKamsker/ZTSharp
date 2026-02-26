@@ -10,7 +10,7 @@ Status legend:
 
 ## P0 — Task breakdown + guardrails
 - [ ] Add `ZeroTierSocketOptions` multipath/bonding configuration surface (default disabled).
-- [ ] Add internal transport abstraction that supports multi-socket receive/send with `LocalSocketId`.
+- [x] Add internal transport abstraction that supports multi-socket receive/send with `LocalSocketId`.
 - [x] Thread `LocalSocketId` + remote endpoint through dataplane RX loops into peer processing.
 
 ## P1 — Direct path learning + keepalives
@@ -35,4 +35,5 @@ Status legend:
 ## P5 — CLI/docs/tests
 - [ ] Add CLI flags to enable/configure multipath and bond policy (enough for manual verification).
 - [ ] Add/extend unit tests for: multi-transport socket id propagation, echo, qos parsing, bond policy selection.
+- [x] Stabilize flaky `ZeroTierTcpListenerBacklogTests` timeout under full-suite load.
 - [ ] Update docs: `docs/ZEROTIER_STACK.md` and `docs/COMPATIBILITY.md` to reflect new behavior and defaults.

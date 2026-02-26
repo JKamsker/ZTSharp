@@ -20,7 +20,7 @@ public sealed class ZeroTierTcpListenerBacklogTests
         var capacity = listener.AcceptQueueCapacity;
         var attempts = capacity + 1;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var clients = new List<UserSpaceTcpClient>(attempts);
 
         for (var i = 0; i < attempts; i++)

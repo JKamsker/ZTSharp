@@ -3,6 +3,7 @@ using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Tests;
 
+[Collection("OsUdpPeerRegistry")]
 public sealed class OsUdpPeerRegistryBoundsTests
 {
     private sealed class ManualTimeProvider : TimeProvider
