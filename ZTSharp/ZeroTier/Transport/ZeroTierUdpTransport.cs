@@ -13,12 +13,14 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
     private readonly Action<string>? _log;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _receiverLoop;
+    private readonly int _localSocketId;
     private long _incomingBackpressureCount;
     private bool _disposed;
 
-    public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null)
+    public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null, int localSocketId = 0)
     {
         _log = log;
+        _localSocketId = localSocketId;
         _udp = OsUdpSocketFactory.Create(localPort, enableIpv6, Log);
 
         _incoming = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
@@ -28,6 +30,8 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         });
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
+
+    public int LocalSocketId => _localSocketId;
 
     public IPEndPoint LocalEndpoint => UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
 
@@ -109,12 +113,14 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             }
 
             if (!_incoming.Writer.TryWrite(new ZeroTierUdpDatagram(
+                    _localSocketId,
                     UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
                     result.Buffer)))
             {
                 try
                 {
                     var write = _incoming.Writer.WriteAsync(new ZeroTierUdpDatagram(
+                        _localSocketId,
                         UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
                         result.Buffer), token);
                     if (!write.IsCompletedSuccessfully)

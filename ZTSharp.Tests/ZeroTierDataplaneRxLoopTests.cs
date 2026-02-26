@@ -26,7 +26,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         {
             var payload = new byte[4];
             BinaryPrimitives.WriteInt32LittleEndian(payload, i);
-            if (incoming.Writer.TryWrite(new ZeroTierUdpDatagram(remote, payload)))
+            if (incoming.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, remote, payload)))
             {
                 successfulWrites++;
             }
@@ -117,7 +117,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         {
             var payload = new byte[4];
             BinaryPrimitives.WriteInt32LittleEndian(payload, i);
-            if (peerQueue.Writer.TryWrite(new ZeroTierUdpDatagram(remote, payload)))
+            if (peerQueue.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, remote, payload)))
             {
                 successfulWrites++;
             }
@@ -178,8 +178,8 @@ public sealed class ZeroTierDataplaneRxLoopTests
         using var cts = new CancellationTokenSource();
         var peerLoop = Task.Run(() => loops.PeerLoopAsync(peerChannel.Reader, cts.Token), CancellationToken.None);
 
-        Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(new IPEndPoint(IPAddress.Loopback, 1), new byte[1])));
-        Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(new IPEndPoint(IPAddress.Loopback, 2), new byte[1])));
+        Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, new IPEndPoint(IPAddress.Loopback, 1), new byte[1])));
+        Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, new IPEndPoint(IPAddress.Loopback, 2), new byte[1])));
 
         await processor.SecondCall.WaitAsync(TimeSpan.FromSeconds(2));
 
@@ -290,7 +290,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
             SingleReader = true,
             SingleWriter = true
         });
-        Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(new IPEndPoint(IPAddress.Loopback, 1), new byte[1])));
+        Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, new IPEndPoint(IPAddress.Loopback, 1), new byte[1])));
 
         using var cts = new CancellationTokenSource();
         var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
