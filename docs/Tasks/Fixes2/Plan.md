@@ -208,10 +208,10 @@ Primary goals:
 - [x] Fix: plumb remote endpoint metadata from accept path (likely via SYN segment / route registry) and store it on the accepted backend
 
 ### 3.3 Connect/dispose wedge avoidance
-- [ ] Add test: disposing a `ManagedSocket` while `ConnectAsync` is in-flight does not hang indefinitely (respects cancellation/timeouts) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`, `ZTSharp/ZeroTier/Sockets/ManagedSocketBackend.cs`)
-- [ ] Fix: avoid holding init lock across potentially long connects, or make dispose/close interrupt connect
-- [ ] Add test: `ZeroTierSocket.DisposeAsync` cannot wedge forever behind a stuck `JoinAsync`/runtime creation (`ZTSharp/ZeroTier/ZeroTierSocket.cs`)
-- [ ] Fix: ensure join/runtime creation uses internal cancellation and dispose can abort in-flight operations
+- [x] Add test: disposing a `ManagedSocket` while `ConnectAsync` is in-flight does not hang indefinitely (respects cancellation/timeouts) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`, `ZTSharp/ZeroTier/Sockets/ManagedSocketBackend.cs`)
+- [x] Fix: avoid holding init lock across potentially long connects, or make dispose/close interrupt connect
+- [x] Add test: `ZeroTierSocket.DisposeAsync` cannot wedge forever behind a stuck `JoinAsync`/runtime creation (`ZTSharp/ZeroTier/ZeroTierSocket.cs`)
+- [x] Fix: ensure join/runtime creation uses internal cancellation and dispose can abort in-flight operations
 
 ### 3.4 UDP socket dispose idempotency
 - [ ] Add test: concurrent `DisposeAsync` calls never throw and do not race (`ZTSharp/ZeroTier/ZeroTierUdpSocket.cs`)

@@ -33,15 +33,74 @@ public sealed class ZeroTierManagedSocketLifecycleTests
         var connectTask = socket.ConnectTcpAsync(new IPEndPoint(IPAddress.Parse("10.0.0.2"), 12345)).AsTask();
         var disposeTask = socket.DisposeAsync().AsTask();
 
-        await WaitForDisposeStateAsync(socket, timeout: TimeSpan.FromSeconds(1));
-        joinLock.Release();
-
         await disposeTask.WaitAsync(TimeSpan.FromSeconds(2));
 
-        var joinEx = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await joinTask);
-        Assert.NotNull(joinEx.ObjectName);
+        _ = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await joinTask);
+        _ = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await connectTask);
+
+        joinLock.Release();
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DoesNotDeadlock_WhenRuntimeCreationIsBlocked()
+    {
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-managed-dispose-runtime-lock-");
+        var statePath = Path.Combine(stateRoot, "zerotier");
+        Directory.CreateDirectory(statePath);
+
+        var options = new ZeroTierSocketOptions { StateRootPath = stateRoot, NetworkId = 1 };
+        var planet = ZeroTierWorldCodec.Decode(ZeroTierDefaultPlanet.World);
+        var identity = ZeroTierTestIdentities.CreateFastIdentity(0x2222222222);
+        await using var socket = new ZeroTierSocket(options, statePath, identity, planet);
+
+        var localIp = IPAddress.Parse("10.0.0.2");
+        var dict = BuildDictionaryWithMinimalComAndStaticIp(localIp, bits: 24);
+
+        SetPrivateField(socket, "_joined", true);
+        SetPrivateField(socket, "_networkConfigDictionaryBytes", dict);
+        SetPrivateField(socket, "<ManagedIps>k__BackingField", new[] { localIp });
+
+        var runtimeLock = GetPrivateField<SemaphoreSlim>(socket, "_runtimeLock");
+        await runtimeLock.WaitAsync();
+
+        var connectTask = socket.ConnectTcpAsync(new IPEndPoint(IPAddress.Parse("10.0.0.3"), 12345)).AsTask();
+        await Task.Yield();
+        Assert.False(connectTask.IsCompleted);
+
+        await socket.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
 
         _ = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await connectTask);
+
+        runtimeLock.Release();
+    }
+
+    [Fact]
+    public async Task ManagedSocket_DisposeAsync_DoesNotWedge_WhenConnectIsInFlight()
+    {
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-managed-connect-dispose-race-");
+        var statePath = Path.Combine(stateRoot, "zerotier");
+        Directory.CreateDirectory(statePath);
+
+        var options = new ZeroTierSocketOptions { StateRootPath = stateRoot, NetworkId = 1 };
+        var planet = ZeroTierWorldCodec.Decode(ZeroTierDefaultPlanet.World);
+        var identity = ZeroTierTestIdentities.CreateFastIdentity(0x2222222222);
+        await using var socket = new ZeroTierSocket(options, statePath, identity, planet);
+
+        var joinLock = GetPrivateField<SemaphoreSlim>(socket, "_joinLock");
+        await joinLock.WaitAsync();
+
+        await using var managed = socket.CreateSocket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        var connectTask = managed.ConnectAsync(new IPEndPoint(IPAddress.Parse("10.0.0.2"), 12345), CancellationToken.None).AsTask();
+        await Task.Yield();
+        Assert.False(connectTask.IsCompleted);
+
+        var disposeTask = managed.DisposeAsync().AsTask();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        _ = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await connectTask);
+
+        joinLock.Release();
     }
 
     [Fact]

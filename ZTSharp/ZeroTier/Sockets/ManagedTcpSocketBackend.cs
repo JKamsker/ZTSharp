@@ -10,6 +10,7 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
     private IPEndPoint? _remoteEndPoint;
     private Stream? _stream;
     private ZeroTierTcpListener? _listener;
+    private int _connectInProgress;
 
     public ManagedTcpSocketBackend(ZeroTierSocket zeroTier, AddressFamily addressFamily)
         : base(zeroTier)
@@ -143,40 +144,75 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
             throw new NotSupportedException("Remote address family must match the socket address family.");
         }
 
-        await InitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (Interlocked.CompareExchange(ref _connectInProgress, 1, 0) != 0)
+        {
+            throw new InvalidOperationException("Socket connect is already in progress.");
+        }
+
+        IPEndPoint? local;
         try
         {
-            ObjectDisposedException.ThrowIf(Disposed, this);
-
-            if (_stream is not null)
+            await InitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                throw new InvalidOperationException("Socket is already connected.");
+                ObjectDisposedException.ThrowIf(Disposed, this);
+
+                if (_stream is not null)
+                {
+                    throw new InvalidOperationException("Socket is already connected.");
+                }
+
+                if (_listener is not null)
+                {
+                    throw new InvalidOperationException("Socket is listening. Create a new socket for outgoing connections.");
+                }
+
+                local = _localEndPoint;
+            }
+            finally
+            {
+                InitLock.Release();
             }
 
-            if (_listener is not null)
-            {
-                throw new InvalidOperationException("Socket is listening. Create a new socket for outgoing connections.");
-            }
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, ShutdownToken);
+            var token = linkedCts.Token;
 
-            var local = _localEndPoint;
             if (local is not null)
             {
                 local = await ManagedSocketEndpointNormalizer
-                    .NormalizeLocalEndpointAsync(Zt, AddressFamily, local, cancellationToken)
+                    .NormalizeLocalEndpointAsync(Zt, AddressFamily, local, token)
                     .ConfigureAwait(false);
             }
 
             (Stream stream, IPEndPoint localEndpoint) = local is null
-                ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, cancellationToken).ConfigureAwait(false)
-                : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, cancellationToken).ConfigureAwait(false);
+                ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, token).ConfigureAwait(false)
+                : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, token).ConfigureAwait(false);
 
-            _stream = stream;
-            _remoteEndPoint = remoteIp;
-            _localEndPoint = localEndpoint;
+            await InitLock.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                ObjectDisposedException.ThrowIf(Disposed, this);
+                _stream = stream;
+                _remoteEndPoint = remoteIp;
+                _localEndPoint = localEndpoint;
+            }
+            catch
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+            finally
+            {
+                InitLock.Release();
+            }
+        }
+        catch (OperationCanceledException) when (ShutdownToken.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(GetType().FullName);
         }
         finally
         {
-            InitLock.Release();
+            Interlocked.Exchange(ref _connectInProgress, 0);
         }
     }
 

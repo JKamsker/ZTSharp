@@ -7,18 +7,25 @@ using ZTSharp.ZeroTier.Transport;
 
 namespace ZTSharp.ZeroTier;
 
+[global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Usage",
+    "CA2213:Disposable fields should be disposed",
+    Justification = "Disposal must not wedge behind in-flight operations; CTS/SemaphoreSlim instances are not required to be disposed for correctness in this type.")]
 public sealed class ZeroTierSocket : IAsyncDisposable
 {
     private readonly ZeroTierSocketOptions _options;
     private readonly string _statePath;
     private readonly ZeroTierIdentity _identity;
     private readonly ZeroTierWorld _planet;
+    private readonly CancellationTokenSource _shutdown = new();
     private readonly SemaphoreSlim _joinLock = new(1, 1);
     private readonly SemaphoreSlim _runtimeLock = new(1, 1);
     private ZeroTierDataplaneRuntime? _runtime;
     private byte[]? _networkConfigDictionaryBytes;
     private ZeroTierHelloOk? _upstreamRoot;
     private byte[]? _upstreamRootKey;
+    private Task? _joinTask;
+    private Task<ZeroTierDataplaneRuntime>? _runtimeTask;
     private bool _joined;
     private int _disposeState;
 
@@ -47,7 +54,17 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
-        await _joinLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
+        var token = linkedCts.Token;
+
+        try
+        {
+            await _joinLock.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(ZeroTierSocket));
+        }
         try
         {
             ThrowIfDisposed();
@@ -56,13 +73,50 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                 return;
             }
 
-            var result = await ZeroTierNetworkConfigClient.FetchAsync(
-                    _identity,
-                    _planet,
-                    _options.NetworkId,
-                    _options.JoinTimeout,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            if (_joinTask is { IsCompleted: true } && !_joined)
+            {
+                _joinTask = null;
+            }
+
+            _joinTask ??= JoinCoreAsync(_shutdown.Token);
+        }
+        finally
+        {
+            _joinLock.Release();
+        }
+
+        try
+        {
+            await _joinTask.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(ZeroTierSocket));
+        }
+    }
+
+    private async Task JoinCoreAsync(CancellationToken cancellationToken)
+    {
+        var result = await ZeroTierNetworkConfigClient
+            .FetchAsync(
+                _identity,
+                _planet,
+                _options.NetworkId,
+                _options.JoinTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        await _joinLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            if (_joined)
+            {
+                return;
+            }
 
             ManagedIps = result.ManagedIps;
             _networkConfigDictionaryBytes = result.DictionaryBytes;
@@ -199,26 +253,14 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             return;
         }
 
-        await _joinLock.WaitAsync().ConfigureAwait(false);
-        try
+        await _shutdown.CancelAsync().ConfigureAwait(false);
+
+        _runtimeTask = null;
+        var runtime = Interlocked.Exchange(ref _runtime, null);
+
+        if (runtime is not null)
         {
-            await _runtimeLock.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                if (_runtime is not null)
-                {
-                    await _runtime.DisposeAsync().ConfigureAwait(false);
-                    _runtime = null;
-                }
-            }
-            finally
-            {
-                _runtimeLock.Dispose();
-            }
-        }
-        finally
-        {
-            _joinLock.Dispose();
+            await runtime.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -290,7 +332,17 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
 
-        await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
+        var token = linkedCts.Token;
+
+        try
+        {
+            await _runtimeLock.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(ZeroTierSocket));
+        }
         try
         {
             ThrowIfDisposed();
@@ -299,28 +351,75 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                 return _runtime;
             }
 
-            var (runtime, helloOk, rootKey) = await ZeroTierSocketRuntimeBootstrapper
-                .CreateAsync(
-                    localIdentity: _identity,
-                    planet: _planet,
-                    networkId: _options.NetworkId,
-                    managedIps: ManagedIps,
-                    inlineCom: inlineCom,
-                    cachedRoot: _upstreamRoot,
-                    cachedRootKey: _upstreamRootKey,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            if (_runtimeTask is { IsCompleted: true })
+            {
+                _runtimeTask = null;
+            }
 
-            _upstreamRoot ??= helloOk;
-            _upstreamRootKey ??= rootKey;
-
-            _runtime = runtime;
-            return runtime;
+            _runtimeTask ??= CreateRuntimeAsync(inlineCom, _shutdown.Token);
         }
         finally
         {
             _runtimeLock.Release();
         }
+
+        try
+        {
+            return await _runtimeTask.WaitAsync(token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(nameof(ZeroTierSocket));
+        }
+    }
+
+    private async Task<ZeroTierDataplaneRuntime> CreateRuntimeAsync(byte[] inlineCom, CancellationToken cancellationToken)
+    {
+        var (created, helloOk, rootKey) = await ZeroTierSocketRuntimeBootstrapper
+            .CreateAsync(
+                localIdentity: _identity,
+                planet: _planet,
+                networkId: _options.NetworkId,
+                managedIps: ManagedIps,
+                inlineCom: inlineCom,
+                cachedRoot: _upstreamRoot,
+                cachedRootKey: _upstreamRootKey,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        ZeroTierDataplaneRuntime? toDispose = null;
+        ZeroTierDataplaneRuntime runtime;
+        await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            if (_runtime is not null)
+            {
+                toDispose = created;
+                runtime = _runtime;
+            }
+            else
+            {
+                _upstreamRoot ??= helloOk;
+                _upstreamRootKey ??= rootKey;
+                _runtime = created;
+                runtime = created;
+            }
+        }
+        finally
+        {
+            _runtimeLock.Release();
+        }
+
+        if (toDispose is not null)
+        {
+            await toDispose.DisposeAsync().ConfigureAwait(false);
+        }
+
+        return runtime;
     }
 
     private void ThrowIfDisposed()

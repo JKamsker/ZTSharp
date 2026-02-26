@@ -6,6 +6,8 @@ namespace ZTSharp.ZeroTier.Sockets;
 
 internal abstract class ManagedSocketBackend : IAsyncDisposable
 {
+    private readonly CancellationTokenSource _shutdown = new();
+
     protected ManagedSocketBackend(ZeroTierSocket zeroTier)
     {
         ArgumentNullException.ThrowIfNull(zeroTier);
@@ -17,6 +19,8 @@ internal abstract class ManagedSocketBackend : IAsyncDisposable
     protected SemaphoreSlim InitLock { get; } = new(1, 1);
 
     protected bool Disposed { get; private set; }
+
+    protected CancellationToken ShutdownToken => _shutdown.Token;
 
     public abstract AddressFamily AddressFamily { get; }
 
@@ -63,6 +67,8 @@ internal abstract class ManagedSocketBackend : IAsyncDisposable
             return;
         }
 
+        await _shutdown.CancelAsync().ConfigureAwait(false);
+
         await InitLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -79,6 +85,7 @@ internal abstract class ManagedSocketBackend : IAsyncDisposable
         }
 
         await DisposeResourcesAsync().ConfigureAwait(false);
+        _shutdown.Dispose();
         InitLock.Dispose();
     }
 
