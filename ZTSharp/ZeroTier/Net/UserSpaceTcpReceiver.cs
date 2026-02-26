@@ -1,5 +1,5 @@
-using System.IO;
-using System.Threading.Channels;
+using System.Buffers;
+using System.IO.Pipelines;
 
 namespace ZTSharp.ZeroTier.Net;
 
@@ -7,13 +7,15 @@ internal sealed class UserSpaceTcpReceiver
 {
     private const int MaxReceiveBufferBytes = 256 * 1024;
 
-    private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+    private readonly Pipe _incoming = new(new PipeOptions(pauseWriterThreshold: long.MaxValue, resumeWriterThreshold: long.MaxValue));
     private readonly Dictionary<uint, byte[]> _outOfOrder = new();
 
     private uint _recvNext;
     private uint? _pendingFinSeq;
     private long _receiveBufferedBytes;
     private bool _remoteClosed;
+    private Exception? _terminalException;
+    private int _incomingCompleted;
 
     public bool RemoteClosed => _remoteClosed;
 
@@ -25,12 +27,21 @@ internal sealed class UserSpaceTcpReceiver
     }
 
     public void Complete(Exception? exception = null)
-        => _incoming.Writer.TryComplete(exception);
+    {
+        _terminalException = exception;
+        _remoteClosed = true;
+        CompleteIncoming();
+    }
 
     public void MarkRemoteClosed(Exception? exception = null)
     {
+        if (exception is not null)
+        {
+            _terminalException ??= exception;
+        }
+
         _remoteClosed = true;
-        _incoming.Writer.TryComplete(exception);
+        CompleteIncoming();
     }
 
     public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
@@ -44,36 +55,37 @@ internal sealed class UserSpaceTcpReceiver
 
         while (true)
         {
-            if (_incoming.Reader.TryRead(out var readSegment))
+            var result = await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            var source = result.Buffer;
+
+            if (!source.IsEmpty)
             {
-                var bytesRead = CopyFromSegmentAndRequeueRemainder(readSegment, buffer);
-                ConsumeReceiveBuffer(bytesRead);
-                return bytesRead;
+                var toCopy = (int)Math.Min(source.Length, buffer.Length);
+                CopyFromSequence(source, buffer.Span, toCopy);
+                _incoming.Reader.AdvanceTo(source.GetPosition(toCopy));
+                ConsumeReceiveBuffer(toCopy);
+                return toCopy;
             }
 
-            if (_remoteClosed)
+            _incoming.Reader.AdvanceTo(source.Start, source.End);
+            if (result.IsCompleted)
             {
-                return 0;
-            }
+                if (_terminalException is not null)
+                {
+                    throw _terminalException;
+                }
 
-            try
-            {
-                var segmentFromChannel = await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-                var bytesRead = CopyFromSegmentAndRequeueRemainder(segmentFromChannel, buffer);
-                ConsumeReceiveBuffer(bytesRead);
-                return bytesRead;
-            }
-            catch (ChannelClosedException)
-            {
                 return 0;
             }
         }
     }
 
-    public bool ProcessSegment(uint seq, ReadOnlySpan<byte> tcpPayload, bool hasFin, out bool shouldAck)
+    public ValueTask<ProcessSegmentResult> ProcessSegmentAsync(uint seq, ReadOnlySpan<byte> tcpPayload, bool hasFin)
     {
         var originalPayloadLength = tcpPayload.Length;
-        shouldAck = hasFin || originalPayloadLength != 0;
+        var shouldAck = hasFin || originalPayloadLength != 0;
+        var wroteToPipe = false;
+        var markRemoteClosed = false;
 
         if (originalPayloadLength != 0)
         {
@@ -100,37 +112,35 @@ internal sealed class UserSpaceTcpReceiver
                     var accepted = false;
                     if (TryReserveReceiveBuffer(tcpPayload.Length))
                     {
-                        var bytes = tcpPayload.ToArray();
-                        if (_incoming.Writer.TryWrite(bytes))
+                        try
                         {
+                            WriteToPipe(_incoming.Writer, tcpPayload);
+
                             _recvNext = unchecked(_recvNext + (uint)tcpPayload.Length);
                             accepted = true;
+                            wroteToPipe = true;
                         }
-                        else
+                        catch (ObjectDisposedException)
                         {
-                            ReleaseReceiveBuffer(bytes.Length);
+                            ReleaseReceiveBuffer(tcpPayload.Length);
+                        }
+                        catch (InvalidOperationException)
+                        {
+                            ReleaseReceiveBuffer(tcpPayload.Length);
                         }
                     }
 
-                    while (accepted && _outOfOrder.Remove(_recvNext, out var buffered))
+                    if (accepted)
                     {
-                        if (_incoming.Writer.TryWrite(buffered))
-                        {
-                            _recvNext = unchecked(_recvNext + (uint)buffered.Length);
-                        }
-                        else
-                        {
-                            ReleaseReceiveBuffer(buffered.Length);
-                            break;
-                        }
+                        wroteToPipe |= DrainAndTrimOutOfOrder();
                     }
 
                     if (accepted && _pendingFinSeq is { } pending && pending == _recvNext)
                     {
                         _pendingFinSeq = null;
                         _recvNext = unchecked(_recvNext + 1);
-                        MarkRemoteClosed(new IOException("Remote has closed the connection."));
-                        return true;
+                        markRemoteClosed = true;
+                        return FlushAndMaybeCloseAsync(wroteToPipe, markRemoteClosed, new ProcessSegmentResult(ClosedNow: true, shouldAck));
                     }
                 }
                 else if (UserSpaceTcpSequenceNumbers.GreaterThan(segmentSeq, _recvNext))
@@ -153,8 +163,8 @@ internal sealed class UserSpaceTcpReceiver
             if (finSeq == _recvNext)
             {
                 _recvNext = unchecked(_recvNext + 1);
-                MarkRemoteClosed(new IOException("Remote has closed the connection."));
-                return true;
+                markRemoteClosed = true;
+                return FlushAndMaybeCloseAsync(wroteToPipe, markRemoteClosed, new ProcessSegmentResult(ClosedNow: true, shouldAck));
             }
 
             if (UserSpaceTcpSequenceNumbers.GreaterThan(finSeq, _recvNext))
@@ -163,7 +173,7 @@ internal sealed class UserSpaceTcpReceiver
             }
         }
 
-        return false;
+        return FlushAndMaybeCloseAsync(wroteToPipe, markRemoteClosed, new ProcessSegmentResult(ClosedNow: false, shouldAck));
     }
 
     public ushort GetReceiveWindow()
@@ -183,20 +193,182 @@ internal sealed class UserSpaceTcpReceiver
         return (ushort)available;
     }
 
-    private int CopyFromSegmentAndRequeueRemainder(ReadOnlyMemory<byte> segment, Memory<byte> destination)
+    private void CompleteIncoming()
     {
-        var toCopy = Math.Min(segment.Length, destination.Length);
-        segment.Span.Slice(0, toCopy).CopyTo(destination.Span);
-        if (toCopy < segment.Length)
+        if (Interlocked.Exchange(ref _incomingCompleted, 1) == 1)
         {
-            var remainder = segment.Slice(toCopy);
-            if (!_incoming.Writer.TryWrite(remainder))
+            return;
+        }
+
+        try
+        {
+            _incoming.Writer.Complete();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private bool DrainAndTrimOutOfOrder()
+    {
+        var wroteToPipe = false;
+        while (true)
+        {
+            var progressed = DrainContiguousOutOfOrder();
+            progressed |= TrimOutOfOrderSegments();
+            if (!progressed)
             {
-                ReleaseReceiveBuffer(remainder.Length);
+                return wroteToPipe;
+            }
+
+            wroteToPipe = true;
+        }
+    }
+
+    private bool DrainContiguousOutOfOrder()
+    {
+        var progressed = false;
+        while (_outOfOrder.Remove(_recvNext, out var buffered))
+        {
+            try
+            {
+                WriteToPipe(_incoming.Writer, buffered);
+
+                _recvNext = unchecked(_recvNext + (uint)buffered.Length);
+                progressed = true;
+            }
+            catch (ObjectDisposedException)
+            {
+                ReleaseReceiveBuffer(buffered.Length);
+                break;
+            }
+            catch (InvalidOperationException)
+            {
+                ReleaseReceiveBuffer(buffered.Length);
+                break;
             }
         }
 
-        return toCopy;
+        return progressed;
+    }
+
+    private ValueTask<ProcessSegmentResult> FlushAndMaybeCloseAsync(
+        bool wroteToPipe,
+        bool markRemoteClosed,
+        ProcessSegmentResult result)
+    {
+        if (!wroteToPipe)
+        {
+            if (markRemoteClosed)
+            {
+                MarkRemoteClosed();
+            }
+
+            return new ValueTask<ProcessSegmentResult>(result);
+        }
+
+        var flushTask = _incoming.Writer.FlushAsync(CancellationToken.None);
+        if (flushTask.IsCompletedSuccessfully)
+        {
+            if (markRemoteClosed)
+            {
+                MarkRemoteClosed();
+            }
+
+            return new ValueTask<ProcessSegmentResult>(result);
+        }
+
+        return AwaitFlushAndMaybeCloseAsync(flushTask, result, markRemoteClosed);
+    }
+
+    private async ValueTask<ProcessSegmentResult> AwaitFlushAndMaybeCloseAsync(
+        ValueTask<FlushResult> flushTask,
+        ProcessSegmentResult result,
+        bool markRemoteClosed)
+    {
+        await flushTask.ConfigureAwait(false);
+        if (markRemoteClosed)
+        {
+            MarkRemoteClosed();
+        }
+
+        return result;
+    }
+
+    private bool TrimOutOfOrderSegments()
+    {
+        if (_outOfOrder.Count == 0)
+        {
+            return false;
+        }
+
+        List<uint>? keysToRemove = null;
+        List<byte[]>? segmentsToAdd = null;
+
+        foreach (var (seq, bytes) in _outOfOrder)
+        {
+            if (!UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_recvNext, seq))
+            {
+                continue;
+            }
+
+            var alreadyReceived = (int)(_recvNext - seq);
+            if (alreadyReceived <= 0)
+            {
+                continue;
+            }
+
+            keysToRemove ??= new List<uint>();
+            keysToRemove.Add(seq);
+
+            if (alreadyReceived >= bytes.Length)
+            {
+                ReleaseReceiveBuffer(bytes.Length);
+                continue;
+            }
+
+            ReleaseReceiveBuffer(alreadyReceived);
+            segmentsToAdd ??= new List<byte[]>();
+            segmentsToAdd.Add(bytes.AsSpan(alreadyReceived).ToArray());
+        }
+
+        if (keysToRemove is null)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < keysToRemove.Count; i++)
+        {
+            _outOfOrder.Remove(keysToRemove[i]);
+        }
+
+        if (segmentsToAdd is not null)
+        {
+            for (var i = 0; i < segmentsToAdd.Count; i++)
+            {
+                var bytes = segmentsToAdd[i];
+                if (_outOfOrder.TryGetValue(_recvNext, out var existing))
+                {
+                    if (existing.Length >= bytes.Length)
+                    {
+                        ReleaseReceiveBuffer(bytes.Length);
+                        continue;
+                    }
+
+                    _outOfOrder[_recvNext] = bytes;
+                    ReleaseReceiveBuffer(existing.Length);
+                }
+                else
+                {
+                    _outOfOrder[_recvNext] = bytes;
+                }
+            }
+        }
+
+        return true;
     }
 
     private bool TryReserveReceiveBuffer(int bytes)
@@ -241,4 +413,40 @@ internal sealed class UserSpaceTcpReceiver
 
         Interlocked.Add(ref _receiveBufferedBytes, -bytes);
     }
+
+    private static void CopyFromSequence(ReadOnlySequence<byte> source, Span<byte> destination, int length)
+    {
+        var copied = 0;
+        foreach (var memory in source)
+        {
+            var span = memory.Span;
+            var remaining = length - copied;
+            if (remaining <= 0)
+            {
+                break;
+            }
+
+            if (span.Length > remaining)
+            {
+                span = span.Slice(0, remaining);
+            }
+
+            span.CopyTo(destination.Slice(copied));
+            copied += span.Length;
+        }
+    }
+
+    private static void WriteToPipe(PipeWriter writer, ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.IsEmpty)
+        {
+            return;
+        }
+
+        var span = writer.GetSpan(bytes.Length);
+        bytes.CopyTo(span);
+        writer.Advance(bytes.Length);
+    }
+
+    public readonly record struct ProcessSegmentResult(bool ClosedNow, bool ShouldAck);
 }

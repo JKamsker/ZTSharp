@@ -147,13 +147,13 @@ Files
 
 Changes
 
-- [ ] Use `System.IO.Pipelines.Pipe` for in-order byte stream (eliminates per-segment `byte[]` allocations for in-order traffic).
-- [ ] Keep `_outOfOrder` for ahead-of-window segments, but:
-  - [ ] After `_recvNext` advances, trim or drop any buffered segments whose start is now `< _recvNext` (modular comparisons), releasing reserved bytes so window recovers.
-  - [ ] Cap out-of-order bytes to the same receive-buffer limit.
-- [ ] Propagate terminal exceptions:
-  - [ ] If remote closes with error (RST/IO), allow draining buffered data, then throw stored exception on subsequent reads (distinguish EOF vs reset).
-- [ ] Update call sites to await `ProcessSegmentAsync(...)` if needed (avoid blocking flush).
+- [x] Use `System.IO.Pipelines.Pipe` for in-order byte stream (eliminates per-segment `byte[]` allocations for in-order traffic).
+- [x] Keep `_outOfOrder` for ahead-of-window segments, but:
+  - [x] After `_recvNext` advances, trim or drop any buffered segments whose start is now `< _recvNext` (modular comparisons), releasing reserved bytes so window recovers.
+  - [x] Cap out-of-order bytes to the same receive-buffer limit.
+- [x] Propagate terminal exceptions:
+  - [x] If remote closes with error (RST/IO), allow draining buffered data, then throw stored exception on subsequent reads (distinguish EOF vs reset).
+- [x] Update call sites to await `ProcessSegmentAsync(...)` if needed (avoid blocking flush).
 
 ### 2.3 Validate TCP checksum on receive
 

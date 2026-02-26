@@ -137,13 +137,13 @@ internal sealed class UserSpaceTcpServerReceiveLoop
                         }
 
                         var hasFin = (flags & TcpCodec.Flags.Fin) != 0;
-                        var closedNow = _receiver.ProcessSegment(seq, tcpPayload, hasFin, out var shouldAck);
-                        if (closedNow)
+                        var segmentResult = await _receiver.ProcessSegmentAsync(seq, tcpPayload, hasFin).ConfigureAwait(false);
+                        if (segmentResult.ClosedNow)
                         {
                             _sender.FailPendingOperations(new IOException("Remote has closed the connection."));
                         }
 
-                        if (shouldAck)
+                        if (segmentResult.ShouldAck)
                         {
                             sendAck = true;
                             ackToSend = _receiver.RecvNext;
