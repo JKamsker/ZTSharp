@@ -158,8 +158,8 @@ Primary goals:
 ### 2.8 Join + protocol parsing robustness (Hello/Whois/Netconf/Planet)
 - [x] Add test: OK(HELLO) is only accepted if `Header.Source` matches the root that was pinged for the referenced `inRePacketId` (`ZTSharp/ZeroTier/Internal/ZeroTierHelloClient.cs`)
 - [x] Fix: validate OK(HELLO) source/root correlation to prevent root selection mixups
-- [ ] Add tests: netconf chunk assembly rejects overlaps/dup-length attacks and fails fast (not timeout) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
-- [ ] Fix: track received byte ranges (not just `chunkIndex`) and enforce sane bounds (max chunks, max total length)
+- [x] Add tests: netconf chunk assembly rejects overlaps/dup-length attacks and fails fast (not timeout) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
+- [x] Fix: track received byte ranges (not just `chunkIndex`) and enforce sane bounds (max chunks, max total length)
 - [ ] Decide + document: legacy "unsigned config" acceptance policy (allowed vs rejected) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigParsing.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
 - [ ] Fix: enforce signature-required policy (or explicitly gate legacy mode behind an option)
 - [ ] Add test: WHOIS OK parsing tolerates trailing malformed identity blobs without aborting join (`ZTSharp/ZeroTier/Internal/ZeroTierWhoisClient.cs`)
