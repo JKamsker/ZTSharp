@@ -79,7 +79,7 @@ public sealed class ZeroTierIcmpv6ChecksumTests
             rootProtocolVersion: 12,
             localIdentity: ZeroTierTestIdentities.CreateFastIdentity(0x2222222222),
             networkId: 1,
-            localManagedIpV4: localManagedIpV4,
+            localManagedIpsV4: new[] { localManagedIpV4 },
             localManagedIpsV6: localManagedIpsV6,
             inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
 }

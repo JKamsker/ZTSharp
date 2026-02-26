@@ -17,7 +17,7 @@ public sealed class ZeroTierDataplaneTcpChecksumTests
 
         const ushort localPort = 23461;
         var called = 0;
-        Assert.True(runtime.TryRegisterTcpListener(AddressFamily.InterNetwork, localPort, onSyn: (_, _, _) =>
+        Assert.True(runtime.TryRegisterTcpListener(localManagedIpV4, localPort, onSyn: (_, _, _) =>
         {
             Interlocked.Increment(ref called);
             return Task.CompletedTask;
@@ -52,7 +52,7 @@ public sealed class ZeroTierDataplaneTcpChecksumTests
 
         const ushort localPort = 23462;
         var called = 0;
-        Assert.True(runtime.TryRegisterTcpListener(AddressFamily.InterNetwork, localPort, onSyn: (_, _, _) =>
+        Assert.True(runtime.TryRegisterTcpListener(localManagedIpV4, localPort, onSyn: (_, _, _) =>
         {
             Interlocked.Increment(ref called);
             return Task.CompletedTask;
@@ -105,8 +105,7 @@ public sealed class ZeroTierDataplaneTcpChecksumTests
             rootProtocolVersion: 12,
             localIdentity: ZeroTierTestIdentities.CreateFastIdentity(0x2222222222),
             networkId: 1,
-            localManagedIpV4: localManagedIpV4,
+            localManagedIpsV4: new[] { localManagedIpV4 },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
 }
-

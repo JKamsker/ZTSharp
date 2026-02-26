@@ -17,11 +17,13 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
     private readonly Channel<Stream> _acceptQueue;
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
+    private readonly IPAddress _localAddressMatch;
     private readonly ushort _localPort;
     private readonly int _acceptQueueCapacity;
     private int _pendingAcceptCount;
     private long _droppedAcceptCount;
     private int _disposeState;
+    private readonly bool _isWildcardBind;
 
     internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort, int acceptQueueCapacity = DefaultAcceptQueueCapacity)
     {
@@ -40,8 +42,10 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
         _runtime = runtime;
         _localAddress = localAddress;
+        _localAddressMatch = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(localAddress);
         _localPort = localPort;
         _acceptQueueCapacity = acceptQueueCapacity;
+        _isWildcardBind = localAddress.Equals(IPAddress.Any) || localAddress.Equals(IPAddress.IPv6Any);
         _acceptQueue = Channel.CreateBounded<Stream>(new BoundedChannelOptions(_acceptQueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -49,9 +53,9 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             SingleWriter = false
         });
 
-        if (!_runtime.TryRegisterTcpListener(localAddress.AddressFamily, localPort, OnSynAsync))
+        if (!_runtime.TryRegisterTcpListener(localAddress, localPort, OnSynAsync))
         {
-            throw new InvalidOperationException($"A TCP listener is already registered for {localAddress.AddressFamily} port {localPort}.");
+            throw new InvalidOperationException($"A TCP listener is already registered for {localAddress}:{localPort} (or a wildcard listener already binds this port).");
         }
     }
 
@@ -101,7 +105,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         await _disposeLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            _runtime.UnregisterTcpListener(_localAddress.AddressFamily, _localPort);
+            _runtime.UnregisterTcpListener(_localAddress, _localPort);
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
 
@@ -149,7 +153,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 return Task.CompletedTask;
             }
 
-            if (!dst.Equals(_localAddress) || protocol != TcpCodec.ProtocolNumber)
+            if ((!_isWildcardBind && !dst.Equals(_localAddressMatch)) || protocol != TcpCodec.ProtocolNumber)
             {
                 return Task.CompletedTask;
             }
@@ -161,7 +165,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 return Task.CompletedTask;
             }
 
-            if (!dst.Equals(_localAddress) || nextHeader != TcpCodec.ProtocolNumber)
+            if ((!_isWildcardBind && !ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddressMatch)) || nextHeader != TcpCodec.ProtocolNumber)
             {
                 return Task.CompletedTask;
             }

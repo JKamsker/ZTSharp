@@ -31,7 +31,7 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
             rootProtocolVersion: 12,
             localIdentity: localIdentity,
             networkId: 0x9ad07d01093a69e3UL,
-            localManagedIpV4: IPAddress.Parse("10.0.0.1"),
+            localManagedIpsV4: new[] { IPAddress.Parse("10.0.0.1") },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: Array.Empty<byte>());
 
@@ -78,7 +78,7 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
             rootProtocolVersion: 12,
             localIdentity: localIdentity,
             networkId: 0x9ad07d01093a69e3UL,
-            localManagedIpV4: IPAddress.Parse("10.0.0.1"),
+            localManagedIpsV4: new[] { IPAddress.Parse("10.0.0.1") },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: Array.Empty<byte>());
 

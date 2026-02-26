@@ -121,7 +121,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         return await ZeroTierSocketBindings.ListenTcpAsync(
                 ensureJoinedAsync: JoinAsync,
                 getManagedIps: () => ManagedIps,
-                getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
+                getInlineCom: GetInlineComOrThrow,
                 getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
                 localAddress,
                 port,
@@ -149,7 +149,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         return await ZeroTierSocketBindings.BindUdpAsync(
                 ensureJoinedAsync: JoinAsync,
                 getManagedIps: () => ManagedIps,
-                getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
+                getInlineCom: GetInlineComOrThrow,
                 getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
                 localAddress,
                 port,
@@ -260,7 +260,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         return await ZeroTierSocketTcpConnector.ConnectWithLocalEndpointAsync(
                 ensureJoinedAsync: JoinAsync,
                 getManagedIps: () => ManagedIps,
-                getLocalManagedIpv4AndInlineCom: GetLocalManagedIpv4AndInlineCom,
+                getInlineCom: GetInlineComOrThrow,
                 getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
                 local,
                 remote,
@@ -268,10 +268,10 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private (IPAddress? LocalManagedIpV4, byte[] InlineCom) GetLocalManagedIpv4AndInlineCom()
+    private byte[] GetInlineComOrThrow()
     {
         var dict = _networkConfigDictionaryBytes ?? throw new InvalidOperationException("Missing network config dictionary (join not completed?).");
-        return (ManagedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork), ZeroTierInlineCom.GetInlineCom(dict));
+        return ZeroTierInlineCom.GetInlineCom(dict);
     }
 
     private IPAddress GetDefaultLocalManagedAddressOrThrow()
@@ -284,7 +284,6 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         "CA2000:Dispose objects before losing scope",
         Justification = "UDP transport ownership transfers to ZeroTierDataplaneRuntime, which is disposed by ZeroTierSocket.DisposeAsync.")]
     private async Task<ZeroTierDataplaneRuntime> GetOrCreateRuntimeAsync(
-        IPAddress? localManagedIpV4,
         byte[] inlineCom,
         CancellationToken cancellationToken)
     {
@@ -306,7 +305,6 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                     planet: _planet,
                     networkId: _options.NetworkId,
                     managedIps: ManagedIps,
-                    localManagedIpV4: localManagedIpV4,
                     inlineCom: inlineCom,
                     cachedRoot: _upstreamRoot,
                     cachedRootKey: _upstreamRootKey,

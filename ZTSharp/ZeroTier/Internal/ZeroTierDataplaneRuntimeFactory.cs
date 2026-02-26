@@ -12,7 +12,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
         ulong networkId,
-        IPAddress? localManagedIpV4,
+        IPAddress[] localManagedIpsV4,
         IPAddress[] localManagedIpsV6,
         byte[] inlineCom,
         ZeroTierHelloOk? cachedRoot,
@@ -22,6 +22,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(localIdentity);
         ArgumentNullException.ThrowIfNull(planet);
+        ArgumentNullException.ThrowIfNull(localManagedIpsV4);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
@@ -49,7 +50,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
             rootProtocolVersion: helloOk.RemoteProtocolVersion,
             localIdentity: localIdentity,
             networkId: networkId,
-            localManagedIpV4: localManagedIpV4,
+            localManagedIpsV4: localManagedIpsV4,
             localManagedIpsV6: localManagedIpsV6,
             inlineCom: inlineCom);
 
@@ -57,7 +58,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
                 udp,
                 localIdentity.NodeId,
                 networkId,
-                localManagedIpV4,
+                localManagedIpsV4,
                 localManagedIpsV6,
                 helloOk,
                 rootKey,
@@ -84,7 +85,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
         ZeroTierUdpTransport udp,
         NodeId localNodeId,
         ulong networkId,
-        IPAddress? localManagedIpV4,
+        IPAddress[] localManagedIpsV4,
         IPAddress[] localManagedIpsV6,
         ZeroTierHelloOk helloOk,
         byte[] rootKey,
@@ -92,10 +93,12 @@ internal static class ZeroTierDataplaneRuntimeFactory
     {
         try
         {
-            var groups = new List<ZeroTierMulticastGroup>((localManagedIpV4 is not null ? 1 : 0) + localManagedIpsV6.Length);
-            if (localManagedIpV4 is not null)
+            ArgumentNullException.ThrowIfNull(localManagedIpsV4);
+            var groups = new List<ZeroTierMulticastGroup>(localManagedIpsV4.Length + localManagedIpsV6.Length);
+
+            for (var i = 0; i < localManagedIpsV4.Length; i++)
             {
-                groups.Add(ZeroTierMulticastGroup.DeriveForAddressResolution(localManagedIpV4));
+                groups.Add(ZeroTierMulticastGroup.DeriveForAddressResolution(localManagedIpsV4[i]));
             }
 
             for (var i = 0; i < localManagedIpsV6.Length; i++)

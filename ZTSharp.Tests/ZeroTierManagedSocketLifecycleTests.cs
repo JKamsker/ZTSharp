@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Diagnostics;
 using ZTSharp.ZeroTier;
 using ZTSharp.ZeroTier.Internal;
+using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -76,17 +77,69 @@ public sealed class ZeroTierManagedSocketLifecycleTests
     }
 
     [Fact]
-    public async Task ListenTcpAsync_Any_IsNormalizedToManagedIp()
+    public async Task ListenTcpAsync_Any_IsWildcardEndpoint()
     {
         var networkId = 0x9ad07d01093a69e3UL;
         var localIp = IPAddress.Parse("10.0.0.2");
         var dict = BuildDictionaryWithMinimalComAndStaticIp(localIp, bits: 24);
 
-        await using var runtime = CreateRuntime(localManagedIpV4: localIp);
-        await using var socket = CreateJoinedSocket(runtime, networkId, localIp, dict);
+        await using var runtime = CreateRuntime(localManagedIpsV4: new[] { localIp });
+        await using var socket = CreateJoinedSocket(runtime, networkId, managedIps: new[] { localIp }, dict);
 
         await using var listener = await socket.ListenTcpAsync(IPAddress.Any, port: 23458);
-        Assert.Equal(new IPEndPoint(localIp, 23458), listener.LocalEndpoint);
+        Assert.Equal(new IPEndPoint(IPAddress.Any, 23458), listener.LocalEndpoint);
+    }
+
+    [Fact]
+    public async Task ListenTcpAsync_Any_AcceptsConnectionsToAnyManagedIpv4()
+    {
+        var networkId = 0x9ad07d01093a69e3UL;
+        var managedIpA = IPAddress.Parse("10.0.0.2");
+        var managedIpB = IPAddress.Parse("10.0.0.3");
+        var dict = BuildDictionaryWithMinimalComAndStaticIp(managedIpA, bits: 24);
+
+        await using var runtime = CreateRuntime(localManagedIpsV4: new[] { managedIpA, managedIpB });
+        await using var socket = CreateJoinedSocket(runtime, networkId, managedIps: new[] { managedIpA, managedIpB }, dict);
+
+        const ushort listenPort = 23463;
+        await using var listener = await socket.ListenTcpAsync(IPAddress.Any, port: listenPort);
+
+        var remoteIp = IPAddress.Parse("10.0.0.1");
+        var tcp = TcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: managedIpB,
+            sourcePort: 50000,
+            destinationPort: listenPort,
+            sequenceNumber: 123,
+            acknowledgmentNumber: 0,
+            flags: TcpCodec.Flags.Syn,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+        var ipv4 = Ipv4Codec.Encode(remoteIp, managedIpB, TcpCodec.ProtocolNumber, tcp, identification: 1);
+
+        var onSyn = typeof(ZeroTierTcpListener).GetMethod("OnSynAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(onSyn);
+        await (Task)onSyn!.Invoke(listener, new object[] { new NodeId(0x3333333333), (ReadOnlyMemory<byte>)ipv4, CancellationToken.None })!;
+
+        var routes = GetPrivateField<ZeroTierDataplaneRouteRegistry>(runtime, "_routes");
+        var routeKey = ZeroTierTcpRouteKey.FromEndpoints(new IPEndPoint(managedIpB, listenPort), new IPEndPoint(remoteIp, 50000));
+        Assert.True(routes.TryGetRoute(routeKey, out _));
+    }
+
+    [Fact]
+    public async Task ZeroTierTcpListener_SamePortOnDifferentManagedIps_IsSupported()
+    {
+        var managedIpA = IPAddress.Parse("10.0.0.2");
+        var managedIpB = IPAddress.Parse("10.0.0.3");
+        await using var runtime = CreateRuntime(localManagedIpsV4: new[] { managedIpA, managedIpB });
+
+        const ushort port = 23464;
+        await using var listenerA = new ZeroTierTcpListener(runtime, managedIpA, port);
+        await using var listenerB = new ZeroTierTcpListener(runtime, managedIpB, port);
+
+        Assert.Equal(new IPEndPoint(managedIpA, port), listenerA.LocalEndpoint);
+        Assert.Equal(new IPEndPoint(managedIpB, port), listenerB.LocalEndpoint);
     }
 
     [Fact]
@@ -119,7 +172,7 @@ public sealed class ZeroTierManagedSocketLifecycleTests
             rootProtocolVersion: 12,
             localIdentity: identityA,
             networkId,
-            localManagedIpV4: ipA,
+            localManagedIpsV4: new[] { ipA },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: ZeroTierInlineCom.GetInlineCom(dictA));
 
@@ -131,7 +184,7 @@ public sealed class ZeroTierManagedSocketLifecycleTests
             rootProtocolVersion: 12,
             localIdentity: identityB,
             networkId,
-            localManagedIpV4: ipB,
+            localManagedIpsV4: new[] { ipB },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: ZeroTierInlineCom.GetInlineCom(dictB));
 
@@ -150,8 +203,8 @@ public sealed class ZeroTierManagedSocketLifecycleTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var rootTask = RunRootRelayAsync(rootUdp, rootNodeId, rootKey, networkId, identities, groupToNodeId, cts.Token);
 
-        await using var socketA = CreateJoinedSocket(runtimeA, networkId, ipA, dictA);
-        await using var socketB = CreateJoinedSocket(runtimeB, networkId, ipB, dictB);
+        await using var socketA = CreateJoinedSocket(runtimeA, networkId, managedIps: new[] { ipA }, dictA);
+        await using var socketB = CreateJoinedSocket(runtimeB, networkId, managedIps: new[] { ipB }, dictB);
 
         // Ensure B can decrypt the first SYN without waiting for background WHOIS.
         await runtimeB.SendEthernetFrameAsync(
@@ -345,14 +398,31 @@ public sealed class ZeroTierManagedSocketLifecycleTests
             rootProtocolVersion: 12,
             localIdentity: ZeroTierTestIdentities.CreateFastIdentity(0x2222222222),
             networkId: 1,
-            localManagedIpV4: localManagedIpV4,
+            localManagedIpsV4: new[] { localManagedIpV4 },
+            localManagedIpsV6: Array.Empty<IPAddress>(),
+            inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
+
+    [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "UDP transport ownership transfers to ZeroTierDataplaneRuntime, which is disposed by the caller.")]
+    private static ZeroTierDataplaneRuntime CreateRuntime(IPAddress[] localManagedIpsV4)
+        => new(
+            udp: new ZeroTierUdpTransport(localPort: 0, enableIpv6: false),
+            rootNodeId: new NodeId(0x1111111111),
+            rootEndpoint: new IPEndPoint(IPAddress.Loopback, 9999),
+            rootKey: new byte[48],
+            rootProtocolVersion: 12,
+            localIdentity: ZeroTierTestIdentities.CreateFastIdentity(0x2222222222),
+            networkId: 1,
+            localManagedIpsV4: localManagedIpsV4,
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
 
     private static ZeroTierSocket CreateJoinedSocket(
         ZeroTierDataplaneRuntime runtime,
         ulong networkId,
-        IPAddress localManagedIpV4,
+        IPAddress[] managedIps,
         byte[] networkConfigDictionaryBytes)
     {
         var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-managed-socket-");
@@ -368,7 +438,7 @@ public sealed class ZeroTierManagedSocketLifecycleTests
         SetPrivateField(socket, "_runtime", runtime);
         SetPrivateField(socket, "_networkConfigDictionaryBytes", networkConfigDictionaryBytes);
         SetPrivateField(socket, "_joined", true);
-        SetPrivateField(socket, "<ManagedIps>k__BackingField", new[] { localManagedIpV4 });
+        SetPrivateField(socket, "<ManagedIps>k__BackingField", managedIps);
 
         return socket;
     }

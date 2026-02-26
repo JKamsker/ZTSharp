@@ -17,8 +17,8 @@ internal sealed class ZeroTierDataplaneIpHandler
 
     private readonly ulong _networkId;
     private readonly ZeroTierMac _localMac;
-    private readonly IPAddress? _localManagedIpV4;
-    private readonly byte[]? _localManagedIpV4Bytes;
+    private readonly IPAddress[] _localManagedIpsV4;
+    private readonly byte[][] _localManagedIpsV4Bytes;
     private readonly IPAddress[] _localManagedIpsV6;
 
     public ZeroTierDataplaneIpHandler(
@@ -28,8 +28,8 @@ internal sealed class ZeroTierDataplaneIpHandler
         ZeroTierDataplaneIcmpv6Handler icmpv6,
         ulong networkId,
         ZeroTierMac localMac,
-        IPAddress? localManagedIpV4,
-        byte[]? localManagedIpV4Bytes,
+        IPAddress[] localManagedIpsV4,
+        byte[][] localManagedIpsV4Bytes,
         IPAddress[] localManagedIpsV6)
     {
         ArgumentNullException.ThrowIfNull(sender);
@@ -46,8 +46,8 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         _networkId = networkId;
         _localMac = localMac;
-        _localManagedIpV4 = localManagedIpV4;
-        _localManagedIpV4Bytes = localManagedIpV4Bytes;
+        _localManagedIpsV4 = localManagedIpsV4;
+        _localManagedIpsV4Bytes = localManagedIpsV4Bytes;
         _localManagedIpsV6 = localManagedIpsV6;
     }
 
@@ -153,7 +153,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
             if ((flags & TcpCodec.Flags.Syn) != 0 &&
                 (flags & TcpCodec.Flags.Ack) == 0 &&
-                _routes.TryGetTcpSynHandler(AddressFamily.InterNetworkV6, dstPort, out var handler))
+                _routes.TryGetTcpSynHandler(AddressFamily.InterNetworkV6, destinationIp: dst, dstPort, out var handler))
             {
                 await handler(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
                 return;
@@ -192,7 +192,7 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (!dst.Equals(_localManagedIpV4))
+        if (!TryGetLocalManagedIpv4(dst, out dst))
         {
             return;
         }
@@ -270,7 +270,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if ((flags & TcpCodec.Flags.Syn) != 0 &&
             (flags & TcpCodec.Flags.Ack) == 0 &&
-            _routes.TryGetTcpSynHandler(AddressFamily.InterNetwork, dstPort, out var handler))
+            _routes.TryGetTcpSynHandler(AddressFamily.InterNetwork, destinationIp: dst, dstPort, out var handler))
         {
             await handler(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
             return;
@@ -293,8 +293,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
     public ValueTask HandleArpFrameAsync(NodeId peerNodeId, ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
     {
-        var localManagedIpV4Bytes = _localManagedIpV4Bytes;
-        if (localManagedIpV4Bytes is null)
+        if (_localManagedIpsV4Bytes.Length == 0)
         {
             return ValueTask.CompletedTask;
         }
@@ -306,13 +305,19 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         _managedIpToNodeId.LearnFromNeighbor(new IPAddress(senderIp), peerNodeId);
 
-        if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
+        for (var i = 0; i < _localManagedIpsV4Bytes.Length; i++)
         {
-            return ValueTask.CompletedTask;
+            var localManagedIpV4Bytes = _localManagedIpsV4Bytes[i];
+            if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
+            {
+                continue;
+            }
+
+            var reply = ZeroTierArp.BuildReply(_localMac, localManagedIpV4Bytes, senderMac, senderIp);
+            return _sender.SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeArp, reply, cancellationToken);
         }
 
-        var reply = ZeroTierArp.BuildReply(_localMac, localManagedIpV4Bytes, senderMac, senderIp);
-        return _sender.SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeArp, reply, cancellationToken);
+        return ValueTask.CompletedTask;
     }
 
     private ValueTask SendTcpRstAsync(
@@ -338,6 +343,28 @@ internal sealed class ZeroTierDataplaneIpHandler
         }
 
         localIp = IPAddress.IPv6None;
+        return false;
+    }
+
+    private bool TryGetLocalManagedIpv4(IPAddress address, out IPAddress localIp)
+    {
+        if (_localManagedIpsV4.Length == 0 || address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            localIp = IPAddress.None;
+            return false;
+        }
+
+        for (var i = 0; i < _localManagedIpsV4.Length; i++)
+        {
+            var ip = _localManagedIpsV4[i];
+            if (address.Equals(ip))
+            {
+                localIp = ip;
+                return true;
+            }
+        }
+
+        localIp = IPAddress.None;
         return false;
     }
 

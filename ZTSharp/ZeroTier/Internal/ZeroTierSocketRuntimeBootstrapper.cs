@@ -18,7 +18,6 @@ internal static class ZeroTierSocketRuntimeBootstrapper
         ZeroTierWorld planet,
         ulong networkId,
         IReadOnlyList<IPAddress> managedIps,
-        IPAddress? localManagedIpV4,
         byte[] inlineCom,
         ZeroTierHelloOk? cachedRoot,
         byte[]? cachedRootKey,
@@ -36,13 +35,17 @@ internal static class ZeroTierSocketRuntimeBootstrapper
                 .Where(ip => ip.AddressFamily == AddressFamily.InterNetworkV6)
                 .ToArray();
 
+            var localManagedIpsV4 = managedIps
+                .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork)
+                .ToArray();
+
             return await ZeroTierDataplaneRuntimeFactory
                 .CreateAsync(
                     udp,
                     localIdentity: localIdentity,
                     planet: planet,
                     networkId: networkId,
-                    localManagedIpV4: localManagedIpV4,
+                    localManagedIpsV4: localManagedIpsV4,
                     localManagedIpsV6: localManagedIpsV6,
                     inlineCom: inlineCom,
                     cachedRoot: cachedRoot,

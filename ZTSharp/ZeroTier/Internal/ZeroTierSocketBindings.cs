@@ -11,15 +11,15 @@ internal static class ZeroTierSocketBindings
     public static async ValueTask<ZeroTierTcpListener> ListenTcpAsync(
         Func<CancellationToken, Task> ensureJoinedAsync,
         Func<IReadOnlyList<IPAddress>> getManagedIps,
-        Func<(IPAddress? LocalManagedIpV4, byte[] InlineCom)> getLocalManagedIpv4AndInlineCom,
-        Func<IPAddress?, byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
+        Func<byte[]> getInlineCom,
+        Func<byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
         IPAddress localAddress,
         int port,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ensureJoinedAsync);
         ArgumentNullException.ThrowIfNull(getManagedIps);
-        ArgumentNullException.ThrowIfNull(getLocalManagedIpv4AndInlineCom);
+        ArgumentNullException.ThrowIfNull(getInlineCom);
         ArgumentNullException.ThrowIfNull(getOrCreateRuntimeAsync);
         ArgumentNullException.ThrowIfNull(localAddress);
 
@@ -38,39 +38,43 @@ internal static class ZeroTierSocketBindings
 
         await ensureJoinedAsync(cancellationToken).ConfigureAwait(false);
         var managedIps = getManagedIps();
+
         if (localAddress.Equals(IPAddress.Any))
         {
-            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork)
-                           ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+            if (!managedIps.Any(ip => ip.AddressFamily == AddressFamily.InterNetwork))
+            {
+                throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+            }
         }
         else if (localAddress.Equals(IPAddress.IPv6Any))
         {
-            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetworkV6)
-                           ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+            if (!managedIps.Any(ip => ip.AddressFamily == AddressFamily.InterNetworkV6))
+            {
+                throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+            }
         }
-
-        if (!managedIps.Contains(localAddress))
+        else if (!ContainsManagedIp(managedIps, localAddress))
         {
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
-        var (localManagedIpV4, comBytes) = getLocalManagedIpv4AndInlineCom();
-        var runtime = await getOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
+        var comBytes = getInlineCom();
+        var runtime = await getOrCreateRuntimeAsync(comBytes, cancellationToken).ConfigureAwait(false);
         return new ZeroTierTcpListener(runtime, localAddress, (ushort)port);
     }
 
     public static async ValueTask<ZeroTierUdpSocket> BindUdpAsync(
         Func<CancellationToken, Task> ensureJoinedAsync,
         Func<IReadOnlyList<IPAddress>> getManagedIps,
-        Func<(IPAddress? LocalManagedIpV4, byte[] InlineCom)> getLocalManagedIpv4AndInlineCom,
-        Func<IPAddress?, byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
+        Func<byte[]> getInlineCom,
+        Func<byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
         IPAddress localAddress,
         int port,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ensureJoinedAsync);
         ArgumentNullException.ThrowIfNull(getManagedIps);
-        ArgumentNullException.ThrowIfNull(getLocalManagedIpv4AndInlineCom);
+        ArgumentNullException.ThrowIfNull(getInlineCom);
         ArgumentNullException.ThrowIfNull(getOrCreateRuntimeAsync);
         ArgumentNullException.ThrowIfNull(localAddress);
 
@@ -100,13 +104,13 @@ internal static class ZeroTierSocketBindings
                            ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
         }
 
-        if (!managedIps.Contains(localAddress))
+        if (!ContainsManagedIp(managedIps, localAddress))
         {
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
-        var (localManagedIpV4, comBytes) = getLocalManagedIpv4AndInlineCom();
-        var runtime = await getOrCreateRuntimeAsync(localManagedIpV4, comBytes, cancellationToken).ConfigureAwait(false);
+        var comBytes = getInlineCom();
+        var runtime = await getOrCreateRuntimeAsync(comBytes, cancellationToken).ConfigureAwait(false);
 
         if (port != 0)
         {
@@ -136,5 +140,20 @@ internal static class ZeroTierSocketBindings
         {
             return null;
         }
+    }
+
+    private static bool ContainsManagedIp(IReadOnlyList<IPAddress> managedIps, IPAddress candidate)
+    {
+        var canonicalCandidate = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(candidate);
+        for (var i = 0; i < managedIps.Count; i++)
+        {
+            var managedIp = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(managedIps[i]);
+            if (managedIp.Equals(canonicalCandidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

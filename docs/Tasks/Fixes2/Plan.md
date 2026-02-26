@@ -195,13 +195,13 @@ Primary goals:
 ## Phase 3 - Real stack: socket surface + lifecycle semantics (`ZTSharp/ZeroTier/**`)
 
 ### 3.1 `IPAddress.Any` / `IPv6Any` semantics
-- [ ] Add test: `ListenTcpAsync(IPAddress.Any, port)` accepts connections to any managed IP (not only the first) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`)
-- [ ] Fix: treat Any/IPv6Any as "bind all managed IPs of that family" (or document alternative) and adjust route registry accordingly
-- [ ] Add test: binding same port on two different managed IPs of same family is supported (or explicitly rejected with a clear message) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRouteRegistry.cs`)
-- [ ] Add test: `ConnectTcpAsync(local: IPAddress.Any/IPv6Any, remote)` chooses a valid managed local IP rather than rejecting (`ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
-- [ ] Fix: normalize `local` endpoints with `IPAddress.Any`/`IPv6Any` to a concrete managed IP (consistent with bind semantics) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
-- [ ] Add test: IPv6 `ScopeId` mismatches do not break bind/listen/connect matching when the address is not link-local (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
-- [ ] Fix: canonicalize IPv6 addresses for managed-IP comparisons (define policy for `ScopeId`) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [x] Add test: `ListenTcpAsync(IPAddress.Any, port)` accepts connections to any managed IP (not only the first) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`)
+- [x] Fix: treat Any/IPv6Any as "bind all managed IPs of that family" (or document alternative) and adjust route registry accordingly
+- [x] Add test: binding same port on two different managed IPs of same family is supported (or explicitly rejected with a clear message) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRouteRegistry.cs`)
+- [x] Add test: `ConnectTcpAsync(local: IPAddress.Any/IPv6Any, remote)` chooses a valid managed local IP rather than rejecting (`ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [x] Fix: normalize `local` endpoints with `IPAddress.Any`/`IPv6Any` to a concrete managed IP (consistent with bind semantics) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [x] Add test: IPv6 `ScopeId` mismatches do not break bind/listen/connect matching when the address is not link-local (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [x] Fix: canonicalize IPv6 addresses for managed-IP comparisons (define policy for `ScopeId`) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
 
 ### 3.2 Accepted `RemoteEndPoint` availability
 - [ ] Add test: accepted `ManagedSocket.RemoteEndPoint` is populated (or explicitly documented as unsupported) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -18,8 +19,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZeroTierIdentity _localIdentity;
     private readonly ulong _networkId;
     private readonly byte[] _inlineCom;
-    private readonly IPAddress? _localManagedIpV4;
-    private readonly byte[]? _localManagedIpV4Bytes;
+    private readonly IPAddress[] _localManagedIpsV4;
+    private readonly byte[][] _localManagedIpsV4Bytes;
     private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZeroTierMac _localMac;
     private readonly ConcurrentDictionary<NodeId, ZeroTierDirectEndpointManager> _directEndpoints = new();
@@ -53,7 +54,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         byte rootProtocolVersion,
         ZeroTierIdentity localIdentity,
         ulong networkId,
-        IPAddress? localManagedIpV4,
+        IReadOnlyList<IPAddress> localManagedIpsV4,
         IReadOnlyList<IPAddress> localManagedIpsV6,
         byte[] inlineCom)
     {
@@ -64,14 +65,17 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
-        if (localManagedIpV4 is null && localManagedIpsV6.Count == 0)
+        if (localManagedIpsV4.Count == 0 && localManagedIpsV6.Count == 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(localManagedIpV4), "At least one managed IP (IPv4 or IPv6) is required.");
+            throw new ArgumentOutOfRangeException(nameof(localManagedIpsV4), "At least one managed IP (IPv4 or IPv6) is required.");
         }
 
-        if (localManagedIpV4 is not null && localManagedIpV4.AddressFamily != AddressFamily.InterNetwork)
+        for (var i = 0; i < localManagedIpsV4.Count; i++)
         {
-            throw new ArgumentOutOfRangeException(nameof(localManagedIpV4), "Managed IPv4 must be an IPv4 address.");
+            if (localManagedIpsV4[i].AddressFamily != AddressFamily.InterNetwork)
+            {
+                throw new ArgumentOutOfRangeException(nameof(localManagedIpsV4), "All IPv4 managed IPs must be IPv4.");
+            }
         }
 
         for (var i = 0; i < localManagedIpsV6.Count; i++)
@@ -90,8 +94,10 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _localIdentity = localIdentity;
         _networkId = networkId;
         _inlineCom = inlineCom;
-        _localManagedIpV4 = localManagedIpV4;
-        _localManagedIpV4Bytes = localManagedIpV4?.GetAddressBytes();
+        _localManagedIpsV4 = localManagedIpsV4.Count == 0 ? Array.Empty<IPAddress>() : localManagedIpsV4.ToArray();
+        _localManagedIpsV4Bytes = _localManagedIpsV4.Length == 0
+            ? Array.Empty<byte[]>()
+            : _localManagedIpsV4.Select(ip => ip.GetAddressBytes()).ToArray();
         _localManagedIpsV6 = localManagedIpsV6.Count == 0 ? Array.Empty<IPAddress>() : localManagedIpsV6.ToArray();
         _localMac = ZeroTierMac.FromAddress(localIdentity.NodeId, networkId);
 
@@ -115,8 +121,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             icmpv6: icmpv6,
             networkId: _networkId,
             localMac: _localMac,
-            localManagedIpV4: _localManagedIpV4,
-            localManagedIpV4Bytes: _localManagedIpV4Bytes,
+            localManagedIpsV4: _localManagedIpsV4,
+            localManagedIpsV4Bytes: _localManagedIpsV4Bytes,
             localManagedIpsV6: _localManagedIpsV6);
         _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip, handleControlAsync: HandlePeerControlPacketAsync);
         _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets);
@@ -161,13 +167,13 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         => _routes.UnregisterRoute(routeKey);
 
     public bool TryRegisterTcpListener(
-        AddressFamily addressFamily,
+        IPAddress localAddress,
         ushort localPort,
         Func<NodeId, ReadOnlyMemory<byte>, CancellationToken, Task> onSyn)
-        => _routes.TryRegisterTcpListener(addressFamily, localPort, onSyn);
+        => _routes.TryRegisterTcpListener(localAddress, localPort, onSyn);
 
-    public void UnregisterTcpListener(AddressFamily addressFamily, ushort localPort)
-        => _routes.UnregisterTcpListener(addressFamily, localPort);
+    public void UnregisterTcpListener(IPAddress localAddress, ushort localPort)
+        => _routes.UnregisterTcpListener(localAddress, localPort);
 
     public bool TryRegisterUdpPort(AddressFamily addressFamily, ushort localPort, ChannelWriter<ZeroTierRoutedIpPacket> handler)
         => _routes.TryRegisterUdpPort(addressFamily, localPort, handler);
