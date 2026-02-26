@@ -16,8 +16,10 @@ public sealed class ZeroTierIpv4LinkSenderTests
         await using var relayRx = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
 
         var remoteNodeId = new NodeId(0x3333333333);
-        var directManager = new ZeroTierDirectEndpointManager(txUdp, relayRx.LocalEndpoint, remoteNodeId);
-        SetPrivateField(directManager, "_directEndpoints", new[] { directRx.LocalEndpoint });
+        var relayEndpoint = TestUdpEndpoints.ToLoopback(relayRx.LocalEndpoint);
+        var directEndpoint = TestUdpEndpoints.ToLoopback(directRx.LocalEndpoint);
+        var directManager = new ZeroTierDirectEndpointManager(txUdp, relayEndpoint, remoteNodeId);
+        SetPrivateField(directManager, "_directEndpoints", new[] { directEndpoint });
 
         var localNodeId = new NodeId(0x2222222222);
         const ulong networkId = 1;
@@ -28,7 +30,7 @@ public sealed class ZeroTierIpv4LinkSenderTests
 
         var sender = new ZeroTierIpv4LinkSender(
             txUdp,
-            relayEndpoint: relayRx.LocalEndpoint,
+            relayEndpoint: relayEndpoint,
             directEndpoints: directManager,
             localNodeId: localNodeId,
             remoteNodeId: remoteNodeId,
@@ -53,4 +55,3 @@ public sealed class ZeroTierIpv4LinkSenderTests
         field!.SetValue(instance, value);
     }
 }
-

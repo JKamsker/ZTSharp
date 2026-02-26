@@ -18,6 +18,7 @@ public sealed class OsUdpPeerPersistenceTests
                 StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
                 StateStore = new MemoryStateStore(),
                 TransportMode = TransportMode.OsUdp,
+                EnableIpv6 = false,
                 EnablePeerDiscovery = false
             });
 
@@ -34,13 +35,19 @@ public sealed class OsUdpPeerPersistenceTests
             {
                 StateRootPath = nodeARoot,
                 TransportMode = TransportMode.OsUdp,
+                EnableIpv6 = false,
                 EnablePeerDiscovery = false
             }))
             {
                 await nodeA.StartAsync();
                 await nodeA.JoinNetworkAsync(networkId);
 
+                var nodeAId = (await nodeA.GetIdentityAsync()).NodeId.Value;
+                var nodeAEndpoint = nodeA.LocalTransportEndpoint;
+                Assert.NotNull(nodeAEndpoint);
+
                 await nodeA.AddPeerAsync(networkId, nodeBId, nodeBEndpoint);
+                await nodeB.AddPeerAsync(networkId, nodeAId, nodeAEndpoint);
 
                 await using var udpA = new ZtUdpClient(nodeA, networkId, 14001);
                 await udpA.ConnectAsync(nodeBId, 14002);
@@ -56,11 +63,18 @@ public sealed class OsUdpPeerPersistenceTests
             {
                 StateRootPath = nodeARoot,
                 TransportMode = TransportMode.OsUdp,
+                EnableIpv6 = false,
                 EnablePeerDiscovery = false
             });
 
             await nodeA2.StartAsync();
             await nodeA2.JoinNetworkAsync(networkId);
+
+            var nodeA2Id = (await nodeA2.GetIdentityAsync()).NodeId.Value;
+            var nodeA2Endpoint = nodeA2.LocalTransportEndpoint;
+            Assert.NotNull(nodeA2Endpoint);
+
+            await nodeB.AddPeerAsync(networkId, nodeA2Id, nodeA2Endpoint);
 
             await using var udpA2 = new ZtUdpClient(nodeA2, networkId, 14003);
             await udpA2.ConnectAsync(nodeBId, 14002);

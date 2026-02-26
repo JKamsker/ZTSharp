@@ -52,7 +52,7 @@ public sealed class ZeroTierDataplaneShutdownTests
                 VerbRaw: 0),
             ReadOnlySpan<byte>.Empty);
 
-        await sender.SendAsync(udp.LocalEndpoint, peerPacket);
+        await sender.SendAsync(TestUdpEndpoints.ToLoopback(udp.LocalEndpoint), peerPacket);
         _ = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
 
         await udp.DisposeAsync();
@@ -72,4 +72,3 @@ public sealed class ZeroTierDataplaneShutdownTests
         public Task ProcessAsync(ZeroTierUdpDatagram datagram, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
-
