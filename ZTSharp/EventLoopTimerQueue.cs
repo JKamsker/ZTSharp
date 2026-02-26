@@ -17,6 +17,8 @@ internal sealed class EventLoopTimerQueue : IDisposable
     private TimerItem[] _heap;
     private int _count;
     private long _nextId;
+    private long _executingTimerId;
+    private long _executingTimerPeriodTicks;
     private HashSet<long>? _cancelledTimers;
 
     public EventLoopTimerQueue(int initialCapacity)
@@ -43,9 +45,27 @@ internal sealed class EventLoopTimerQueue : IDisposable
 
     public bool Cancel(long id)
     {
+        if (Remove(id))
+        {
+            return true;
+        }
+
+        if (_executingTimerPeriodTicks <= 0 || _executingTimerId != id)
+        {
+            return false;
+        }
+
         _cancelledTimers ??= new HashSet<long>();
         _cancelledTimers.Add(id);
-        return Remove(id);
+
+        const int maxCancelledTimerIds = 1024;
+        if (_cancelledTimers.Count > maxCancelledTimerIds)
+        {
+            _cancelledTimers.Clear();
+            _cancelledTimers.Add(id);
+        }
+
+        return true;
     }
 
     public bool TryDequeueDue(long nowTimestamp, out TimerItem timer)
@@ -66,6 +86,8 @@ internal sealed class EventLoopTimerQueue : IDisposable
             }
 
             timer = Pop();
+            _executingTimerId = timer.Id;
+            _executingTimerPeriodTicks = timer.PeriodTicks;
             return true;
         }
 
@@ -80,15 +102,26 @@ internal sealed class EventLoopTimerQueue : IDisposable
             return false;
         }
 
-        if (_cancelledTimers is not null && _cancelledTimers.Remove(timer.Id))
+        try
         {
-            return false;
-        }
+            if (_cancelledTimers is not null && _cancelledTimers.Remove(timer.Id))
+            {
+                return false;
+            }
 
-        var rescheduled = timer;
-        rescheduled.DueTimestamp = nowTimestamp + timer.PeriodTicks;
-        Insert(rescheduled);
-        return true;
+            var rescheduled = timer;
+            rescheduled.DueTimestamp = nowTimestamp + timer.PeriodTicks;
+            Insert(rescheduled);
+            return true;
+        }
+        finally
+        {
+            if (_executingTimerId == timer.Id)
+            {
+                _executingTimerId = 0;
+                _executingTimerPeriodTicks = 0;
+            }
+        }
     }
 
     public int GetWaitMilliseconds(long nowTimestamp, int pollIntervalMs, bool hasPendingWork)

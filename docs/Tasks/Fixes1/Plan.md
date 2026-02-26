@@ -572,7 +572,7 @@ File
 
 Changes
 
-- [ ] Only record cancellations for timers that actually exist; cap/prune cancelled set to prevent unbounded growth.
+- [x] Only record cancellations for timers that actually exist; cap/prune cancelled set to prevent unbounded growth.
 
 ### Tests (Phase 6)
 
