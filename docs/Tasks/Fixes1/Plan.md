@@ -282,8 +282,8 @@ File
 
 Changes
 
-- [ ] Pass `_rootEndpoint` into RxLoops; drop any datagrams not from that endpoint (prevents external injection).
-- [ ] Additionally, for `"source == rootNodeId"` path, require endpoint match before attempting root dearmor.
+- [x] Pass `_rootEndpoint` into RxLoops; drop any datagrams not from that endpoint (prevents external injection).
+- [x] Additionally, for `"source == rootNodeId"` path, require endpoint match before attempting root dearmor.
 
 ### 3.7 Fix ResolveNodeId cache bug
 

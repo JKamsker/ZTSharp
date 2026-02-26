@@ -118,7 +118,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localManagedIpsV6: _localManagedIpsV6);
         _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip);
         _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets);
-        _rxLoops = new ZeroTierDataplaneRxLoops(_udp, _rootNodeId, _rootKey, _localIdentity.NodeId, _rootClient, _peerDatagrams);
+        _rxLoops = new ZeroTierDataplaneRxLoops(_udp, _rootNodeId, _rootEndpoint, _rootKey, _localIdentity.NodeId, _rootClient, _peerDatagrams);
 
         _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
         _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);

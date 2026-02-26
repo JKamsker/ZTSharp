@@ -1,3 +1,4 @@
+using System.Net;
 using System.Threading.Channels;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
@@ -8,6 +9,7 @@ internal sealed class ZeroTierDataplaneRxLoops
 {
     private readonly ZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
+    private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
     private readonly NodeId _localNodeId;
     private readonly ZeroTierDataplaneRootClient _rootClient;
@@ -18,18 +20,21 @@ internal sealed class ZeroTierDataplaneRxLoops
     public ZeroTierDataplaneRxLoops(
         ZeroTierUdpTransport udp,
         NodeId rootNodeId,
+        IPEndPoint rootEndpoint,
         byte[] rootKey,
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
         ZeroTierDataplanePeerDatagramProcessor peerDatagrams)
     {
         ArgumentNullException.ThrowIfNull(udp);
+        ArgumentNullException.ThrowIfNull(rootEndpoint);
         ArgumentNullException.ThrowIfNull(rootKey);
         ArgumentNullException.ThrowIfNull(rootClient);
         ArgumentNullException.ThrowIfNull(peerDatagrams);
 
         _udp = udp;
         _rootNodeId = rootNodeId;
+        _rootEndpoint = rootEndpoint;
         _rootKey = rootKey;
         _localNodeId = localNodeId;
         _rootClient = rootClient;
@@ -54,6 +59,11 @@ internal sealed class ZeroTierDataplaneRxLoops
                 return;
             }
 
+            if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
+                continue;
+            }
+
             var packetBytes = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
             {
@@ -74,6 +84,11 @@ internal sealed class ZeroTierDataplaneRxLoops
 
             if (decoded.Header.Source == _rootNodeId)
             {
+                if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+                {
+                    continue;
+                }
+
                 if (!ZeroTierPacketCrypto.Dearmor(packetBytes, _rootKey))
                 {
                     continue;
