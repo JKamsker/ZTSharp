@@ -1,4 +1,4 @@
-# Fixes2 - Fix → test mapping
+# Fixes2 - Fix -> test mapping
 
 Tick an item once the corresponding test exists and passes in `dotnet test -c Release`.
 
@@ -20,7 +20,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 2.1 ICMPv6 checksum validation: new tests in `ZTSharp.Tests` (invalid NS dropped)
 - [ ] 2.1 TCP encode oversized payload guarded: new tests in `ZTSharp.Tests`
 - [ ] 2.2 Fragmentation/exthdr policy: new tests in `ZTSharp.Tests` (fragment/exthdr packets handled per policy)
-- [ ] 2.3 IP→NodeId cache bounded + not poisonable: new tests in `ZTSharp.Tests`
+- [ ] 2.3 IP->NodeId cache bounded + not poisonable: new tests in `ZTSharp.Tests`
 - [ ] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
 - [ ] 2.5 Root endpoint filtering policy: new tests in `ZTSharp.Tests`
 - [ ] 2.6 Peer key negative-cache race: new tests in `ZTSharp.Tests`
@@ -48,7 +48,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 3.3 `ZeroTierSocket.DisposeAsync` cannot wedge behind join/runtime: new tests in `ZTSharp.Tests`
 - [ ] 3.4 `ZeroTierUdpSocket.DisposeAsync` idempotent: new tests in `ZTSharp.Tests`
 - [ ] 3.5 Timeout helper preserves correct exceptions: new tests in `ZTSharp.Tests`
-- [ ] 3.6 AES dearmor failure doesn’t mutate plaintext (or is documented): new tests in `ZTSharp.Tests`
+- [ ] 3.6 AES dearmor failure doesn't mutate plaintext (or is documented): new tests in `ZTSharp.Tests`
 - [ ] 3.7 ManagedSocket `Shutdown` semantics documented/enforced: new tests in `ZTSharp.Tests`
 - [ ] 3.7 Backlog + port-0 listen policy enforced: new tests in `ZTSharp.Tests`
 - [ ] 3.8 Real-stack HTTP per-address connect behavior bounded: new tests in `ZTSharp.Tests`
@@ -70,7 +70,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 5.3 OS UDP receive loop survives socket exceptions: new tests in `ZTSharp.Tests`
 - [ ] 5.4 Windows IOCTL behavior verified: Windows-only tests or diagnostics
 - [ ] 5.5 Dual-mode bind fallback resilience (IPv6-only before IPv4): new tests in `ZTSharp.Tests`
-- [ ] 5.3 Discovery replies don’t block receive loop: new tests in `ZTSharp.Tests`
+- [ ] 5.3 Discovery replies don't block receive loop: new tests in `ZTSharp.Tests`
 - [ ] 5.6 OS-UDP peer registry bounded (TTL/eviction): new tests in `ZTSharp.Tests`
 
 ## Phase 6 - Overlay stack
@@ -86,7 +86,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 6.5 User event handler exceptions isolated: new tests in `ZTSharp.Tests`
 - [x] 6.6 EventLoop not poisoned by callback throw: new tests in `ZTSharp.Tests`
 - [x] 6.7 LeaveNetwork ordering avoids transport subscription leak: new tests in `ZTSharp.Tests`
-- [x] 6.8 InMemory transport cancellation token doesn’t break fanout: new tests in `ZTSharp.Tests`
+- [x] 6.8 InMemory transport cancellation token doesn't break fanout: new tests in `ZTSharp.Tests`
 - [x] 6.9 ActiveTaskSet shutdown semantics: new tests in `ZTSharp.Tests`
 - [x] 6.10 Overlay background tasks observed (no unobserved exceptions): new tests in `ZTSharp.Tests`
 - [x] 6.10 Overlay dispose bounded (no hang): new tests in `ZTSharp.Tests`
