@@ -65,7 +65,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
         {
             var datagram = await _udp.ReceiveAsync(cancellationToken).ConfigureAwait(false);
 
-            var packetBytes = datagram.Payload.ToArray();
+            var packetBytes = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
             {
                 continue;

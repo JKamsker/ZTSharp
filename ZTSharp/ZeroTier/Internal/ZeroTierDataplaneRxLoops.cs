@@ -54,7 +54,7 @@ internal sealed class ZeroTierDataplaneRxLoops
                 return;
             }
 
-            var packetBytes = datagram.Payload.ToArray();
+            var packetBytes = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
             {
                 continue;

@@ -37,7 +37,7 @@ internal static class ZeroTierNetworkConfigTestHarness
                 return;
             }
 
-            var packet = datagram.Payload.ToArray();
+            var packet = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packet, out var decoded))
             {
                 continue;
@@ -129,7 +129,7 @@ internal static class ZeroTierNetworkConfigTestHarness
                 return;
             }
 
-            var packet = datagram.Payload.ToArray();
+            var packet = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packet, out var decoded))
             {
                 continue;

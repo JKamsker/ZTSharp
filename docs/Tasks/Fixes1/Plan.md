@@ -212,8 +212,8 @@ Files
 
 Changes
 
-- [ ] Change `ZeroTierUdpDatagram.Payload` to `byte[]` (internal type).
-- [ ] Update callers to work on the original array in-place for dearmor/decompress.
+- [x] Change `ZeroTierUdpDatagram.Payload` to `byte[]` (internal type).
+- [x] Update callers to work on the original array in-place for dearmor/decompress.
 
 ### 3.2 Bound all dataplane queues and drop instead of killing loops
 

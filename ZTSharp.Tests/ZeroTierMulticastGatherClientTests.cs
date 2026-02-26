@@ -135,7 +135,7 @@ public sealed class ZeroTierMulticastGatherClientTests
         NodeId[] members)
     {
         var datagram = await transport.ReceiveAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-        var packetBytes = datagram.Payload.ToArray();
+        var packetBytes = datagram.Payload;
 
         Assert.True(ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded));
         Assert.Equal(rootNodeId, decoded.Header.Destination);
@@ -218,7 +218,7 @@ public sealed class ZeroTierMulticastGatherClientTests
         ulong networkId)
     {
         var datagram = await transport.ReceiveAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-        var packetBytes = datagram.Payload.ToArray();
+        var packetBytes = datagram.Payload;
 
         Assert.True(ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded));
         Assert.Equal(rootNodeId, decoded.Header.Destination);

@@ -14,7 +14,7 @@ internal static class ZeroTierDecryptingPacketReceiver
     {
         var datagram = await udp.ReceiveAsync(cancellationToken).ConfigureAwait(false);
 
-        var packetBytes = datagram.Payload.ToArray();
+        var packetBytes = datagram.Payload;
         if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
         {
             return null;

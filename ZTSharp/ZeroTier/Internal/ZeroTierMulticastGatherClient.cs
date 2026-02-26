@@ -88,7 +88,7 @@ internal static class ZeroTierMulticastGatherClient
             {
                 var datagram = await udp.ReceiveAsync(token).ConfigureAwait(false);
 
-                var packetBytes = datagram.Payload.ToArray();
+                var packetBytes = datagram.Payload;
                 if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
                 {
                     continue;
