@@ -60,12 +60,14 @@ public sealed class ZeroTierDataplaneRxLoopTests
         await using var receiver = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var sender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
 
+        var receiverEndpoint = TestUdpEndpoints.ToLoopback(receiver.LocalEndpoint);
+
         const int count = 512;
         for (var i = 0; i < count; i++)
         {
             var payload = new byte[4];
             BinaryPrimitives.WriteInt32LittleEndian(payload, i);
-            await sender.SendAsync(receiver.LocalEndpoint, payload);
+            await sender.SendAsync(receiverEndpoint, payload);
         }
 
         var received = new HashSet<int>();
@@ -192,7 +194,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         await using var rootSender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var attackerSender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
 
-        var rootEndpoint = rootSender.LocalEndpoint;
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(rootSender.LocalEndpoint);
         var rootNodeId = new NodeId(0x1111111111);
         var localNodeId = new NodeId(0x2222222222);
 
@@ -235,15 +237,16 @@ public sealed class ZeroTierDataplaneRxLoopTests
                 VerbRaw: 0),
             ReadOnlySpan<byte>.Empty);
 
-        await attackerSender.SendAsync(rxUdp.LocalEndpoint, peerPacket);
-        await rootSender.SendAsync(rxUdp.LocalEndpoint, peerPacket);
+        var receiverEndpoint = TestUdpEndpoints.ToLoopback(rxUdp.LocalEndpoint);
+        await attackerSender.SendAsync(receiverEndpoint, peerPacket);
+        await rootSender.SendAsync(receiverEndpoint, peerPacket);
 
         var forwarded1 = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
         var forwarded2 = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
 
         Assert.NotEqual(forwarded1.RemoteEndPoint, forwarded2.RemoteEndPoint);
-        Assert.Contains(forwarded1.RemoteEndPoint, new[] { rootEndpoint, attackerSender.LocalEndpoint });
-        Assert.Contains(forwarded2.RemoteEndPoint, new[] { rootEndpoint, attackerSender.LocalEndpoint });
+        Assert.Contains(forwarded1.RemoteEndPoint, new[] { rootEndpoint, TestUdpEndpoints.ToLoopback(attackerSender.LocalEndpoint) });
+        Assert.Contains(forwarded2.RemoteEndPoint, new[] { rootEndpoint, TestUdpEndpoints.ToLoopback(attackerSender.LocalEndpoint) });
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
@@ -304,7 +307,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
                 VerbRaw: 0),
             ReadOnlySpan<byte>.Empty);
 
-        await sender.SendAsync(rxUdp.LocalEndpoint, peerPacket);
+        await sender.SendAsync(TestUdpEndpoints.ToLoopback(rxUdp.LocalEndpoint), peerPacket);
         Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref drops) >= 1, TimeSpan.FromSeconds(2)));
 
         cts.Cancel();
@@ -319,7 +322,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
 
         await using var rootUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var rootReplyUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
-        var rootEndpoint = rootUdp.LocalEndpoint;
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint);
 
         await using var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
 

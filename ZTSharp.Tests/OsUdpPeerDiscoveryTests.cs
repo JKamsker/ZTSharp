@@ -30,8 +30,6 @@ public sealed class OsUdpPeerDiscoveryTests
         await node1.JoinNetworkAsync(networkId);
         await node2.JoinNetworkAsync(networkId);
 
-        await Task.Delay(100);
-
         await using var udp1 = new ZtUdpClient(node1, networkId, 12001);
         await using var udp2 = new ZtUdpClient(node2, networkId, 12002);
 
@@ -43,9 +41,27 @@ public sealed class OsUdpPeerDiscoveryTests
 
         var ping = Encoding.UTF8.GetBytes("ping");
 
-        var receivePing = udp2.ReceiveAsync();
-        await udp1.SendAsync(ping);
-        var datagramPing = await receivePing.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var receivePing = udp2.ReceiveAsync(cts.Token).AsTask();
+        var sender = Task.Run(async () =>
+        {
+            while (!cts.IsCancellationRequested && !receivePing.IsCompleted)
+            {
+                await udp1.SendAsync(ping, cts.Token);
+                await Task.Yield();
+            }
+        }, cts.Token);
+
+        var datagramPing = await receivePing.WaitAsync(TimeSpan.FromSeconds(3), cts.Token);
+        cts.Cancel();
+        try
+        {
+            await sender;
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
 
         Assert.True(datagramPing.Payload.Span.SequenceEqual(ping));
     }

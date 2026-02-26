@@ -38,7 +38,7 @@ public sealed class ZeroTierWhoisClientTests
         var resolved = await ZeroTierWhoisClient.WhoisAsync(
             clientUdp,
             rootNodeId: rootIdentity.NodeId,
-            rootEndpoint: rootUdp.LocalEndpoint,
+            rootEndpoint: TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint),
             rootKey: rootKey,
             rootProtocolVersion: rootProtocolVersion,
             localNodeId: localIdentity.NodeId,

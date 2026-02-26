@@ -18,7 +18,8 @@ public sealed class ActiveTaskSetTests
         set.Track(second.Task);
         first.TrySetResult(true);
 
-        await Task.Delay(10);
+        await Task.Yield();
+        await Task.Yield();
         Assert.False(waitTask.IsCompleted);
 
         second.TrySetResult(true);

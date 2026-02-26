@@ -168,7 +168,8 @@ public sealed class ZeroTierManagedSocketLifecycleTests
         tasks.Track(tcs.Task);
 
         var disposeTask = listener.DisposeAsync().AsTask();
-        await Task.Delay(50);
+        await Task.Yield();
+        await Task.Yield();
         Assert.False(disposeTask.IsCompleted);
 
         tcs.SetResult();
@@ -182,7 +183,7 @@ public sealed class ZeroTierManagedSocketLifecycleTests
         await using var listener = new ZeroTierTcpListener(runtime, IPAddress.Parse("10.0.0.2"), localPort: 23457);
 
         var acceptTask = listener.AcceptAsync().AsTask();
-        await Task.Delay(25);
+        await Task.Yield();
 
         await listener.DisposeAsync();
 
@@ -748,7 +749,7 @@ public sealed class ZeroTierManagedSocketLifecycleTests
                 return;
             }
 
-            await Task.Delay(1);
+            await Task.Yield();
         }
 
         throw new TimeoutException("Timed out waiting for DisposeAsync to start.");

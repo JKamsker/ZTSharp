@@ -30,12 +30,12 @@ public sealed class ZeroTierNetworkConfigClientTests
             signature: new byte[ZeroTierWorld.C25519SignatureLength],
             roots: new[]
             {
-                new ZeroTierWorldRoot(rootIdentity, new[] { rootUdp.LocalEndpoint })
+                new ZeroTierWorldRoot(rootIdentity, new[] { TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint) })
             });
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        var rootTask = ZeroTierNetworkConfigTestHarness.RunRootAsync(rootUdp, rootIdentity, controllerIdentity, controllerUdp.LocalEndpoint, cts.Token);
+        var rootTask = ZeroTierNetworkConfigTestHarness.RunRootAsync(rootUdp, rootIdentity, controllerIdentity, TestUdpEndpoints.ToLoopback(controllerUdp.LocalEndpoint), cts.Token);
         var controllerTask = ZeroTierNetworkConfigTestHarness.RunControllerAsync(controllerUdp, controllerIdentity, localIdentity, cts.Token);
 
         var result = await ZeroTierNetworkConfigClient.FetchAsync(
@@ -76,12 +76,12 @@ public sealed class ZeroTierNetworkConfigClientTests
             signature: new byte[ZeroTierWorld.C25519SignatureLength],
             roots: new[]
             {
-                new ZeroTierWorldRoot(rootIdentity, new[] { rootUdp.LocalEndpoint })
+                new ZeroTierWorldRoot(rootIdentity, new[] { TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint) })
             });
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        var rootTask = ZeroTierNetworkConfigTestHarness.RunRootAsync(rootUdp, rootIdentity, controllerIdentity, controllerUdp.LocalEndpoint, cts.Token);
+        var rootTask = ZeroTierNetworkConfigTestHarness.RunRootAsync(rootUdp, rootIdentity, controllerIdentity, TestUdpEndpoints.ToLoopback(controllerUdp.LocalEndpoint), cts.Token);
         var controllerTask = ZeroTierNetworkConfigTestHarness.RunControllerAsync(
             controllerUdp,
             controllerIdentity,

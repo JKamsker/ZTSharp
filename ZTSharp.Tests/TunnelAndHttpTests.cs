@@ -389,7 +389,8 @@ public sealed class TunnelAndHttpTests
                 HttpCompletionOption.ResponseHeadersRead,
                 cts.Token);
 
-            await Task.Delay(50, cts.Token);
+            await Task.Yield();
+            await Task.Yield();
             Assert.False(response3Task.IsCompleted, "Expected the third request to wait for a local port to become available.");
 
             response1.Dispose();

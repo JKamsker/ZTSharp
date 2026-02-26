@@ -24,7 +24,7 @@ public sealed class ZeroTierHelloClientTests
             (byte[])localIdentity.PrivateKey.Clone());
 
         await using var rootUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
-        var rootEndpoint = rootUdp.LocalEndpoint;
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint);
 
         var planet = new ZeroTierWorld(
             ZeroTierWorldType.Planet,
@@ -83,8 +83,8 @@ public sealed class ZeroTierHelloClientTests
             signature: new byte[ZeroTierWorld.C25519SignatureLength],
             roots: new[]
             {
-                new ZeroTierWorldRoot(rootAIdentity, new[] { rootAUdp.LocalEndpoint }),
-                new ZeroTierWorldRoot(rootBIdentity, new[] { rootBUdp.LocalEndpoint })
+                new ZeroTierWorldRoot(rootAIdentity, new[] { TestUdpEndpoints.ToLoopback(rootAUdp.LocalEndpoint) }),
+                new ZeroTierWorldRoot(rootBIdentity, new[] { TestUdpEndpoints.ToLoopback(rootBUdp.LocalEndpoint) })
             });
 
         var serverTask = RunHelloRootsMismatchServerOnceAsync(rootAUdp, rootBUdp, rootAIdentity, rootBIdentity, localIdentity);
@@ -112,7 +112,7 @@ public sealed class ZeroTierHelloClientTests
             (byte[])localIdentity.PrivateKey.Clone());
 
         await using var remoteUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
-        var remoteEndpoint = remoteUdp.LocalEndpoint;
+        var remoteEndpoint = TestUdpEndpoints.ToLoopback(remoteUdp.LocalEndpoint);
 
         await using var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
 

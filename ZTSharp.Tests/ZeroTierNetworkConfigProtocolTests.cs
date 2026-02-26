@@ -51,7 +51,7 @@ public sealed class ZeroTierNetworkConfigProtocolTests
             _ = await ZeroTierNetworkConfigProtocol.RequestNetworkConfigAsync(
                 clientUdp,
                 keys,
-                rootEndpoint: controllerUdp.LocalEndpoint,
+                rootEndpoint: TestUdpEndpoints.ToLoopback(controllerUdp.LocalEndpoint),
                 localNodeId: localNodeId,
                 controllerIdentity: controllerIdentity,
                 controllerProtocolVersion: controllerProtocolVersion,
@@ -105,7 +105,7 @@ public sealed class ZeroTierNetworkConfigProtocolTests
             _ = await ZeroTierNetworkConfigProtocol.RequestNetworkConfigAsync(
                 clientUdp,
                 keys,
-                rootEndpoint: controllerUdp.LocalEndpoint,
+                rootEndpoint: TestUdpEndpoints.ToLoopback(controllerUdp.LocalEndpoint),
                 localNodeId: localNodeId,
                 controllerIdentity: controllerIdentity,
                 controllerProtocolVersion: controllerProtocolVersion,
@@ -153,7 +153,7 @@ public sealed class ZeroTierNetworkConfigProtocolTests
             _ = await ZeroTierNetworkConfigProtocol.RequestNetworkConfigAsync(
                 clientUdp,
                 keys,
-                rootEndpoint: controllerUdp.LocalEndpoint,
+                rootEndpoint: TestUdpEndpoints.ToLoopback(controllerUdp.LocalEndpoint),
                 localNodeId: localNodeId,
                 controllerIdentity: controllerIdentity,
                 controllerProtocolVersion: controllerProtocolVersion,
@@ -200,7 +200,7 @@ public sealed class ZeroTierNetworkConfigProtocolTests
         var (dictionary, _) = await ZeroTierNetworkConfigProtocol.RequestNetworkConfigAsync(
             clientUdp,
             keys,
-            rootEndpoint: controllerUdp.LocalEndpoint,
+            rootEndpoint: TestUdpEndpoints.ToLoopback(controllerUdp.LocalEndpoint),
             localNodeId: localNodeId,
             controllerIdentity: controllerIdentity,
             controllerProtocolVersion: controllerProtocolVersion,
