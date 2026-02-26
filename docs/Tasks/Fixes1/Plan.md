@@ -386,10 +386,10 @@ Changes
 
 ### Tests (Phase 4)
 
-- [ ] Dispose concurrency: concurrent JoinAsync/ConnectTcpAsync + DisposeAsync does not throw unexpected ObjectDisposedException.
-- [ ] Listener dispose: ensure dispose waits for tracked tasks (create a slow accept handler).
-- [ ] Any normalization: ListenTcpAsync(IPAddress.Any, port) succeeds post-join.
-- [ ] ManagedSocket LocalEndPoint set after connect.
+- [x] Dispose concurrency: concurrent JoinAsync/ConnectTcpAsync + DisposeAsync does not throw unexpected ObjectDisposedException.
+- [x] Listener dispose: ensure dispose waits for tracked tasks (create a slow accept handler).
+- [x] Any normalization: ListenTcpAsync(IPAddress.Any, port) succeeds post-join.
+- [x] ManagedSocket LocalEndPoint set after connect.
 
 Acceptance: no disposal races; API semantics consistent and predictable.
 
