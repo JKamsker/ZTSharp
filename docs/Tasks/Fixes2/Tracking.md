@@ -58,7 +58,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 4.1 Symlink/junction escape prevented: new tests in `ZTSharp.Tests` (Windows + Unix where possible)
 - [x] 4.2 planet/roots delete removes both: new tests in `ZTSharp.Tests`
 - [x] 4.3 State-file size caps + streaming reads: new tests in `ZTSharp.Tests`
-- [ ] 4.4 AtomicFile failures surface: new tests in `ZTSharp.Tests` (Windows-focused)
+- [x] 4.4 AtomicFile failures surface: new tests in `ZTSharp.Tests` (Windows-focused)
 - [ ] 4.5 StateRootPath normalization policy enforced: new tests in `ZTSharp.Tests`
 - [ ] 4.5 Secret identity file permission/ACL policy documented/enforced: tests/notes as feasible
 - [ ] 4.6 Key normalization edge cases (invalid chars/reserved names): new tests in `ZTSharp.Tests`

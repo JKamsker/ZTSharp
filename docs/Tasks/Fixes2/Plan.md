@@ -253,9 +253,9 @@ Primary goals:
 - [x] Reduce TOCTOU: open-and-read with a single handle and enforce max length while reading
 
 ### 4.4 AtomicFile reliability (silent failure)
-- [ ] Add test: simulate repeated `File.Move` failure -> write fails clearly (not silent success) (`ZTSharp/Internal/AtomicFile.cs`)
-- [ ] Fix: after max retries, throw a meaningful exception (include last failure)
-- [ ] Evaluate file sharing on Windows: ensure readers/writers use `FileShare.Delete` where appropriate
+- [x] Add test: simulate repeated `File.Move` failure -> write fails clearly (not silent success) (`ZTSharp/Internal/AtomicFile.cs`)
+- [x] Fix: after max retries, throw a meaningful exception (include last failure)
+- [x] Evaluate file sharing on Windows: ensure readers/writers use `FileShare.Delete` where appropriate
 
 ### 4.5 State root path policy + secret material permissions
 - [ ] Add test: relative `StateRootPath` is normalized to a stable full path (or explicitly documented) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
