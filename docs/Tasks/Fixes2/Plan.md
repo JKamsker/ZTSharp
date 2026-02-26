@@ -71,8 +71,9 @@ Primary goals:
   - Test: `UserSpaceTcpHalfCloseTests.WriteAsync_AfterPeerFin_ThrowsIOException`
 
 ### 1.5 Remote send-window wait robustness
-- [ ] Repro + add test: race "remote window==0" with remote close/reset; local `WriteAsync` should not hang without cancellation (`ZTSharp/ZeroTier/Net/UserSpaceTcpSender.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpRemoteSendWindow.cs`)
-- [ ] Fix: ensure close/fail signals are observable to future waiters (not only existing waiters)
+- [x] Repro + add test: race "remote window==0" with remote close/reset; local `WriteAsync` should not hang without cancellation (`ZTSharp/ZeroTier/Net/UserSpaceTcpSender.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpRemoteSendWindow.cs`)
+  - Test: `UserSpaceTcpRemoteWindowTests.WriteAsync_DoesNotHang_WhenRemoteWindowIsZero_AndCloseSignalArrivesFirst`
+- [x] Fix: ensure close/fail signals are observable to future waiters (not only existing waiters)
 
 ### 1.6 Listener accept-queue backpressure
 - [ ] Repro + add test: connection flood while app never accepts -> memory doesn't grow unbounded (`ZTSharp/ZeroTier/ZeroTierTcpListener.cs`)
