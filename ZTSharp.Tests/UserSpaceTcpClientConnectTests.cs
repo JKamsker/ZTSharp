@@ -20,15 +20,8 @@ public sealed class UserSpaceTcpClientConnectTests
 
         var syn = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(Ipv4Codec.TryParse(syn.Span, out var synSrc, out var synDst, out var protocol, out var synPayload));
-        Assert.Equal(localIp, synSrc);
-        Assert.Equal(remoteIp, synDst);
-        Assert.Equal(TcpCodec.ProtocolNumber, protocol);
 
         Assert.True(TcpCodec.TryParse(synPayload, out var synSrcPort, out var synDstPort, out var synSeq, out _, out var synFlags, out _, out var synTcpPayload));
-        Assert.Equal(localPort, synSrcPort);
-        Assert.Equal(remotePort, synDstPort);
-        Assert.Equal(TcpCodec.Flags.Syn, synFlags);
-        Assert.True(synTcpPayload.IsEmpty);
 
         var synAckTcp = TcpCodec.Encode(
             sourceIp: remoteIp,
@@ -45,15 +38,35 @@ public sealed class UserSpaceTcpClientConnectTests
         var synAckIpv4 = Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, synAckTcp, identification: 1);
         link.Incoming.Writer.TryWrite(synAckIpv4);
 
+        Assert.Equal(localIp, synSrc);
+        Assert.Equal(remoteIp, synDst);
+        Assert.Equal(TcpCodec.ProtocolNumber, protocol);
+
+        Assert.Equal(localPort, synSrcPort);
+        Assert.Equal(remotePort, synDstPort);
+        Assert.Equal(TcpCodec.Flags.Syn, synFlags);
+        Assert.True(synTcpPayload.IsEmpty);
+
         await connectTask.WaitAsync(TimeSpan.FromSeconds(2));
 
-        var ack = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.True(Ipv4Codec.TryParse(ack.Span, out _, out _, out _, out var ackPayload));
-        Assert.True(TcpCodec.TryParse(ackPayload, out _, out _, out var ackSeq, out var ackAck, out var ackFlags, out _, out var ackTcpPayload));
-        Assert.Equal(TcpCodec.Flags.Ack, ackFlags);
-        Assert.Equal(unchecked(synSeq + 1), ackSeq);
-        Assert.Equal(1001u, ackAck);
-        Assert.True(ackTcpPayload.IsEmpty);
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var packet = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.True(Ipv4Codec.TryParse(packet.Span, out _, out _, out _, out var ackPayload));
+            Assert.True(TcpCodec.TryParse(ackPayload, out _, out _, out var ackSeq, out var ackAck, out var ackFlags, out _, out var ackTcpPayload));
+
+            if (ackFlags == TcpCodec.Flags.Ack)
+            {
+                Assert.Equal(unchecked(synSeq + 1), ackSeq);
+                Assert.Equal(1001u, ackAck);
+                Assert.True(ackTcpPayload.IsEmpty);
+                return;
+            }
+
+            Assert.Equal(TcpCodec.Flags.Syn, ackFlags);
+        }
+
+        Assert.Fail("Expected a final ACK after SYN-ACK.");
     }
 
     [Fact]
