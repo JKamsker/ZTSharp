@@ -232,8 +232,8 @@ Primary goals:
 - [x] Add tests: backlog handling and port-0 listen behavior are documented and enforced (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
 
 ### 3.8 Real-stack HTTP connect behavior
-- [ ] Add test: DNS with AAAA+A where first address blackholes does not stall unbounded (bounded connect attempt per address) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)
-- [ ] Fix: implement per-address connect timeout and/or Happy-Eyeballs-style parallel attempts (document behavior) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)
+- [x] Add test: DNS with AAAA+A where first address blackholes does not stall unbounded (bounded connect attempt per address) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)
+- [x] Fix: implement per-address connect timeout and/or Happy-Eyeballs-style parallel attempts (document behavior) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)
 
 ---
 
