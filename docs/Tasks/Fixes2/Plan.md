@@ -56,9 +56,11 @@ Primary goals:
 - [x] Add test: SYN-ACK retransmit eventually recovers from a lost final ACK
 
 ### 1.3 Dispose/receive-loop race hardening
-- [ ] Repro + add test: dispose concurrently with inbound data; no `InvalidOperationException`/`ObjectDisposedException` escapes receive loop (`ZTSharp/ZeroTier/Net/UserSpaceTcpReceiver.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpReceiveLoop.cs`)
-- [ ] Fix: isolate `PipeWriter.FlushAsync`/writer completion races (catch + treat as shutdown)
-- [ ] Add test: no unobserved task exceptions when disposing mid-stream
+- [x] Repro + add test: dispose concurrently with inbound data; no `InvalidOperationException`/`ObjectDisposedException` escapes receive loop (`ZTSharp/ZeroTier/Net/UserSpaceTcpReceiver.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpReceiveLoop.cs`)
+  - Test: `UserSpaceTcpDisposeRaceTests.DisposeAsync_ConcurrentWithInboundData_DoesNotThrow`
+- [x] Fix: isolate `PipeWriter.FlushAsync`/writer completion races (catch + treat as shutdown)
+- [x] Add test: no unobserved task exceptions when disposing mid-stream
+  - Covered by `UserSpaceTcpDisposeRaceTests.DisposeAsync_ConcurrentWithInboundData_DoesNotThrow` (dispose awaits the receive loop).
 
 ### 1.4 Half-close semantics (behavioral decision)
 - [ ] Decide + document: support half-close (allow writes after peer FIN) vs explicitly not supported
