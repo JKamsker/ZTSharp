@@ -30,6 +30,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
     private readonly ZeroTierPeerQosManager _peerQos;
+    private readonly ZeroTierPeerPathNegotiationManager _peerNegotiation;
     private readonly ZeroTierMultipathOptions _multipath;
 
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
@@ -157,6 +158,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _peerEcho = new ZeroTierPeerEchoManager(udp, localIdentity.NodeId, _peerSecurity.GetPeerProtocolVersionOrDefault);
         _surfaceAddresses = new ZeroTierExternalSurfaceAddressTracker(ttl: TimeSpan.FromMinutes(30));
         _peerQos = new ZeroTierPeerQosManager();
+        _peerNegotiation = new ZeroTierPeerPathNegotiationManager();
 
         var icmpv6 = new ZeroTierDataplaneIcmpv6Handler(this, _localMac, _localManagedIpsV6, _managedIpToNodeId);
         var ip = new ZeroTierDataplaneIpHandler(
@@ -178,6 +180,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             _peerEcho,
             _surfaceAddresses,
             _peerQos,
+            _peerNegotiation,
             multipath.Enabled);
         _rxLoops = new ZeroTierDataplaneRxLoops(
             _udp,
@@ -376,19 +379,24 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             var hasBest = false;
             var bestHasRtt = false;
             var bestRtt = int.MaxValue;
+            var bestUtility = short.MinValue;
             var bestLastSeen = long.MinValue;
 
             for (var i = 0; i < observed.Length; i++)
             {
                 var candidate = observed[i];
                 var hasRtt = _peerEcho.TryGetLastRttMs(peerNodeId, candidate.LocalSocketId, candidate.RemoteEndPoint, out var rttMs);
+                var remoteUtility = _peerNegotiation.TryGetRemoteUtility(peerNodeId, candidate.LocalSocketId, candidate.RemoteEndPoint, out var util)
+                    ? util
+                    : (short)0;
 
                 if (hasRtt)
                 {
                     var better =
                         (!bestHasRtt) ||
                         (rttMs < bestRtt) ||
-                        (rttMs == bestRtt && candidate.LastSeenUnixMs > bestLastSeen);
+                        (rttMs == bestRtt && remoteUtility > bestUtility) ||
+                        (rttMs == bestRtt && remoteUtility == bestUtility && candidate.LastSeenUnixMs > bestLastSeen);
 
                     if (better)
                     {
@@ -396,6 +404,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                         hasBest = true;
                         bestHasRtt = true;
                         bestRtt = rttMs;
+                        bestUtility = remoteUtility;
                         bestLastSeen = candidate.LastSeenUnixMs;
                     }
                 }
@@ -403,12 +412,14 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 {
                     var better =
                         (!hasBest) ||
-                        (candidate.LastSeenUnixMs > bestLastSeen);
+                        (remoteUtility > bestUtility) ||
+                        (remoteUtility == bestUtility && candidate.LastSeenUnixMs > bestLastSeen);
 
                     if (better)
                     {
                         best = new ZeroTierSelectedPeerPath(candidate.LocalSocketId, candidate.RemoteEndPoint);
                         hasBest = true;
+                        bestUtility = remoteUtility;
                         bestLastSeen = candidate.LastSeenUnixMs;
                     }
                 }
@@ -497,7 +508,76 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                         cancellationToken)
                     .ConfigureAwait(false);
             }
+
+            if (_multipath.BondPolicy != ZeroTierBondPolicy.ActiveBackup || paths.Length < 2)
+            {
+                continue;
+            }
+
+            var bestPathIndex = -1;
+            var bestScore = int.MinValue;
+            var secondScore = int.MinValue;
+
+            for (var p = 0; p < paths.Length; p++)
+            {
+                var path = paths[p];
+                var score = ComputePathQualityScore(peerNodeId, path.LocalSocketId, path.RemoteEndPoint);
+
+                if (score > bestScore)
+                {
+                    secondScore = bestScore;
+                    bestScore = score;
+                    bestPathIndex = p;
+                }
+                else if (score > secondScore)
+                {
+                    secondScore = score;
+                }
+            }
+
+            if (bestPathIndex < 0)
+            {
+                continue;
+            }
+
+            var bestPath = paths[bestPathIndex];
+            if (!_peerNegotiation.TryMarkSent(peerNodeId, bestPath.LocalSocketId, bestPath.RemoteEndPoint))
+            {
+                continue;
+            }
+
+            var delta = bestScore - Math.Max(secondScore, 0);
+            var utility = (short)Math.Clamp(delta, short.MinValue, short.MaxValue);
+            var payload = new byte[2];
+            BinaryPrimitives.WriteInt16BigEndian(payload, utility);
+
+            await SendPeerControlAsync(
+                    peerNodeId,
+                    bestPath.LocalSocketId,
+                    bestPath.RemoteEndPoint,
+                    ZeroTierVerb.PathNegotiationRequest,
+                    payload,
+                    key,
+                    peerProtocolVersion,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
+    }
+
+    private int ComputePathQualityScore(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint)
+    {
+        if (_peerEcho.TryGetLastRttMs(peerNodeId, localSocketId, remoteEndPoint, out var rttMs))
+        {
+            return 32767 - Math.Clamp(rttMs, 0, 32767);
+        }
+
+        if (_peerQos.TryGetLastLatencyAverageMs(peerNodeId, localSocketId, remoteEndPoint, out var latencyMs))
+        {
+            var estRtt = (int)Math.Min((long)latencyMs * 2, 32767L);
+            return 32767 - estRtt;
+        }
+
+        return 0;
     }
 
     private async ValueTask SendPeerControlAsync(

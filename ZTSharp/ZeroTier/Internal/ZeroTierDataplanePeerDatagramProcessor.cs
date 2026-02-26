@@ -14,6 +14,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
     private readonly ZeroTierPeerQosManager _peerQos;
+    private readonly ZeroTierPeerPathNegotiationManager _peerNegotiation;
     private readonly bool _multipathEnabled;
 
     public ZeroTierDataplanePeerDatagramProcessor(
@@ -24,6 +25,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         ZeroTierPeerEchoManager peerEcho,
         ZeroTierExternalSurfaceAddressTracker surfaceAddresses,
         ZeroTierPeerQosManager peerQos,
+        ZeroTierPeerPathNegotiationManager peerNegotiation,
         bool multipathEnabled)
     {
         ArgumentNullException.ThrowIfNull(peerSecurity);
@@ -32,6 +34,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         ArgumentNullException.ThrowIfNull(peerEcho);
         ArgumentNullException.ThrowIfNull(surfaceAddresses);
         ArgumentNullException.ThrowIfNull(peerQos);
+        ArgumentNullException.ThrowIfNull(peerNegotiation);
 
         _localNodeId = localNodeId;
         _peerSecurity = peerSecurity;
@@ -40,6 +43,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         _peerEcho = peerEcho;
         _surfaceAddresses = surfaceAddresses;
         _peerQos = peerQos;
+        _peerNegotiation = peerNegotiation;
         _multipathEnabled = multipathEnabled;
     }
 
@@ -113,6 +117,17 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
                 if (decoded.Header.HopCount == 0)
                 {
                     _peerQos.HandleInboundMeasurement(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, payloadSpan);
+                }
+
+                return;
+            }
+
+            if (verb == ZeroTierVerb.PathNegotiationRequest)
+            {
+                if (decoded.Header.HopCount == 0 && payloadSpan.Length == 2)
+                {
+                    var remoteUtility = BinaryPrimitives.ReadInt16BigEndian(payloadSpan);
+                    _peerNegotiation.HandleInboundRequest(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, remoteUtility);
                 }
 
                 return;

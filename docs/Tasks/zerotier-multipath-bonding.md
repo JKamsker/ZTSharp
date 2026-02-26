@@ -29,7 +29,7 @@ Status legend:
 ## P3 — QoS measurement + PATH_NEGOTIATION_REQUEST
 - [x] Implement `QOS_MEASUREMENT` RX parsing (little-endian id/holdingTime pairs) and per-path QoS state.
 - [x] Implement `QOS_MEASUREMENT` TX generation and periodic sending cadence.
-- [ ] Implement `PATH_NEGOTIATION_REQUEST` RX/TX and utility-based tie-break logic.
+- [x] Implement `PATH_NEGOTIATION_REQUEST` RX/TX and utility-based tie-break logic.
 
 ## P4 — Multipath bonding policies
 - [ ] Implement bond policy engine with: active-backup, broadcast, balance-rr, balance-xor, balance-aware.
