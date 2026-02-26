@@ -98,6 +98,14 @@ public sealed class ZeroTierPacketCryptoTests
     }
 
     [Fact]
+    public void C25519_Agree_Throws_On_AllZero_SharedSecret()
+    {
+        var smallOrderPublicKey = new byte[64];
+        var agreement = new byte[64];
+        Assert.Throws<CryptographicException>(() => ZeroTierC25519.Agree(C25519Tv0Priv1, smallOrderPublicKey, agreement));
+    }
+
+    [Fact]
     public void PacketCrypto_Roundtrips_With_And_Without_Encryption()
     {
         var header = new ZeroTierPacketHeader(

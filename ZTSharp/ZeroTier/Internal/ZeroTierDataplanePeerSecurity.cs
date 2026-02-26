@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -135,7 +136,14 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
         }
 
         var sharedKey = new byte[48];
-        ZeroTierC25519.Agree(_localPrivateKey, identity.PublicKey, sharedKey);
+        try
+        {
+            ZeroTierC25519.Agree(_localPrivateKey, identity.PublicKey, sharedKey);
+        }
+        catch (CryptographicException)
+        {
+            return;
+        }
 
         if (!ZeroTierPacketCrypto.Dearmor(packetBytes, sharedKey))
         {

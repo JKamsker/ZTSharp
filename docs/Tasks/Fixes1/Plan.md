@@ -446,7 +446,7 @@ File
 
 Changes
 
-- [ ] After CalculateAgreement, if rawKey is all-zero, throw `CryptographicException` (or return failure via new `TryAgree` internal helper) and treat peer identity invalid.
+- [x] After CalculateAgreement, if rawKey is all-zero, throw `CryptographicException` (or return failure via new `TryAgree` internal helper) and treat peer identity invalid.
 
 ### 5.4 Cap PUSH_DIRECT_PATHS parse output
 
@@ -463,7 +463,7 @@ Changes
 - [x] World signature helper: create synthetic ZeroTierWorld + sign key, verify SerializeForSign + VerifySignature succeeds; invalid byte flip fails.
 - [x] PlanetLoader hardened behavior: invalid/oversized state planet ignored in favor of embedded.
 - [x] NetworkConfig cap: absurd totalLength rejected without allocation.
-- [ ] All-zero shared secret: known small-order pubkey causes failure.
+- [x] All-zero shared secret: known small-order pubkey causes failure.
 
 Acceptance: planet loading is bounded and hardened; config fetch cannot OOM; crypto rejects invalid DH.
 
