@@ -295,8 +295,8 @@ Primary goals:
 - [x] Fix: improve fallback strategy and ensure endpoint families remain consistent across registry/sends
 
 ### 5.6 OS-UDP peer registry bounds
-- [ ] Add test: peer registry does not grow without bound across node lifetimes and networks (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
-- [ ] Fix: add TTL/eviction/bounds for `OsUdpPeerRegistry` (and remove `static` global directory if it causes leaks) (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
+- [x] Add test: peer registry does not grow without bound across node lifetimes and networks (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
+- [x] Fix: add TTL/eviction/bounds for `OsUdpPeerRegistry` (and remove `static` global directory if it causes leaks) (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
 
 ---
 
