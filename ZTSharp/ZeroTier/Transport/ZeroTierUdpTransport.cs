@@ -53,6 +53,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(remoteEndpoint);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        UdpEndpointNormalization.ValidateRemoteEndpoint(remoteEndpoint, nameof(remoteEndpoint));
         return _udp.SendAsync(payload, remoteEndpoint, cancellationToken).AsTask();
     }
 

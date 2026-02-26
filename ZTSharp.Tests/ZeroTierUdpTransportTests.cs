@@ -1,3 +1,4 @@
+using System.Net;
 using ZTSharp.ZeroTier.Transport;
 
 namespace ZTSharp.Tests;
@@ -13,7 +14,10 @@ public sealed class ZeroTierUdpTransportTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         var ping = "ping"u8.ToArray();
-        await a.SendAsync(b.LocalEndpoint, ping, cts.Token);
+        var bReachable = b.LocalEndpoint.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+            ? new IPEndPoint(IPAddress.IPv6Loopback, b.LocalEndpoint.Port)
+            : new IPEndPoint(IPAddress.Loopback, b.LocalEndpoint.Port);
+        await a.SendAsync(bReachable, ping, cts.Token);
 
         var receivedPing = await b.ReceiveAsync(cts.Token);
         Assert.True(receivedPing.Payload.AsSpan().SequenceEqual(ping));

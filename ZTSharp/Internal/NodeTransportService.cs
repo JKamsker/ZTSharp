@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Logging;
 using ZTSharp.Transport;
+using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Internal;
 
@@ -39,7 +40,7 @@ internal sealed class NodeTransportService
         var advertised = _options.AdvertisedTransportEndpoint;
         if (advertised is null)
         {
-            return udpTransport.LocalEndpoint;
+            return UdpEndpointNormalization.NormalizeForAdvertisement(udpTransport.LocalEndpoint);
         }
 
         if (advertised.Port != 0)

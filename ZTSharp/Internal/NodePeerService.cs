@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Net;
 using ZTSharp.Transport;
+using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Internal;
 
@@ -26,9 +27,12 @@ internal sealed class NodePeerService
             throw new InvalidOperationException("Transport mode is not OS UDP.");
         }
 
+        UdpEndpointNormalization.ValidateRemoteEndpoint(endpoint, nameof(endpoint));
+        var normalized = UdpEndpointNormalization.Normalize(endpoint);
+
         cancellationToken.ThrowIfCancellationRequested();
-        await udpTransport.AddPeerAsync(networkId, peerNodeId, endpoint).ConfigureAwait(false);
-        await PersistPeerAsync(networkId, peerNodeId, endpoint, cancellationToken).ConfigureAwait(false);
+        await udpTransport.AddPeerAsync(networkId, peerNodeId, normalized).ConfigureAwait(false);
+        await PersistPeerAsync(networkId, peerNodeId, normalized, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task RecoverPeersAsync(ulong networkId, INodeTransport transport, CancellationToken cancellationToken)
@@ -59,7 +63,12 @@ internal sealed class NodePeerService
                 continue;
             }
 
-            await udpTransport.AddPeerAsync(networkId, peerNodeId, endpoint).ConfigureAwait(false);
+            if (endpoint.Address.Equals(IPAddress.Any) || endpoint.Address.Equals(IPAddress.IPv6Any))
+            {
+                continue;
+            }
+
+            await udpTransport.AddPeerAsync(networkId, peerNodeId, UdpEndpointNormalization.Normalize(endpoint)).ConfigureAwait(false);
         }
     }
 

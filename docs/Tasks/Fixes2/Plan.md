@@ -272,8 +272,8 @@ Primary goals:
 ## Phase 5 - Transport + cross-platform endpoint handling (`ZTSharp/Transport/**`, `ZTSharp/ZeroTier/Transport/**`)
 
 ### 5.1 Endpoint normalization correctness
-- [ ] Add test: `LocalEndpoint` on wildcard bind is not rewritten to loopback (or explicitly document "local-only" mode) (`ZTSharp/Transport/Internal/UdpEndpointNormalization.cs`)
-- [ ] Fix: remove Any->Loopback rewriting for general-purpose transports; treat "unspecified remote endpoint" as invalid input (fail fast)
+- [x] Add test: `LocalEndpoint` on wildcard bind is not rewritten to loopback (or explicitly document "local-only" mode) (`ZTSharp/Transport/Internal/UdpEndpointNormalization.cs`)
+- [x] Fix: remove Any->Loopback rewriting for general-purpose transports; treat "unspecified remote endpoint" as invalid input (fail fast)
 
 ### 5.2 Canonicalize IPv4-mapped IPv6 endpoints
 - [ ] Add test: peer endpoint equality and "public/private" classification is stable across v4 vs v4-mapped-v6 (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
