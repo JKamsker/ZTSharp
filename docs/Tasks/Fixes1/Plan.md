@@ -226,11 +226,11 @@ Files
 
 Decisions
 
-- [ ] Capacities:
-  - [ ] UDP incoming: 2048 datagrams, DropOldest.
-  - [ ] Peer queue: 2048 datagrams, DropOldest.
-  - [ ] Per-route incoming: 256 packets, DropOldest.
-- [ ] When channel write fails due to completion: exit loop; when due to full: drop and continue.
+- [x] Capacities:
+  - [x] UDP incoming: 2048 datagrams, DropOldest.
+  - [x] Peer queue: 2048 datagrams, DropOldest.
+  - [x] Per-route incoming: 256 packets, DropOldest.
+- [x] When channel write fails due to completion: exit loop; when due to full: drop and continue.
 
 ### 3.3 Keep peer loop alive on faults
 

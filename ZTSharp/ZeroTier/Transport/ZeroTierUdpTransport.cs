@@ -20,7 +20,11 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         _log = log;
         _udp = OsUdpSocketFactory.Create(localPort, enableIpv6, Log);
 
-        _incoming = Channel.CreateUnbounded<ZeroTierUdpDatagram>();
+        _incoming = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleWriter = true
+        });
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
 

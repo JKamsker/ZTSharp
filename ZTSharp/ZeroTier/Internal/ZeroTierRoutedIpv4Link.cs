@@ -5,7 +5,11 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierRoutedIpv4Link : IZeroTierRoutedIpLink
 {
-    private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+    private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateBounded<ReadOnlyMemory<byte>>(new BoundedChannelOptions(capacity: 256)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleReader = true
+    });
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly ZeroTierTcpRouteKey _routeKey;
     private readonly NodeId _peerNodeId;

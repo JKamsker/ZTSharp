@@ -23,7 +23,12 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZeroTierMac _localMac;
 
-    private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateUnbounded<ZeroTierUdpDatagram>();
+    private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleReader = true,
+        SingleWriter = true
+    });
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _dispatcherLoop;
     private readonly Task _peerLoop;
