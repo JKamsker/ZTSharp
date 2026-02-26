@@ -12,7 +12,7 @@ controller-based networks and provide user-space TCP/UDP sockets. The following 
 | Area | Gap |
 |:-----|:----|
 | OS adapter | No virtual network interface -- traffic is in-process only |
-| Dataplane | Data-plane traffic is root-relayed; limited direct-endpoint handling exists (e.g. hole-punch attempts) but there is no full peer path negotiation / NAT traversal optimization yet |
+| Dataplane | Root-relayed by default. Experimental multipath mode supports hop-0 path learning, direct sends, RTT keepalives (`ECHO`), QoS measurement (`QOS_MEASUREMENT`), path negotiation (`PATH_NEGOTIATION_REQUEST`), and basic bonding policies. Still missing: full upstream Bond quality estimation (throughput/variance), ACK logic, and full parity with `ZeroTierOne` policy tuning. |
 | Protocol coverage | Focused on join + IP dataplane + TCP/UDP socket MVP |
 | Socket options | No `SocketOptionName` support (`NoDelay`, `KeepAlive`, etc.); some endpoint metadata differs from OS sockets |
 | TCP performance | No congestion control or high-throughput send pipelines |

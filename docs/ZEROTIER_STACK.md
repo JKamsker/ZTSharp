@@ -41,7 +41,8 @@ var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 ## Current Limitations
 
 - **No OS adapter** -- traffic is only visible to in-process callers using these APIs.
-- **Root-relayed dataplane** -- limited direct-endpoint handling exists (e.g. hole-punch attempts), but there is no full peer path negotiation / NAT traversal optimization yet.
+- **Root-relayed by default** -- when `ZeroTierSocketOptions.Multipath.Enabled` is `false` (default), traffic is root-relayed.
+- **Experimental multipath** -- when enabled, the stack learns hop-0 physical paths and can send directly, with keepalive RTT (`ECHO`), QoS measurement (`QOS_MEASUREMENT`), path negotiation (`PATH_NEGOTIATION_REQUEST`), and optional bonding (`Multipath.BondPolicy`). This is not yet a full upstream `ZeroTierOne` bonding implementation.
 - **Incomplete socket options** -- no `NoDelay`, `KeepAlive`, `Poll`, etc.; some endpoint metadata differs from OS sockets.
 - **Performance** -- the user-space TCP stack is correctness-oriented and may be significantly slower for large transfers.
 
@@ -60,6 +61,9 @@ The CLI supports both stacks via the `--stack` flag:
 | `--stack overlay` | Legacy managed overlay stack |
 
 Managed stack CLI commands: `call`, `listen`, `udp-listen`, `udp-send`.
+
+To enable experimental multipath/bonding for the managed stack, use the CLI flags:
+`--multipath`, `--mp-bond`, `--mp-udp-sockets`, `--mp-udp-ports`, `--mp-warmup-root`.
 
 ---
 

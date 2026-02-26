@@ -39,4 +39,4 @@ Status legend:
 - [x] Add CLI flags to enable/configure multipath and bond policy (enough for manual verification).
 - [x] Add/extend unit tests for: multi-transport socket id propagation, echo, qos parsing, bond policy selection.
 - [x] Stabilize flaky `ZeroTierTcpListenerBacklogTests` timeout under full-suite load.
-- [ ] Update docs: `docs/ZEROTIER_STACK.md` and `docs/COMPATIBILITY.md` to reflect new behavior and defaults.
+- [x] Update docs: `docs/ZEROTIER_STACK.md` and `docs/COMPATIBILITY.md` to reflect new behavior and defaults.
