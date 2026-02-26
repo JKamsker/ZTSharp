@@ -532,14 +532,14 @@ File
 
 Changes
 
-- [ ] Introduce UDP frame version 2 that includes destinationNodeId (ulong LE) in header:
-  - [ ] v2 header: [ver=2][type=1][srcPort u16be][dstPort u16be][dstNodeId u64le] + payload
-- [ ] Send v2 frames by default.
-- [ ] Receive: parse v2 and require dstNodeId == localNodeId and dstPort == localPort.
-- [ ] Back-compat: still parse v1 frames (treat as broadcast, same as old behavior) for mixed-version scenarios.
-- [ ] Connected-mode filtering: if ConnectAsync used, only deliver datagrams from the connected (nodeId, port) pair.
-- [ ] Make `_incoming` bounded (1024, DropWrite) so "drop if consumer can't keep up" is real.
-- [ ] Always unsubscribe handler on dispose (ignore ownsConnection for event unsubscription to avoid leaks).
+- [x] Introduce UDP frame version 2 that includes destinationNodeId (ulong LE) in header:
+  - [x] v2 header: [ver=2][type=1][srcPort u16be][dstPort u16be][dstNodeId u64le] + payload
+- [x] Send v2 frames by default.
+- [x] Receive: parse v2 and require dstNodeId == localNodeId and dstPort == localPort.
+- [x] Back-compat: still parse v1 frames (treat as broadcast, same as old behavior) for mixed-version scenarios.
+- [x] Connected-mode filtering: if ConnectAsync used, only deliver datagrams from the connected (nodeId, port) pair.
+- [x] Make `_incoming` bounded (1024, DropWrite) so "drop if consumer can't keep up" is real.
+- [x] Always unsubscribe handler on dispose (ignore ownsConnection for event unsubscription to avoid leaks).
 
 ### 6.6 Fix ActiveTaskSet + forwarder disposal waits
 
@@ -573,7 +573,7 @@ Changes
 
 - [x] Overlay TCP before start: constructing listener/client pre-start should either work (dynamic NodeId) or throw deterministically; test chosen behavior.
 - [x] Overlay TCP handshake data loss: server write immediately after accept must be received by client.
-- [ ] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
+- [x] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
 - [x] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
 - [x] Subscriber exception: throwing callback must not kill OS-UDP receive loop.
 - [ ] ActiveTaskSet wait correctness under concurrency.

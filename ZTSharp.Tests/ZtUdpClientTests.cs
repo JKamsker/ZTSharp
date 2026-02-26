@@ -46,6 +46,64 @@ public sealed class ZtUdpClientTests
     }
 
     [Fact]
+    public async Task InMemoryUdpClient_SendTo_IsDirected_WithV2Frames()
+    {
+        var networkId = 9003UL;
+
+        await using var nodeA = new Node(new NodeOptions
+        {
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
+            StateStore = new MemoryStateStore()
+        });
+
+        await using var nodeB = new Node(new NodeOptions
+        {
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
+            StateStore = new MemoryStateStore()
+        });
+
+        await using var nodeC = new Node(new NodeOptions
+        {
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
+            StateStore = new MemoryStateStore()
+        });
+
+        await nodeA.StartAsync();
+        await nodeB.StartAsync();
+        await nodeC.StartAsync();
+        await nodeA.JoinNetworkAsync(networkId);
+        await nodeB.JoinNetworkAsync(networkId);
+        await nodeC.JoinNetworkAsync(networkId);
+
+        var nodeBId = (await nodeB.GetIdentityAsync()).NodeId.Value;
+
+        const int sharedPort = 12000;
+
+        await using var udpA = new ZtUdpClient(nodeA, networkId, 12001);
+        await using var udpB = new ZtUdpClient(nodeB, networkId, sharedPort);
+        await using var udpC = new ZtUdpClient(nodeC, networkId, sharedPort);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        var receiveC = udpC.ReceiveAsync(cts.Token).AsTask();
+
+        var payload = new byte[] { 1, 2, 3 };
+        var receiveB = udpB.ReceiveAsync().AsTask();
+        await udpA.SendToAsync(payload, nodeBId, sharedPort);
+
+        var datagramB = await receiveB.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.True(datagramB.Payload.Span.SequenceEqual(payload));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiveC);
+
+        await nodeA.LeaveNetworkAsync(networkId);
+        await nodeB.LeaveNetworkAsync(networkId);
+        await nodeC.LeaveNetworkAsync(networkId);
+        await nodeA.StopAsync();
+        await nodeB.StopAsync();
+        await nodeC.StopAsync();
+    }
+
+    [Fact]
     public async Task OsUdpUdpClient_EchoesDatagram()
     {
         var n1Store = new MemoryStateStore();
