@@ -136,6 +136,11 @@ There is no virtual network interface visible to the operating system.
 No `SocketOptionName` support (`NoDelay`, `KeepAlive`, `Linger`, buffer sizes).
 No `Select` or `Poll`.
 
+### Half-close
+
+The managed TCP stack does not currently support half-close.
+After the peer sends FIN, further writes fail with an `IOException`.
+
 ### Accepted Connection Metadata
 
 `ManagedSocket.RemoteEndPoint` is currently `null` for accepted sockets.

@@ -7,7 +7,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 1.1 FIN dispose sends EOF: new tests in `ZTSharp.Tests` (UserSpaceTcp close/FIN lifecycle)
 - [x] 1.2 Lost final ACK handshake recovery: new tests in `ZTSharp.Tests` (handshake retransmit)
 - [x] 1.3 Dispose vs inbound data race: new tests in `ZTSharp.Tests` (receiver/receive-loop resilience)
-- [ ] 1.4 Half-close semantics: new tests in `ZTSharp.Tests` (FIN + write-after-FIN behavior)
+- [x] 1.4 Half-close semantics: new tests in `ZTSharp.Tests` (FIN + write-after-FIN behavior)
 - [ ] 1.5 Remote window wait cannot hang: new tests in `ZTSharp.Tests` (window=0 + close race)
 - [ ] 1.6 Listener accept queue bounded: new tests in `ZTSharp.Tests` (connection flood + accept backlog)
 - [ ] 1.7 Routed link drop policy: new tests in `ZTSharp.Tests` (drop telemetry / TCP progress)

@@ -63,9 +63,12 @@ Primary goals:
   - Covered by `UserSpaceTcpDisposeRaceTests.DisposeAsync_ConcurrentWithInboundData_DoesNotThrow` (dispose awaits the receive loop).
 
 ### 1.4 Half-close semantics (behavioral decision)
-- [ ] Decide + document: support half-close (allow writes after peer FIN) vs explicitly not supported
-- [ ] If supported: implement "remote closed" state that still allows sending until local close
-- [ ] Add test: peer FIN then local send still succeeds (or fails with a documented exception)
+- [x] Decide + document: support half-close (allow writes after peer FIN) vs explicitly not supported
+  - Decision: not supported; peer FIN transitions the connection to fully closed for writes (`docs/ZEROTIER_SOCKETS.md`).
+- [x] If supported: implement "remote closed" state that still allows sending until local close
+  - N/A: half-close is explicitly not supported.
+- [x] Add test: peer FIN then local send still succeeds (or fails with a documented exception)
+  - Test: `UserSpaceTcpHalfCloseTests.WriteAsync_AfterPeerFin_ThrowsIOException`
 
 ### 1.5 Remote send-window wait robustness
 - [ ] Repro + add test: race "remote window==0" with remote close/reset; local `WriteAsync` should not hang without cancellation (`ZTSharp/ZeroTier/Net/UserSpaceTcpSender.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpRemoteSendWindow.cs`)
