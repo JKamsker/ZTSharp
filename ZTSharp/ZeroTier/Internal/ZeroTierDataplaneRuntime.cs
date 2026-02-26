@@ -22,6 +22,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly byte[]? _localManagedIpV4Bytes;
     private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZeroTierMac _localMac;
+    private readonly ConcurrentDictionary<NodeId, ZeroTierDirectEndpointManager> _directEndpoints = new();
 
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
     {
@@ -116,9 +117,17 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localManagedIpV4: _localManagedIpV4,
             localManagedIpV4Bytes: _localManagedIpV4Bytes,
             localManagedIpsV6: _localManagedIpsV6);
-        _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip);
+        _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip, handleControlAsync: HandlePeerControlPacketAsync);
         _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets);
-        _rxLoops = new ZeroTierDataplaneRxLoops(_udp, _rootNodeId, _rootEndpoint, _rootKey, _localIdentity.NodeId, _rootClient, _peerDatagrams);
+        _rxLoops = new ZeroTierDataplaneRxLoops(
+            _udp,
+            _rootNodeId,
+            _rootEndpoint,
+            _rootKey,
+            _localIdentity.NodeId,
+            _rootClient,
+            _peerDatagrams,
+            handleRootControlAsync: HandleRootControlPacketAsync);
 
         _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
         _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);
@@ -252,5 +261,43 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private Task<byte[]> GetPeerKeyAsync(NodeId peerNodeId, CancellationToken cancellationToken)
         => _peerSecurity.GetPeerKeyAsync(peerNodeId, cancellationToken);
+
+    private ValueTask HandleRootControlPacketAsync(
+        ZeroTierVerb verb,
+        ReadOnlyMemory<byte> payload,
+        IPEndPoint receivedVia,
+        CancellationToken cancellationToken)
+    {
+        if (verb != ZeroTierVerb.Rendezvous)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        if (!ZeroTierRendezvousCodec.TryParse(payload.Span, out var rendezvous) || rendezvous.With.Value == 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        var directEndpoints = GetOrCreateDirectEndpointManager(rendezvous.With);
+        return directEndpoints.HandleRendezvousFromRootAsync(payload, receivedVia, cancellationToken);
+    }
+
+    private ValueTask HandlePeerControlPacketAsync(
+        NodeId peerNodeId,
+        ZeroTierVerb verb,
+        ReadOnlyMemory<byte> payload,
+        CancellationToken cancellationToken)
+    {
+        if (verb != ZeroTierVerb.PushDirectPaths)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        var directEndpoints = GetOrCreateDirectEndpointManager(peerNodeId);
+        return directEndpoints.HandlePushDirectPathsFromRemoteAsync(payload, cancellationToken);
+    }
+
+    private ZeroTierDirectEndpointManager GetOrCreateDirectEndpointManager(NodeId peerNodeId)
+        => _directEndpoints.GetOrAdd(peerNodeId, id => new ZeroTierDirectEndpointManager(_udp, _rootEndpoint, id));
 
 }

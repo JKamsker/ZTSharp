@@ -9,13 +9,19 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
     private readonly ulong _networkId;
     private readonly ZeroTierMac _localMac;
     private readonly ZeroTierDataplaneIpHandler _ip;
+    private readonly Func<NodeId, ZeroTierVerb, ReadOnlyMemory<byte>, CancellationToken, ValueTask>? _handleControlAsync;
 
-    public ZeroTierDataplanePeerPacketHandler(ulong networkId, ZeroTierMac localMac, ZeroTierDataplaneIpHandler ip)
+    public ZeroTierDataplanePeerPacketHandler(
+        ulong networkId,
+        ZeroTierMac localMac,
+        ZeroTierDataplaneIpHandler ip,
+        Func<NodeId, ZeroTierVerb, ReadOnlyMemory<byte>, CancellationToken, ValueTask>? handleControlAsync = null)
     {
         ArgumentNullException.ThrowIfNull(ip);
         _networkId = networkId;
         _localMac = localMac;
         _ip = ip;
+        _handleControlAsync = handleControlAsync;
     }
 
     public async ValueTask HandleAsync(NodeId peerNodeId, byte[] packetBytes, CancellationToken cancellationToken)
@@ -30,6 +36,15 @@ internal sealed class ZeroTierDataplanePeerPacketHandler
 
         switch (verb)
         {
+            case ZeroTierVerb.PushDirectPaths:
+                {
+                    if (_handleControlAsync is not null)
+                    {
+                        await _handleControlAsync(peerNodeId, verb, payload, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    return;
+                }
             case ZeroTierVerb.MulticastFrame:
                 {
                     if (!TryParseMulticastFramePayload(payload.Span, out var networkId, out var etherType, out var frame))

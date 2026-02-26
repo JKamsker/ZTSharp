@@ -14,6 +14,7 @@ internal sealed class ZeroTierDataplaneRxLoops
     private readonly NodeId _localNodeId;
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
+    private readonly Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? _handleRootControlAsync;
 
     private int _traceRxRemaining = 200;
 
@@ -24,7 +25,8 @@ internal sealed class ZeroTierDataplaneRxLoops
         byte[] rootKey,
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
-        IZeroTierDataplanePeerDatagramProcessor peerDatagrams)
+        IZeroTierDataplanePeerDatagramProcessor peerDatagrams,
+        Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
@@ -39,6 +41,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         _localNodeId = localNodeId;
         _rootClient = rootClient;
         _peerDatagrams = peerDatagrams;
+        _handleRootControlAsync = handleRootControlAsync;
     }
 
     public async Task DispatcherLoopAsync(ChannelWriter<ZeroTierUdpDatagram> peerWriter, CancellationToken cancellationToken)
@@ -105,9 +108,25 @@ internal sealed class ZeroTierDataplaneRxLoops
                 }
 
                 var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
-                var payload = packetBytes.AsSpan(ZeroTierPacketHeader.IndexPayload);
+                var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
 
-                _rootClient.TryDispatchResponse(verb, payload);
+                if (!_rootClient.TryDispatchResponse(verb, payload.Span) && _handleRootControlAsync is not null)
+                {
+                    try
+                    {
+                        await _handleRootControlAsync(verb, payload, datagram.RemoteEndPoint, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+#pragma warning disable CA1031 // Root loop must survive per-packet faults.
+                    catch (Exception ex)
+#pragma warning restore CA1031
+                    {
+                        ZeroTierTrace.WriteLine($"[zerotier] Root packet handler fault: {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
                 continue;
             }
 
