@@ -19,10 +19,55 @@ internal static class ZeroTierIdentityStore
             return false;
         }
 
-        byte[] bytes;
         try
         {
-            bytes = File.ReadAllBytes(path);
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4 * 1024,
+                options: FileOptions.SequentialScan);
+
+            if (stream.Length != FileLength)
+            {
+                return false;
+            }
+
+            var bytes = new byte[FileLength];
+            var totalRead = 0;
+            while (totalRead < bytes.Length)
+            {
+                var read = stream.Read(bytes, totalRead, bytes.Length - totalRead);
+                if (read == 0)
+                {
+                    return false;
+                }
+
+                totalRead += read;
+            }
+
+            if (!bytes.AsSpan(0, 4).SequenceEqual(Magic))
+            {
+                return false;
+            }
+
+            if (bytes[4] != Version)
+            {
+                return false;
+            }
+
+            var nodeIdValue = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(5, 8));
+            if (nodeIdValue == 0 || nodeIdValue > NodeId.MaxValue)
+            {
+                return false;
+            }
+
+            var publicKey = bytes.AsSpan(5 + 8, ZeroTierIdentity.PublicKeyLength).ToArray();
+            var privateKey = bytes.AsSpan(5 + 8 + ZeroTierIdentity.PublicKeyLength, ZeroTierIdentity.PrivateKeyLength).ToArray();
+
+            identity = new ZeroTierIdentity(new NodeId(nodeIdValue), publicKey, privateKey);
+            return true;
         }
         catch (IOException)
         {
@@ -32,33 +77,6 @@ internal static class ZeroTierIdentityStore
         {
             return false;
         }
-
-        if (bytes.Length != FileLength)
-        {
-            return false;
-        }
-
-        if (!bytes.AsSpan(0, 4).SequenceEqual(Magic))
-        {
-            return false;
-        }
-
-        if (bytes[4] != Version)
-        {
-            return false;
-        }
-
-        var nodeIdValue = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(5, 8));
-        if (nodeIdValue == 0 || nodeIdValue > NodeId.MaxValue)
-        {
-            return false;
-        }
-
-        var publicKey = bytes.AsSpan(5 + 8, ZeroTierIdentity.PublicKeyLength).ToArray();
-        var privateKey = bytes.AsSpan(5 + 8 + ZeroTierIdentity.PublicKeyLength, ZeroTierIdentity.PrivateKeyLength).ToArray();
-
-        identity = new ZeroTierIdentity(new NodeId(nodeIdValue), publicKey, privateKey);
-        return true;
     }
 
     public static void Save(string path, ZeroTierIdentity identity)

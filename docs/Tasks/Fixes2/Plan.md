@@ -248,9 +248,9 @@ Primary goals:
 - [x] Fix: when deleting an alias key, delete both physical files if present
 
 ### 4.3 Unbounded reads / TOCTOU hardening
-- [ ] Add size caps + streaming reads: eliminate unbounded `File.ReadAllText`/`File.ReadAllLines`/`File.ReadAllBytes` on attacker-controlled state files (`identity.secret`, `.ips.txt`, persisted netconf dict) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketIdentityMigration.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
-- [ ] Add tests: large state files fail fast without allocating full contents
-- [ ] Reduce TOCTOU: open-and-read with a single handle and enforce max length while reading
+- [x] Add size caps + streaming reads: eliminate unbounded `File.ReadAllText`/`File.ReadAllLines`/`File.ReadAllBytes` on attacker-controlled state files (`identity.secret`, `.ips.txt`, persisted netconf dict) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketIdentityMigration.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
+- [x] Add tests: large state files fail fast without allocating full contents
+- [x] Reduce TOCTOU: open-and-read with a single handle and enforce max length while reading
 
 ### 4.4 AtomicFile reliability (silent failure)
 - [ ] Add test: simulate repeated `File.Move` failure -> write fails clearly (not silent success) (`ZTSharp/Internal/AtomicFile.cs`)

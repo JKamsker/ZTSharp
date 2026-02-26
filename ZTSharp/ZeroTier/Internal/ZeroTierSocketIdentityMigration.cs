@@ -1,7 +1,12 @@
+using System.Text;
+using ZTSharp.Internal;
+
 namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketIdentityMigration
 {
+    private const int MaxLibztIdentitySecretBytes = 64 * 1024;
+
     public static bool TryLoadLibztIdentity(string stateRootPath, out ZeroTierIdentity identity)
     {
         identity = default!;
@@ -13,16 +18,7 @@ internal static class ZeroTierSocketIdentityMigration
             return false;
         }
 
-        string text;
-        try
-        {
-            text = File.ReadAllText(libztSecretPath);
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
+        if (!BoundedFileIO.TryReadAllText(libztSecretPath, MaxLibztIdentitySecretBytes, Encoding.UTF8, out var text))
         {
             return false;
         }
