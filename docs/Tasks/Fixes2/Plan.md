@@ -218,8 +218,8 @@ Primary goals:
 - [x] Fix: make `ZeroTierUdpSocket.DisposeAsync` idempotent (interlocked guard; don't dispose semaphore inside `finally`)
 
 ### 3.5 Timeout helper exception semantics
-- [ ] Add test: an inner `OperationCanceledException` not caused by caller token is not always mapped to `TimeoutException` (`ZTSharp/ZeroTier/Internal/ZeroTierTimeouts.cs`)
-- [ ] Fix: distinguish "timeout cancellation" vs other `OperationCanceledException` sources; preserve original exception when appropriate
+- [x] Add test: an inner `OperationCanceledException` not caused by caller token is not always mapped to `TimeoutException` (`ZTSharp/ZeroTier/Internal/ZeroTierTimeouts.cs`)
+- [x] Fix: distinguish "timeout cancellation" vs other `OperationCanceledException` sources; preserve original exception when appropriate
 
 ### 3.6 Crypto dearmor mutation footgun (AES-GMAC-SIV)
 - [ ] Add test: failed dearmor does not leave buffer mutated (or document it as a hard contract) (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCryptoAesGmacSiv.cs`)

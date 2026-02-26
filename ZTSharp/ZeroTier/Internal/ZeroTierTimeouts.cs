@@ -23,7 +23,7 @@ internal static class ZeroTierTimeouts
         {
             return await action(timeoutCts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException($"{operation} timed out after {timeout}.");
         }
