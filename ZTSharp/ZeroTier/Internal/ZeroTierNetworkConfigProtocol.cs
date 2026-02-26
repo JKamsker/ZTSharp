@@ -27,6 +27,7 @@ internal static class ZeroTierNetworkConfigProtocol
         byte controllerProtocolVersion,
         ulong networkId,
         TimeSpan timeout,
+        bool allowLegacyUnsignedConfig,
         CancellationToken cancellationToken)
     {
         var controllerNodeId = controllerIdentity.NodeId;
@@ -181,6 +182,11 @@ internal static class ZeroTierNetworkConfigProtocol
                 }
                 else
                 {
+                    if (!allowLegacyUnsignedConfig)
+                    {
+                        throw new InvalidOperationException("Rejected legacy unsigned network config (missing signature).");
+                    }
+
                     configUpdateId = reqPacketId;
                     configTotalLength = (uint)chunkData.Length;
                     chunkIndex = 0;

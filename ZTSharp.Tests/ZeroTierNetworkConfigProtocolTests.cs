@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Internal;
@@ -56,6 +57,7 @@ public sealed class ZeroTierNetworkConfigProtocolTests
                 controllerProtocolVersion: controllerProtocolVersion,
                 networkId: networkId,
                 timeout: TimeSpan.FromSeconds(2),
+                allowLegacyUnsignedConfig: false,
                 cancellationToken: CancellationToken.None);
         });
 
@@ -109,8 +111,105 @@ public sealed class ZeroTierNetworkConfigProtocolTests
                 controllerProtocolVersion: controllerProtocolVersion,
                 networkId: networkId,
                 timeout: TimeSpan.FromSeconds(2),
+                allowLegacyUnsignedConfig: false,
                 cancellationToken: CancellationToken.None);
         });
+
+        await serverTask;
+    }
+
+    [Fact]
+    public async Task RequestNetworkConfigAsync_RejectsLegacyUnsignedConfig_ByDefault()
+    {
+        await using var controllerUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+        await using var clientUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+
+        var controllerIdentity = ZeroTierTestIdentities.CreateFastIdentity(0x1111111111);
+        Assert.NotNull(controllerIdentity.PrivateKey);
+
+        var controllerKey = new byte[48];
+        RandomNumberGenerator.Fill(controllerKey);
+
+        var keys = new Dictionary<NodeId, byte[]>
+        {
+            [controllerIdentity.NodeId] = controllerKey
+        };
+
+        const byte controllerProtocolVersion = 12;
+        const ulong networkId = 1;
+        var localNodeId = new NodeId(0x2222222222);
+
+        var serverTask = RunUnsignedConfigServerOnceAsync(
+            controllerUdp,
+            controllerIdentity.NodeId,
+            controllerKey,
+            controllerProtocolVersion,
+            localNodeId,
+            networkId,
+            chunkData: new byte[] { 1, 2, 3, 4 });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            _ = await ZeroTierNetworkConfigProtocol.RequestNetworkConfigAsync(
+                clientUdp,
+                keys,
+                rootEndpoint: controllerUdp.LocalEndpoint,
+                localNodeId: localNodeId,
+                controllerIdentity: controllerIdentity,
+                controllerProtocolVersion: controllerProtocolVersion,
+                networkId: networkId,
+                timeout: TimeSpan.FromSeconds(2),
+                allowLegacyUnsignedConfig: false,
+                cancellationToken: CancellationToken.None);
+        });
+
+        await serverTask;
+    }
+
+    [Fact]
+    public async Task RequestNetworkConfigAsync_AllowsLegacyUnsignedConfig_WhenEnabled()
+    {
+        await using var controllerUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+        await using var clientUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+
+        var controllerIdentity = ZeroTierTestIdentities.CreateFastIdentity(0x1111111111);
+        Assert.NotNull(controllerIdentity.PrivateKey);
+
+        var controllerKey = new byte[48];
+        RandomNumberGenerator.Fill(controllerKey);
+
+        var keys = new Dictionary<NodeId, byte[]>
+        {
+            [controllerIdentity.NodeId] = controllerKey
+        };
+
+        const byte controllerProtocolVersion = 12;
+        const ulong networkId = 1;
+        var localNodeId = new NodeId(0x2222222222);
+
+        var chunkData = new byte[] { 1, 2, 3, 4 };
+        var serverTask = RunUnsignedConfigServerOnceAsync(
+            controllerUdp,
+            controllerIdentity.NodeId,
+            controllerKey,
+            controllerProtocolVersion,
+            localNodeId,
+            networkId,
+            chunkData);
+
+        var (dictionary, _) = await ZeroTierNetworkConfigProtocol.RequestNetworkConfigAsync(
+            clientUdp,
+            keys,
+            rootEndpoint: controllerUdp.LocalEndpoint,
+            localNodeId: localNodeId,
+            controllerIdentity: controllerIdentity,
+            controllerProtocolVersion: controllerProtocolVersion,
+            networkId: networkId,
+            timeout: TimeSpan.FromSeconds(2),
+            allowLegacyUnsignedConfig: true,
+            cancellationToken: CancellationToken.None);
+
+        Assert.True(dictionary.SequenceEqual(chunkData));
 
         await serverTask;
     }
@@ -148,6 +247,40 @@ public sealed class ZeroTierNetworkConfigProtocolTests
 
             await controllerUdp.SendAsync(datagram.RemoteEndPoint, packet).ConfigureAwait(false);
         }
+    }
+
+    private static async Task RunUnsignedConfigServerOnceAsync(
+        ZeroTierUdpTransport controllerUdp,
+        NodeId controllerNodeId,
+        byte[] controllerKey,
+        byte controllerProtocolVersion,
+        NodeId expectedLocalNodeId,
+        ulong networkId,
+        byte[] chunkData)
+    {
+        var datagram = await controllerUdp.ReceiveAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+
+        Assert.True(ZeroTierPacketCodec.TryDecode(datagram.Payload, out var decoded));
+        Assert.Equal(expectedLocalNodeId, decoded.Header.Source);
+        Assert.Equal(controllerNodeId, decoded.Header.Destination);
+
+        var payload = new byte[8 + 2 + chunkData.Length];
+        BinaryPrimitives.WriteUInt64BigEndian(payload.AsSpan(0, 8), networkId);
+        BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(8, 2), checked((ushort)chunkData.Length));
+        chunkData.CopyTo(payload.AsSpan(10));
+
+        var header = new ZeroTierPacketHeader(
+            PacketId: 1,
+            Destination: expectedLocalNodeId,
+            Source: controllerNodeId,
+            Flags: 0,
+            Mac: 0,
+            VerbRaw: (byte)ZeroTierVerb.NetworkConfig);
+
+        var packet = ZeroTierPacketCodec.Encode(header, payload);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(controllerKey, controllerProtocolVersion), encryptPayload: true);
+
+        await controllerUdp.SendAsync(datagram.RemoteEndPoint, packet).ConfigureAwait(false);
     }
 
     private static byte[] BuildSignedNetworkConfigPacket(
@@ -201,4 +334,3 @@ public sealed class ZeroTierNetworkConfigProtocolTests
         return packet;
     }
 }
-

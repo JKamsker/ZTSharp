@@ -160,8 +160,9 @@ Primary goals:
 - [x] Fix: validate OK(HELLO) source/root correlation to prevent root selection mixups
 - [x] Add tests: netconf chunk assembly rejects overlaps/dup-length attacks and fails fast (not timeout) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
 - [x] Fix: track received byte ranges (not just `chunkIndex`) and enforce sane bounds (max chunks, max total length)
-- [ ] Decide + document: legacy "unsigned config" acceptance policy (allowed vs rejected) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigParsing.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
-- [ ] Fix: enforce signature-required policy (or explicitly gate legacy mode behind an option)
+- [x] Decide + document: legacy "unsigned config" acceptance policy (allowed vs rejected) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigParsing.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
+  - Decision: reject legacy unsigned configs by default; allow only via explicit `allowLegacyUnsignedConfig` opt-in.
+- [x] Fix: enforce signature-required policy (or explicitly gate legacy mode behind an option)
 - [ ] Add test: WHOIS OK parsing tolerates trailing malformed identity blobs without aborting join (`ZTSharp/ZeroTier/Internal/ZeroTierWhoisClient.cs`)
 - [ ] Fix: bound/validate WHOIS OK parsing loop and isolate per-identity parse failures
 - [ ] Add test: embedded planet/world decoding fails gracefully with forward-compat signals rather than hard crash (`ZTSharp/ZeroTier/Protocol/ZeroTierWorldCodec.cs`)
