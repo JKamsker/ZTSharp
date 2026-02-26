@@ -9,11 +9,63 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketRuntimeBootstrapper
 {
+    internal static IZeroTierUdpTransport CreateUdpTransport(ZeroTierMultipathOptions multipath, bool enableIpv6)
+    {
+        ArgumentNullException.ThrowIfNull(multipath);
+
+        if (!multipath.Enabled || multipath.UdpSocketCount == 1)
+        {
+            return new ZeroTierUdpTransport(localPort: 0, enableIpv6: enableIpv6, localSocketId: 0);
+        }
+
+        var ports = multipath.LocalUdpPorts;
+        if (ports is null)
+        {
+            ports = Enumerable.Repeat(0, multipath.UdpSocketCount).ToArray();
+        }
+
+        if (ports.Count != multipath.UdpSocketCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts length must match UdpSocketCount.");
+        }
+
+        var sockets = new List<ZeroTierUdpTransport>(multipath.UdpSocketCount);
+        var success = false;
+        try
+        {
+            for (var i = 0; i < multipath.UdpSocketCount; i++)
+            {
+                sockets.Add(new ZeroTierUdpTransport(localPort: ports[i], enableIpv6: enableIpv6, localSocketId: i));
+            }
+
+            var transport = new ZeroTierUdpMultiTransport(sockets);
+            success = true;
+            return transport;
+        }
+        finally
+        {
+            if (!success)
+            {
+                foreach (var socket in sockets)
+                {
+                    try
+                    {
+                        socket.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex) when (ex is ObjectDisposedException or OperationCanceledException or SocketException or InvalidOperationException)
+                    {
+                    }
+                }
+            }
+        }
+    }
+
     [SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "UDP transport ownership transfers to ZeroTierDataplaneRuntime, which is disposed by ZeroTierSocket.DisposeAsync.")]
     public static async Task<(ZeroTierDataplaneRuntime Runtime, ZeroTierHelloOk HelloOk, byte[] RootKey)> CreateAsync(
+        ZeroTierMultipathOptions multipath,
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
         ulong networkId,
@@ -28,7 +80,7 @@ internal static class ZeroTierSocketRuntimeBootstrapper
         ArgumentNullException.ThrowIfNull(managedIps);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
-        var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+        var udp = CreateUdpTransport(multipath, enableIpv6: true);
         try
         {
             var localManagedIpsV6 = managedIps

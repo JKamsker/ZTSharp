@@ -13,7 +13,7 @@ Status legend:
 - [x] Add internal transport abstraction that supports multi-socket receive/send with `LocalSocketId`.
 - [x] Thread `LocalSocketId` + remote endpoint through dataplane RX loops into peer processing.
 - [x] Refactor dataplane internals to use `IZeroTierUdpTransport` (single-socket default, multi-socket supported).
-- [ ] Bootstrap UDP socket(s) from `ZeroTierSocketOptions.Multipath` (single-socket default).
+- [x] Bootstrap UDP socket(s) from `ZeroTierSocketOptions.Multipath` (single-socket default).
 
 ## P1 — Direct path learning + keepalives
 - [ ] Track per-peer physical paths `(LocalSocketId, RemoteEndPoint)` for **hops==0** traffic only (learn/refresh/expire).

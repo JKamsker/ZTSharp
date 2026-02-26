@@ -397,6 +397,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
     {
         var (created, helloOk, rootKey) = await ZeroTierSocketRuntimeBootstrapper
             .CreateAsync(
+                multipath: _options.Multipath,
                 localIdentity: _identity,
                 planet: _planet,
                 networkId: _options.NetworkId,
