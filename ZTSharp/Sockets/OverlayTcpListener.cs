@@ -14,7 +14,6 @@ public sealed class OverlayTcpListener : IAsyncDisposable
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly Node _node;
     private readonly ulong _networkId;
-    private readonly ulong _localNodeId;
     private readonly int _localPort;
 
     private bool _disposed;
@@ -30,8 +29,12 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         _node = node;
         _networkId = networkId;
         _localPort = localPort;
-        _localNodeId = node.NodeId.Value;
-        _acceptQueue = Channel.CreateUnbounded<OverlayTcpClient>();
+        _acceptQueue = Channel.CreateBounded<OverlayTcpClient>(new BoundedChannelOptions(capacity: 128)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite,
+            SingleWriter = true,
+            SingleReader = true
+        });
 
         _node.RawFrameReceived += OnFrameReceived;
     }
@@ -76,8 +79,14 @@ public sealed class OverlayTcpListener : IAsyncDisposable
             return;
         }
 
+        var localNodeId = _node.NodeId.Value;
+        if (localNodeId == 0)
+        {
+            return;
+        }
+
         if (type != OverlayTcpFrameCodec.FrameType.Syn ||
-            destinationNodeId != _localNodeId ||
+            destinationNodeId != localNodeId ||
             destinationPort != _localPort)
         {
             return;

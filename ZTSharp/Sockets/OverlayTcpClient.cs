@@ -16,7 +16,6 @@ public sealed class OverlayTcpClient : IAsyncDisposable
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Node _node;
     private readonly ulong _networkId;
-    private readonly ulong _localNodeId;
     private readonly int _localPort;
 
     private ulong _remoteNodeId;
@@ -40,7 +39,6 @@ public sealed class OverlayTcpClient : IAsyncDisposable
         _node = node;
         _networkId = networkId;
         _localPort = localPort;
-        _localNodeId = node.NodeId.Value;
         _incoming = new OverlayTcpIncomingBuffer();
 
         _node.RawFrameReceived += OnFrameReceived;
@@ -191,45 +189,41 @@ public sealed class OverlayTcpClient : IAsyncDisposable
             return;
         }
 
-        if (destinationNodeId != _localNodeId)
+        var localNodeId = _node.NodeId.Value;
+        if (localNodeId == 0 || destinationNodeId != localNodeId)
         {
             return;
         }
 
-        if (_connected)
-        {
-            if (connectionId != _connectionId ||
-                destinationPort != _localPort ||
-                sourcePort != _remotePort ||
-                frame.SourceNodeId != _remoteNodeId)
-            {
-                return;
-            }
-
-            if (type == OverlayTcpFrameCodec.FrameType.Data)
-            {
-                _incoming.TryWrite(frame.Payload.Slice(HeaderLength));
-                return;
-            }
-
-            if (type == OverlayTcpFrameCodec.FrameType.Fin)
-            {
-                _incoming.MarkRemoteClosed();
-            }
-
-            return;
-        }
-
-        if (type != OverlayTcpFrameCodec.FrameType.SynAck ||
+        if (connectionId != _connectionId ||
             destinationPort != _localPort ||
             sourcePort != _remotePort ||
-            connectionId != _connectionId ||
             frame.SourceNodeId != _remoteNodeId)
         {
             return;
         }
 
-        _connectTcs?.TrySetResult(true);
+        if (type == OverlayTcpFrameCodec.FrameType.Data)
+        {
+            _incoming.TryWrite(frame.Payload.Slice(HeaderLength));
+            return;
+        }
+
+        if (type == OverlayTcpFrameCodec.FrameType.Fin)
+        {
+            _incoming.MarkRemoteClosed();
+            return;
+        }
+
+        if (_connected)
+        {
+            return;
+        }
+
+        if (type == OverlayTcpFrameCodec.FrameType.SynAck)
+        {
+            _connectTcs?.TrySetResult(true);
+        }
     }
 
     private async Task SendControlFrameAsync(OverlayTcpFrameCodec.FrameType type, CancellationToken cancellationToken)

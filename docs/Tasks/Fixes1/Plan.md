@@ -519,10 +519,10 @@ Files
 
 Changes
 
-- [ ] Remove captured `_localNodeId`; read `node.NodeId.Value` dynamically (or throw if NodeId==0 to force Start-before-use).
-- [ ] Allow Data frames arriving before `_connected` to be buffered if they match the pending connection tuple.
-- [ ] Make accept queue bounded (capacity 128, DropWrite).
-- [ ] Make incoming buffer bounded (capacity 1024 segments, DropWrite) and enforce max frame payload length (reject oversized).
+- [x] Remove captured `_localNodeId`; read `node.NodeId.Value` dynamically (or throw if NodeId==0 to force Start-before-use).
+- [x] Allow Data frames arriving before `_connected` to be buffered if they match the pending connection tuple.
+- [x] Make accept queue bounded (capacity 128, DropWrite).
+- [x] Make incoming buffer bounded (capacity 1024 segments, DropWrite) and enforce max frame payload length (reject oversized).
 
 ### 6.5 ZtUdpClient: fix "SendTo broadcasts to everyone" (protocol v2) + bounded receive + unsubscribe
 
@@ -571,8 +571,8 @@ Changes
 
 ### Tests (Phase 6)
 
-- [ ] Overlay TCP before start: constructing listener/client pre-start should either work (dynamic NodeId) or throw deterministically; test chosen behavior.
-- [ ] Overlay TCP handshake data loss: server write immediately after accept must be received by client.
+- [x] Overlay TCP before start: constructing listener/client pre-start should either work (dynamic NodeId) or throw deterministically; test chosen behavior.
+- [x] Overlay TCP handshake data loss: server write immediately after accept must be received by client.
 - [ ] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
 - [x] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
 - [x] Subscriber exception: throwing callback must not kill OS-UDP receive loop.

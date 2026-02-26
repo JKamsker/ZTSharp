@@ -4,7 +4,15 @@ namespace ZTSharp.Sockets;
 
 internal sealed class OverlayTcpIncomingBuffer
 {
-    private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+    private const int MaxQueuedSegments = 1024;
+    private const int MaxSegmentLength = 1024;
+
+    private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateBounded<ReadOnlyMemory<byte>>(new BoundedChannelOptions(MaxQueuedSegments)
+    {
+        FullMode = BoundedChannelFullMode.DropWrite,
+        SingleWriter = true,
+        SingleReader = true
+    });
     private ReadOnlyMemory<byte> _currentSegment;
     private int _currentSegmentOffset;
     private bool _remoteClosed;
@@ -12,7 +20,7 @@ internal sealed class OverlayTcpIncomingBuffer
     public bool RemoteClosed => _remoteClosed;
 
     public bool TryWrite(ReadOnlyMemory<byte> segment)
-        => segment.Length > 0 && _incoming.Writer.TryWrite(segment);
+        => segment.Length is > 0 and <= MaxSegmentLength && _incoming.Writer.TryWrite(segment);
 
     public void MarkRemoteClosed()
     {
