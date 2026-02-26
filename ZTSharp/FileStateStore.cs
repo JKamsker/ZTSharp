@@ -65,13 +65,7 @@ public sealed class FileStateStore : IStateStore
         }
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
-        var parent = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(parent))
-        {
-            Directory.CreateDirectory(parent);
-        }
-
-        await File.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
+        await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)

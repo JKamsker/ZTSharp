@@ -73,17 +73,17 @@ Changes
 - [x] List behavior:
   - [x] Normalize returned entries to `/` separators.
   - [x] Ensure `ListAsync("")` includes both `planet` and `roots` when either exists (avoid duplicates; case-insensitive handling on Windows/macOS FS).
-- [ ] Replace non-atomic `WriteAllBytesAsync` with atomic replace.
+- [x] Replace non-atomic `WriteAllBytesAsync` with atomic replace.
 
 ### 1.3 Atomic file helper + apply to managed stack persistence
 
 Add
 
-- [ ] Add `ZTSharp/Internal/AtomicFile.cs` (or similar internal location)
+- [x] Add `ZTSharp/Internal/AtomicFile.cs` (or similar internal location)
 
 Behavior
 
-- [ ] Write to `path.tmp.<guid>` in the same directory, `Flush(true)`, then `File.Move(tmp, path, overwrite: true)`; cleanup tmp on failure.
+- [x] Write to `path.tmp.<guid>` in the same directory, `Flush(true)`, then `File.Move(tmp, path, overwrite: true)`; cleanup tmp on failure.
 
 Apply
 
