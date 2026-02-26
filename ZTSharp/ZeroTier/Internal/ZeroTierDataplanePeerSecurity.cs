@@ -129,7 +129,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
             return;
         }
 
-        if (identity.NodeId != peerNodeId || !identity.LocallyValidate())
+        if (identity.NodeId != peerNodeId)
         {
             return;
         }
@@ -147,8 +147,16 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
             return;
         }
 
+        if (!identity.LocallyValidate())
+        {
+            return;
+        }
+
         CachePeerKey(peerNodeId, sharedKey, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var peerProtocolVersion = payload[0];
+        peerProtocolVersion = peerProtocolVersion <= ZeroTierHelloClient.AdvertisedProtocolVersion
+            ? peerProtocolVersion
+            : ZeroTierHelloClient.AdvertisedProtocolVersion;
         _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
 
         var okPacket = ZeroTierHelloOkPacketBuilder.BuildPacket(

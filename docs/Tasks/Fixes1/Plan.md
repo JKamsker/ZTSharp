@@ -271,8 +271,8 @@ File
 
 Changes
 
-- [ ] Reorder: parse minimum identity/public key -> compute shared key -> MAC/auth (Dearmor) -> only then run `LocallyValidate()`.
-- [ ] Clamp stored peer protocol version to supported range (`<= ZeroTierHelloClient.AdvertisedProtocolVersion`).
+- [x] Reorder: parse minimum identity/public key -> compute shared key -> MAC/auth (Dearmor) -> only then run `LocallyValidate()`.
+- [x] Clamp stored peer protocol version to supported range (`<= ZeroTierHelloClient.AdvertisedProtocolVersion`).
 
 ### 3.6 Root endpoint filtering (root-relayed mode hardening)
 
