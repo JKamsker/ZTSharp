@@ -506,8 +506,8 @@ Files
 
 Changes
 
-- [ ] Require payload length exactly `PayloadLength` for discovery frames.
-- [ ] Require `discoveredNodeId == sourceNodeId` before registering, otherwise ignore.
+- [x] Require payload length exactly `PayloadLength` for discovery frames.
+- [x] Require `discoveredNodeId == sourceNodeId` before registering, otherwise ignore.
 
 ### 6.4 Overlay TCP: local node id capture + handshake data loss + bounded queues
 
@@ -574,7 +574,7 @@ Changes
 - [ ] Overlay TCP before start: constructing listener/client pre-start should either work (dynamic NodeId) or throw deterministically; test chosen behavior.
 - [ ] Overlay TCP handshake data loss: server write immediately after accept must be received by client.
 - [ ] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
-- [ ] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
+- [x] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
 - [x] Subscriber exception: throwing callback must not kill OS-UDP receive loop.
 - [ ] ActiveTaskSet wait correctness under concurrency.
 

@@ -31,7 +31,7 @@ internal static class OsUdpPeerDiscoveryProtocol
         frameType = FrameType.PeerHello;
         nodeId = 0;
 
-        if (payload.Length < PayloadLength)
+        if (payload.Length != PayloadLength)
         {
             return false;
         }

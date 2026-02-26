@@ -59,7 +59,7 @@ internal sealed class OsUdpReceiveLoop
 
             if (OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
             {
-                if (_enablePeerDiscovery && discoveredNodeId != 0)
+                if (_enablePeerDiscovery && discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
                 {
                     _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
                     if (_peers.TryGetLocalNodeId(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
