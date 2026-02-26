@@ -47,7 +47,12 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
             return;
         }
 
-        var key = await _peerSecurity.GetPeerKeyAsync(peerNodeId, cancellationToken).ConfigureAwait(false);
+        if (!_peerSecurity.TryGetPeerKey(peerNodeId, out var key))
+        {
+            _peerSecurity.EnsurePeerKeyAsync(peerNodeId);
+            return;
+        }
+
         if (!ZeroTierPacketCrypto.Dearmor(packetBytes, key))
         {
             return;

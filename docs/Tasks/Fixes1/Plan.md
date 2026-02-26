@@ -251,17 +251,17 @@ Files
 
 Changes
 
-- [ ] Add `TryGetPeerKey(...)` fast path.
-- [ ] For non-HELLO packets where key missing:
-  - [ ] Kick off background `EnsurePeerKeyAsync(peerNodeId)` with rate limiting + negative caching.
-  - [ ] Drop current packet (peer will retransmit).
-- [ ] Replace global `_peerKeyLock` with per-peer in-flight task map:
-  - [ ] `ConcurrentDictionary<NodeId, Task<byte[]>> _inflightKeys`.
-  - [ ] On failure, remove so retries are possible.
-- [ ] Add bounded cache + TTL eviction:
-  - [ ] Max entries: 4096.
-  - [ ] TTL: 30 minutes.
-  - [ ] Negative TTL for failed WHOIS: 30 seconds.
+- [x] Add `TryGetPeerKey(...)` fast path.
+- [x] For non-HELLO packets where key missing:
+  - [x] Kick off background `EnsurePeerKeyAsync(peerNodeId)` with rate limiting + negative caching.
+  - [x] Drop current packet (peer will retransmit).
+- [x] Replace global `_peerKeyLock` with per-peer in-flight task map:
+  - [x] `ConcurrentDictionary<NodeId, Task<byte[]>> _inflightKeys`.
+  - [x] On failure, remove so retries are possible.
+- [x] Add bounded cache + TTL eviction:
+  - [x] Max entries: 4096.
+  - [x] TTL: 30 minutes.
+  - [x] Negative TTL for failed WHOIS: 30 seconds.
 
 ### 3.5 Harden HELLO handling against CPU DoS
 
