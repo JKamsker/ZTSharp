@@ -148,8 +148,8 @@ Primary goals:
 - [x] Fix: move hole-punch sends off RX hot path (throttle/dedupe; don't block dispatcher/peer loops) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
 
 ### 2.6 Peer key negative-cache race
-- [ ] Add test: HELLO caches positive key; concurrent failing WHOIS must not overwrite with negative cache (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
-- [ ] Fix: prevent negative caching from overriding a non-expired positive key; special-case shutdown cancellation
+- [x] Add test: HELLO caches positive key; concurrent failing WHOIS must not overwrite with negative cache (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
+- [x] Fix: prevent negative caching from overriding a non-expired positive key; special-case shutdown cancellation
 
 ### 2.7 Dispatcher/peer-loop shutdown correctness
 - [ ] Add test: disposing UDP transport/runtime cannot fault dispatcher loop with `ChannelClosedException` (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRxLoops.cs`, `ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`)

@@ -212,6 +212,10 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
             CachePeerKey(peerNodeId, key, nowMs);
             return key;
         }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            throw;
+        }
 #pragma warning disable CA1031 // Background WHOIS failures must not take down the dataplane.
         catch (Exception)
 #pragma warning restore CA1031
@@ -270,9 +274,22 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
     private void CacheNegativePeerKey(NodeId peerNodeId, long nowMs)
     {
-        _peerKeys[peerNodeId] = new PeerKeyCacheEntry(
+        var entry = new PeerKeyCacheEntry(
             Key: null,
             ExpiresAtUnixMs: nowMs + (long)NegativePeerKeyTtl.TotalMilliseconds);
+
+        _peerKeys.AddOrUpdate(
+            peerNodeId,
+            _ => entry,
+            (_, existing) =>
+            {
+                if (existing.Key is not null && existing.ExpiresAtUnixMs > nowMs)
+                {
+                    return existing;
+                }
+
+                return entry;
+            });
         TrimPeerKeyCacheIfNeeded(nowMs);
     }
 
