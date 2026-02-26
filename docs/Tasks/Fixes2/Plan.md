@@ -132,8 +132,9 @@ Primary goals:
   - Test: `ManagedIpToNodeIdCacheTests.SpoofedIpv4SourceIp_DoesNotOverrideResolvedCacheEntry`
 
 ### 2.4 ResolveNodeId stability (staleness + ambiguity)
-- [ ] Add test: multicast-gather returning multiple members does not permanently cache a wrong node (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRootClient.cs`)
-- [ ] Fix: add TTL for resolved entries and/or validate candidate before caching forever
+- [x] Add test: multicast-gather returning multiple members does not permanently cache a wrong node (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRootClient.cs`)
+- [x] Fix: add TTL for resolved entries and/or validate candidate before caching forever
+  - Policy: cache only unambiguous resolutions (1 member). Resolved entries are TTL-bound in `ManagedIpToNodeIdCache`.
 
 ### 2.5 Root endpoint filtering + direct endpoints coherence
 - [ ] Add test: dataplane RX accepts legitimate root responses even if physical endpoint differs (within allowed set) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRxLoops.cs`)

@@ -21,7 +21,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 2.1 TCP encode oversized payload guarded: new tests in `ZTSharp.Tests`
 - [x] 2.2 Fragmentation/exthdr policy: new tests in `ZTSharp.Tests` (fragment/exthdr packets handled per policy)
 - [x] 2.3 IP->NodeId cache bounded + not poisonable: new tests in `ZTSharp.Tests`
-- [ ] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
+- [x] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
 - [ ] 2.5 Root endpoint filtering policy: new tests in `ZTSharp.Tests`
 - [ ] 2.6 Peer key negative-cache race: new tests in `ZTSharp.Tests`
 - [ ] 2.7 Dispatcher loop shutdown correctness (`ChannelClosedException`): new tests in `ZTSharp.Tests`

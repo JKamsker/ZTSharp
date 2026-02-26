@@ -82,7 +82,15 @@ internal sealed class ZeroTierDataplaneRootClient
             ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {_rootNodeId} via {_rootEndpoint}).");
         }
 
-        cache.SetResolved(managedIp, remoteNodeId);
+        if (members.Length == 1)
+        {
+            cache.SetResolved(managedIp, remoteNodeId);
+        }
+        else if (ZeroTierTrace.Enabled)
+        {
+            ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} is ambiguous (members: {members.Length}); skipping cache.");
+        }
+
         return remoteNodeId;
     }
 
