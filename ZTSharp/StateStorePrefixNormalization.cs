@@ -9,7 +9,18 @@ internal static class StateStorePrefixNormalization
             return string.Empty;
         }
 
-        var normalized = prefix.Replace('\\', '/').Trim('/');
+        if (prefix.Contains('\0', StringComparison.Ordinal) || prefix.Contains(':', StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
+        }
+
+        var normalizedPath = prefix.Replace('\\', '/');
+        if (Path.IsPathRooted(normalizedPath))
+        {
+            throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
+        }
+
+        var normalized = normalizedPath.Trim('/');
         if (normalized.Length == 0)
         {
             return string.Empty;

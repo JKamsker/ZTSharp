@@ -50,11 +50,11 @@ Files
 
 Changes
 
-- [ ] Reject keys/prefixes containing `:` (Windows drive roots + NTFS ADS).
-- [ ] Reject keys/prefixes that are rooted (`Path.IsPathRooted(...)` after normalization).
-- [ ] Reject keys/prefixes containing `\0` (defense-in-depth).
-- [ ] Reject keys/prefixes still containing `.` or `..` segments (already enforced).
-- [ ] Keep returned normalized form `a/b/c` (unchanged).
+- [x] Reject keys/prefixes containing `:` (Windows drive roots + NTFS ADS).
+- [x] Reject keys/prefixes that are rooted (`Path.IsPathRooted(...)` after normalization).
+- [x] Reject keys/prefixes containing `\0` (defense-in-depth).
+- [x] Reject keys/prefixes still containing `.` or `..` segments (already enforced).
+- [x] Keep returned normalized form `a/b/c` (unchanged).
 
 ### 1.2 FileStateStore: root confinement + alias correctness + atomic writes
 
