@@ -22,7 +22,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 2.2 Fragmentation/exthdr policy: new tests in `ZTSharp.Tests` (fragment/exthdr packets handled per policy)
 - [x] 2.3 IP->NodeId cache bounded + not poisonable: new tests in `ZTSharp.Tests`
 - [x] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
-- [ ] 2.5 Root endpoint filtering policy: new tests in `ZTSharp.Tests`
+- [x] 2.5 Root endpoint filtering policy: new tests in `ZTSharp.Tests`
 - [ ] 2.6 Peer key negative-cache race: new tests in `ZTSharp.Tests`
 - [ ] 2.7 Dispatcher loop shutdown correctness (`ChannelClosedException`): new tests in `ZTSharp.Tests`
 - [ ] 2.8 Hello root correlation: new tests in `ZTSharp.Tests`
@@ -32,7 +32,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 2.8 Planet/world forward-compat behavior: new tests in `ZTSharp.Tests`
 - [ ] 2.8 Inline COM strictness/truncation visibility: new tests in `ZTSharp.Tests`
 - [ ] 2.9 Crypto size caps + allocation hardening: new tests in `ZTSharp.Tests` (and/or `ZTSharp.Benchmarks`)
-- [ ] 2.5 Direct-endpoint selection ordering/filtering: new tests in `ZTSharp.Tests`
+- [x] 2.5 Direct-endpoint selection ordering/filtering: new tests in `ZTSharp.Tests`
 - [ ] 2.9 HELLO flood CPU/alloc bounded: new tests in `ZTSharp.Tests`
 - [ ] 2.9 Compression invalid payload allocation bounded: new tests in `ZTSharp.Tests`
 - [ ] 2.10 Control-plane packets not silently dropped: new tests in `ZTSharp.Tests`

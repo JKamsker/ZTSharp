@@ -151,7 +151,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
     }
 
     [Fact]
-    public async Task DispatcherLoopAsync_DropsDatagramsNotFromRootEndpoint()
+    public async Task DispatcherLoopAsync_ForwardsPeerDatagrams_FromAnyEndpoint()
     {
         await using var rxUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var rootSender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
@@ -203,8 +203,12 @@ public sealed class ZeroTierDataplaneRxLoopTests
         await attackerSender.SendAsync(rxUdp.LocalEndpoint, peerPacket);
         await rootSender.SendAsync(rxUdp.LocalEndpoint, peerPacket);
 
-        var forwarded = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
-        Assert.Equal(rootEndpoint, forwarded.RemoteEndPoint);
+        var forwarded1 = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
+        var forwarded2 = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
+
+        Assert.NotEqual(forwarded1.RemoteEndPoint, forwarded2.RemoteEndPoint);
+        Assert.Contains(forwarded1.RemoteEndPoint, new[] { rootEndpoint, attackerSender.LocalEndpoint });
+        Assert.Contains(forwarded2.RemoteEndPoint, new[] { rootEndpoint, attackerSender.LocalEndpoint });
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
@@ -216,12 +220,13 @@ public sealed class ZeroTierDataplaneRxLoopTests
     }
 
     [Fact]
-    public async Task ResolveNodeIdAsync_CachesResult()
+    public async Task ResolveNodeIdAsync_CachesResult_WhenRootResponseComesFromAlternateEndpoint()
     {
         var localIdentity = ZeroTierTestIdentities.CreateFastIdentity(0x2222222222);
         var rootIdentity = ZeroTierTestIdentities.CreateFastIdentity(0x1111111111);
 
         await using var rootUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+        await using var rootReplyUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         var rootEndpoint = rootUdp.LocalEndpoint;
 
         await using var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
@@ -265,6 +270,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         var remoteNodeId = new NodeId(0xaaaaaaaaaa);
         var serverTask = RunGatherOkServerOnceAsync(
             rootUdp,
+            rootReplyUdp,
             rootIdentity.NodeId,
             localIdentity.NodeId,
             rootKey,
@@ -336,7 +342,8 @@ public sealed class ZeroTierDataplaneRxLoopTests
     }
 
     private static async Task RunGatherOkServerOnceAsync(
-        ZeroTierUdpTransport transport,
+        ZeroTierUdpTransport receiveTransport,
+        ZeroTierUdpTransport sendTransport,
         NodeId rootNodeId,
         NodeId localNodeId,
         byte[] rootKey,
@@ -345,7 +352,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         byte[] expectedInlineCom,
         NodeId[] members)
     {
-        var datagram = await transport.ReceiveAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        var datagram = await receiveTransport.ReceiveAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         var packetBytes = datagram.Payload;
 
         Assert.True(ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded));
@@ -417,6 +424,6 @@ public sealed class ZeroTierDataplaneRxLoopTests
         var okPacket = ZeroTierPacketCodec.Encode(okHeader, okPayload);
         ZeroTierPacketCrypto.Armor(okPacket, rootKey, encryptPayload: true);
 
-        await transport.SendAsync(datagram.RemoteEndPoint, okPacket).ConfigureAwait(false);
+        await sendTransport.SendAsync(datagram.RemoteEndPoint, okPacket).ConfigureAwait(false);
     }
 }

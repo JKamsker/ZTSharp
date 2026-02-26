@@ -137,13 +137,15 @@ Primary goals:
   - Policy: cache only unambiguous resolutions (1 member). Resolved entries are TTL-bound in `ManagedIpToNodeIdCache`.
 
 ### 2.5 Root endpoint filtering + direct endpoints coherence
-- [ ] Add test: dataplane RX accepts legitimate root responses even if physical endpoint differs (within allowed set) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRxLoops.cs`)
-- [ ] Fix: replace strict `RemoteEndPoint == _rootEndpoint` with normalized/allowed endpoint matching (and document policy)
-- [ ] Reconcile direct-path behavior vs docs: decide whether direct endpoints are supported, partially supported, or disabled
-- [ ] Add tests: direct endpoints are either (a) used for sending/routing as designed, or (b) ignored by design with docs updated (`ZTSharp/ZeroTier/Internal/ZeroTierIpv4LinkSender.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
-- [ ] Add unit tests: `ZeroTierDirectEndpointSelection.Normalize` ordering/filtering/dedupe is correct (and excludes relay endpoint) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
-- [ ] Fix: ensure `ZeroTierDirectEndpointSelection.IsPublicAddress` rejects `::`/`IPv6Any` and handles IPv4-mapped IPv6 consistently (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
-- [ ] Fix: move hole-punch sends off RX hot path (throttle/dedupe; don't block dispatcher/peer loops) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
+- [x] Add test: dataplane RX accepts legitimate root responses even if physical endpoint differs (within allowed set) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRxLoops.cs`)
+- [x] Fix: replace strict `RemoteEndPoint == _rootEndpoint` with normalized/allowed endpoint matching (and document policy)
+  - Policy: accept root packets from any endpoint only if they authenticate with the root key; accept peer packets regardless of endpoint (relay or direct) and rely on per-peer authentication.
+- [x] Reconcile direct-path behavior vs docs: decide whether direct endpoints are supported, partially supported, or disabled
+  - Decision: direct endpoints are supported for TX fanout (in addition to relay), and RX accepts direct-path packets (authenticated).
+- [x] Add tests: direct endpoints are either (a) used for sending/routing as designed, or (b) ignored by design with docs updated (`ZTSharp/ZeroTier/Internal/ZeroTierIpv4LinkSender.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
+- [x] Add unit tests: `ZeroTierDirectEndpointSelection.Normalize` ordering/filtering/dedupe is correct (and excludes relay endpoint) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
+- [x] Fix: ensure `ZeroTierDirectEndpointSelection.IsPublicAddress` rejects `::`/`IPv6Any` and handles IPv4-mapped IPv6 consistently (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
+- [x] Fix: move hole-punch sends off RX hot path (throttle/dedupe; don't block dispatcher/peer loops) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
 
 ### 2.6 Peer key negative-cache race
 - [ ] Add test: HELLO caches positive key; concurrent failing WHOIS must not overwrite with negative cache (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)

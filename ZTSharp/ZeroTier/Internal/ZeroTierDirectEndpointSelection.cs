@@ -28,6 +28,11 @@ internal static class ZeroTierDirectEndpointSelection
                 continue;
             }
 
+            if (endpoint.Address.Equals(IPAddress.Any) || endpoint.Address.Equals(IPAddress.IPv6Any))
+            {
+                continue;
+            }
+
             var isPublic = IsPublicAddress(endpoint.Address);
             if (endpoint.AddressFamily == AddressFamily.InterNetwork)
             {
@@ -48,7 +53,13 @@ internal static class ZeroTierDirectEndpointSelection
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var endpoint in ordered)
         {
-            var key = endpoint.Address + ":" + endpoint.Port.ToString(CultureInfo.InvariantCulture);
+            var keyAddress = endpoint.Address;
+            if (keyAddress.AddressFamily == AddressFamily.InterNetworkV6 && keyAddress.IsIPv4MappedToIPv6)
+            {
+                keyAddress = keyAddress.MapToIPv4();
+            }
+
+            var key = keyAddress + ":" + endpoint.Port.ToString(CultureInfo.InvariantCulture);
             if (!seen.Add(key))
             {
                 continue;
@@ -76,6 +87,11 @@ internal static class ZeroTierDirectEndpointSelection
 
     private static bool IsPublicAddress(IPAddress address)
     {
+        if (address.AddressFamily == AddressFamily.InterNetworkV6 && address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
         if (IPAddress.IsLoopback(address))
         {
             return false;
@@ -124,6 +140,11 @@ internal static class ZeroTierDirectEndpointSelection
 
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
+            if (address.Equals(IPAddress.IPv6Any) || address.Equals(IPAddress.IPv6None))
+            {
+                return false;
+            }
+
             if (address.IsIPv6LinkLocal ||
                 address.IsIPv6Multicast ||
                 address.IsIPv6SiteLocal ||

@@ -62,11 +62,6 @@ internal sealed class ZeroTierDataplaneRxLoops
                 return;
             }
 
-            if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
-            {
-                continue;
-            }
-
             var packetBytes = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
             {
@@ -87,9 +82,9 @@ internal sealed class ZeroTierDataplaneRxLoops
 
             if (decoded.Header.Source == _rootNodeId)
             {
-                if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+                if (ZeroTierTrace.Enabled && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
                 {
-                    continue;
+                    ZeroTierTrace.WriteLine($"[zerotier] RX root packet via {datagram.RemoteEndPoint} (expected {_rootEndpoint}).");
                 }
 
                 if (!ZeroTierPacketCrypto.Dearmor(packetBytes, _rootKey))
