@@ -6,7 +6,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierIpv4LinkReceiver
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly NodeId _localNodeId;
     private readonly NodeId _remoteNodeId;
@@ -23,7 +23,7 @@ internal sealed class ZeroTierIpv4LinkReceiver
     private int _traceRxVerbRemaining = 50;
 
     public ZeroTierIpv4LinkReceiver(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         NodeId localNodeId,
         NodeId remoteNodeId,

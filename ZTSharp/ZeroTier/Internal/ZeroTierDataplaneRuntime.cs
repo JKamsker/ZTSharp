@@ -12,7 +12,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
@@ -48,7 +48,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private bool _disposed;
 
     public ZeroTierDataplaneRuntime(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
@@ -155,7 +155,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     public NodeId NodeId => _localIdentity.NodeId;
 
-    public IPEndPoint LocalUdp => _udp.LocalEndpoint;
+    public IPEndPoint LocalUdp => _udp.LocalSockets[0].LocalEndpoint;
 
     public long PeerQueueDropCount => Interlocked.Read(ref _peerQueueDropCount);
 

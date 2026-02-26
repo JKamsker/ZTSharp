@@ -7,7 +7,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRxLoops
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
@@ -20,7 +20,7 @@ internal sealed class ZeroTierDataplaneRxLoops
     private int _traceRxRemaining = 200;
 
     public ZeroTierDataplaneRxLoops(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,

@@ -12,7 +12,7 @@ Status legend:
 - [x] Add `ZeroTierSocketOptions` multipath/bonding configuration surface (default disabled).
 - [x] Add internal transport abstraction that supports multi-socket receive/send with `LocalSocketId`.
 - [x] Thread `LocalSocketId` + remote endpoint through dataplane RX loops into peer processing.
-- [ ] Refactor dataplane internals to use `IZeroTierUdpTransport` (single-socket default, multi-socket supported).
+- [x] Refactor dataplane internals to use `IZeroTierUdpTransport` (single-socket default, multi-socket supported).
 - [ ] Bootstrap UDP socket(s) from `ZeroTierSocketOptions.Multipath` (single-socket default).
 
 ## P1 — Direct path learning + keepalives

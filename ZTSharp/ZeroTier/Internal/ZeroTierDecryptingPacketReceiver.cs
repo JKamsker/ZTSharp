@@ -7,7 +7,7 @@ namespace ZTSharp.ZeroTier.Internal;
 internal static class ZeroTierDecryptingPacketReceiver
 {
     public static async Task<(NodeId Source, IPEndPoint RemoteEndPoint, byte[] PacketBytes)?> ReceiveAndDecryptAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId expectedSource,
         byte[] key,
         CancellationToken cancellationToken)

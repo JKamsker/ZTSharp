@@ -11,7 +11,7 @@ internal sealed class ZeroTierDataplaneRootClient
 {
     private static readonly TimeSpan MulticastGatherTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
@@ -24,7 +24,7 @@ internal sealed class ZeroTierDataplaneRootClient
     private readonly ConcurrentDictionary<ulong, TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>> _pendingGather = new();
 
     public ZeroTierDataplaneRootClient(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,

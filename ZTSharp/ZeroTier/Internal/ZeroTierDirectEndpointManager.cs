@@ -12,14 +12,14 @@ internal sealed class ZeroTierDirectEndpointManager
 {
     private const long HolePunchMinIntervalMs = 5_000;
 
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly IPEndPoint _relayEndpoint;
     private readonly NodeId _remoteNodeId;
 
     private IPEndPoint[] _directEndpoints = Array.Empty<IPEndPoint>();
     private readonly ConcurrentDictionary<string, long> _holePunchLastSentMs = new(StringComparer.Ordinal);
 
-    public ZeroTierDirectEndpointManager(ZeroTierUdpTransport udp, IPEndPoint relayEndpoint, NodeId remoteNodeId)
+    public ZeroTierDirectEndpointManager(IZeroTierUdpTransport udp, IPEndPoint relayEndpoint, NodeId remoteNodeId)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(relayEndpoint);

@@ -15,7 +15,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     private static readonly TimeSpan PeerKeyTtl = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan NegativePeerKeyTtl = TimeSpan.FromSeconds(30);
 
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly NodeId _localNodeId;
     private readonly byte[] _localPrivateKey;
@@ -27,7 +27,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     private int _trimPeerKeysInProgress;
 
     public ZeroTierDataplanePeerSecurity(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         ZeroTierDataplaneRootClient rootClient,
         ZeroTierIdentity localIdentity)
     {

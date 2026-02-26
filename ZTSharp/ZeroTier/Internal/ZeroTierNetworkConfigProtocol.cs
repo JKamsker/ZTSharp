@@ -19,7 +19,7 @@ internal static class ZeroTierNetworkConfigProtocol
         => ZeroTierRootKeyDerivation.BuildRootKeys(localIdentity, planet);
 
     public static async Task<(byte[] DictionaryBytes, IPAddress[] ManagedIps)> RequestNetworkConfigAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         Dictionary<NodeId, byte[]> keys,
         IPEndPoint rootEndpoint,
         NodeId localNodeId,

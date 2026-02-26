@@ -8,13 +8,13 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierIpv4Link : IUserSpaceIpLink
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly ZeroTierIpv4LinkSender _sender;
     private readonly ZeroTierIpv4LinkReceiver _receiver;
     private bool _disposed;
 
     public ZeroTierIpv4Link(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         IPEndPoint relayEndpoint,
         NodeId rootNodeId,
         byte[] rootKey,

@@ -6,7 +6,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierPeerKeyCache : IDisposable
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
@@ -17,7 +17,7 @@ internal sealed class ZeroTierPeerKeyCache : IDisposable
     private readonly Dictionary<NodeId, byte[]> _keys = new();
 
     public ZeroTierPeerKeyCache(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,

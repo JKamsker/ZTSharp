@@ -8,7 +8,7 @@ namespace ZTSharp.ZeroTier.Internal;
 internal static class ZeroTierDataplaneRuntimeFactory
 {
     internal static async Task<(ZeroTierDataplaneRuntime Runtime, ZeroTierHelloOk HelloOk, byte[] RootKey)> CreateAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
         ulong networkId,
@@ -82,7 +82,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
     }
 
     private static async Task TrySubscribeForAddressResolutionAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId localNodeId,
         ulong networkId,
         IPAddress[] localManagedIpsV4,
