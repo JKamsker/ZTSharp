@@ -196,12 +196,7 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
 
             _disposed = true;
 
-            var disposed = new ObjectDisposedException(nameof(UserSpaceTcpClient));
-            _signals.ConnectTcs?.TrySetException(disposed);
-            _receiver.Complete(disposed);
-            _sender.FailPendingOperations(disposed);
-
-            if (_signals.Connected && !_receiver.RemoteClosed)
+            if (_signals.Connected)
             {
                 try
                 {
@@ -212,6 +207,11 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
                 {
                 }
             }
+
+            var disposed = new ObjectDisposedException(nameof(UserSpaceTcpClient));
+            _signals.ConnectTcs?.TrySetException(disposed);
+            _receiver.Complete(disposed);
+            _sender.FailPendingOperations(disposed);
 
             await _cts.CancelAsync().ConfigureAwait(false);
             if (_receiveLoopTask is not null)

@@ -42,9 +42,11 @@ Primary goals:
 ## Phase 1 - Real stack: user-space TCP correctness (`ZTSharp/ZeroTier/Net/**`)
 
 ### 1.1 FIN / close correctness (critical)
-- [ ] Repro + add test: disposing client/server should cause peer stream EOF (`ReadAsync` returns `0`) within bounded time (`ZTSharp/ZeroTier/Net/UserSpaceTcpClient.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpServerConnection.cs`)
-- [ ] Fix: ensure FIN is actually sent on dispose and peer observes close (avoid gating FIN on `RemoteClosed`)
-- [ ] Add test: FIN is sent exactly once and no post-close data is delivered
+- [x] Repro + add test: disposing client/server should cause peer stream EOF (`ReadAsync` returns `0`) within bounded time (`ZTSharp/ZeroTier/Net/UserSpaceTcpClient.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpServerConnection.cs`)
+  - Tests: `UserSpaceTcpFinTests.DisposeAsync_Client_CausesServerStreamEof`, `UserSpaceTcpFinTests.DisposeAsync_Server_CausesClientStreamEof`
+- [x] Fix: ensure FIN is actually sent on dispose and peer observes close (avoid gating FIN on `RemoteClosed`)
+- [x] Add test: FIN is sent exactly once and no post-close data is delivered
+  - Test: `UserSpaceTcpFinTests.SendFinWithRetriesAsync_IsIdempotentWithRespectToSequenceNumber`
 
 ### 1.2 Handshake robustness (critical hang)
 - [ ] Repro + add test: drop client's final ACK after SYN-ACK; ensure server still completes accept (bounded) (`ZTSharp/ZeroTier/Net/UserSpaceTcpServerReceiveLoop.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpReceiveLoop.cs`)
