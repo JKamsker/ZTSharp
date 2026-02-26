@@ -600,6 +600,7 @@ Final acceptance:
 - [x] `dotnet format --verify-no-changes` passes (Windows).
 - [x] `dotnet test -c Release` passes (Windows; CI matrix pending).
 - [x] No new analyzer warnings (warnings-as-errors remains clean).
+- [ ] GitHub Actions CI passes (ubuntu-latest, windows-latest, macos-latest).
 
 ---
 
