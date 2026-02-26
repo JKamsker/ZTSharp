@@ -11,6 +11,11 @@ internal static class ZeroTierWorldCodec
 
     public static ZeroTierWorld Decode(ReadOnlySpan<byte> data)
     {
+        if (data.Length > ZeroTierProtocolLimits.MaxWorldBytes)
+        {
+            throw new FormatException($"World data is too large ({data.Length} bytes).");
+        }
+
         var offset = 0;
 
         var typeByte = ReadByte(data, ref offset);

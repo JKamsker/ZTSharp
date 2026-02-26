@@ -407,21 +407,21 @@ Files
 
 Decisions
 
-- [ ] MaxWorldBytes = 16384 hard cap for any planet/roots bytes loaded from disk/state.
+- [x] MaxWorldBytes = 16384 hard cap for any planet/roots bytes loaded from disk/state.
 
 Changes
 
-- [ ] `ZeroTierWorldCodec.Decode`:
-  - [ ] Reject inputs `> MaxWorldBytes` with `FormatException`.
-- [ ] `ZeroTierPlanetLoader.Load`:
-  - [ ] Always decode embedded default first when PlanetSource=EmbeddedDefault.
-  - [ ] If state candidate present, decode only if size <= cap and structure valid.
-  - [ ] Verify candidate as a valid update of embedded default when possible:
-    - [ ] Same Type and Id.
-    - [ ] Timestamp strictly newer.
-    - [ ] Signature verifies using embedded default's `UpdatesMustBeSignedBy` over `SerializeForSign(candidate)` (sentinel prefix/suffix + world fields excluding signature, matching upstream `World::serialize(forSign=true)`).
-  - [ ] If verification fails, ignore candidate and use embedded default.
-- [ ] PlanetSource=FilePath: still enforce size cap + structural validity, but treat as trusted (no chain validation).
+- [x] `ZeroTierWorldCodec.Decode`:
+  - [x] Reject inputs `> MaxWorldBytes` with `FormatException`.
+- [x] `ZeroTierPlanetLoader.Load`:
+  - [x] Always decode embedded default first when PlanetSource=EmbeddedDefault.
+  - [x] If state candidate present, decode only if size <= cap and structure valid.
+  - [x] Verify candidate as a valid update of embedded default when possible:
+    - [x] Same Type and Id.
+    - [x] Timestamp strictly newer.
+    - [x] Signature verifies using embedded default's `UpdatesMustBeSignedBy` over `SerializeForSign(candidate)` (sentinel prefix/suffix + world fields excluding signature, matching upstream `World::serialize(forSign=true)`).
+  - [x] If verification fails, ignore candidate and use embedded default.
+- [x] PlanetSource=FilePath: still enforce size cap + structural validity, but treat as trusted (no chain validation).
 
 ### 5.2 Cap network config dictionary total length to prevent OOM
 
@@ -460,8 +460,8 @@ Changes
 
 ### Tests (Phase 5)
 
-- [ ] World signature helper: create synthetic ZeroTierWorld + sign key, verify SerializeForSign + VerifySignature succeeds; invalid byte flip fails.
-- [ ] PlanetLoader hardened behavior: invalid/oversized state planet ignored in favor of embedded.
+- [x] World signature helper: create synthetic ZeroTierWorld + sign key, verify SerializeForSign + VerifySignature succeeds; invalid byte flip fails.
+- [x] PlanetLoader hardened behavior: invalid/oversized state planet ignored in favor of embedded.
 - [ ] NetworkConfig cap: absurd totalLength rejected without allocation.
 - [ ] All-zero shared secret: known small-order pubkey causes failure.
 

@@ -70,7 +70,7 @@ public sealed class ZeroTierWorldCodecTests
     }
 
     [Fact]
-    public void EmbeddedDefault_PrefersPlanetFromLibztState_WhenPresent()
+    public void EmbeddedDefault_IgnoresInvalidStatePlanet_WhenPresent()
     {
         var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-zero-tier-planet-test-");
         var libztDir = Path.Combine(stateRoot, "libzt");
@@ -93,7 +93,41 @@ public sealed class ZeroTierWorldCodecTests
             };
 
             var world = ZeroTierPlanetLoader.Load(options, CancellationToken.None);
-            Assert.Equal(customPlanetId, world.Id);
+            Assert.Equal(ZeroTierWorldCodec.Decode(ZeroTierDefaultPlanet.World).Id, world.Id);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(stateRoot, recursive: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public void EmbeddedDefault_IgnoresOversizedStatePlanet_WhenPresent()
+    {
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-zero-tier-planet-test-");
+        var libztDir = Path.Combine(stateRoot, "libzt");
+        var libztRootsPath = Path.Combine(libztDir, "roots");
+
+        try
+        {
+            Directory.CreateDirectory(libztDir);
+            File.WriteAllBytes(libztRootsPath, new byte[ZeroTierProtocolLimits.MaxWorldBytes + 1]);
+
+            var options = new ZeroTierSocketOptions
+            {
+                StateRootPath = stateRoot,
+                NetworkId = 1,
+                PlanetSource = ZeroTierPlanetSource.EmbeddedDefault
+            };
+
+            var world = ZeroTierPlanetLoader.Load(options, CancellationToken.None);
+            Assert.Equal(ZeroTierWorldCodec.Decode(ZeroTierDefaultPlanet.World).Id, world.Id);
         }
         finally
         {
