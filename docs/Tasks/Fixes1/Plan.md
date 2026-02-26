@@ -456,7 +456,7 @@ File
 
 Changes
 
-- [ ] Clamp parsed path count to a small maximum (e.g., 32) even if packet claims more.
+- [x] Clamp parsed path count to a small maximum (e.g., 32) even if packet claims more.
 
 ### Tests (Phase 5)
 

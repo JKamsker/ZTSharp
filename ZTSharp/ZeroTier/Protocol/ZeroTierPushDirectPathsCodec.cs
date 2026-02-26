@@ -18,6 +18,7 @@ internal static class ZeroTierPushDirectPathsCodec
         }
 
         var count = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(0, 2));
+        var maxCount = Math.Min((int)count, ZeroTierProtocolLimits.MaxPushedDirectPaths);
         var ptr = 2;
 
         if (count == 0)
@@ -26,9 +27,9 @@ internal static class ZeroTierPushDirectPathsCodec
             return true;
         }
 
-        var list = new List<ZeroTierPushedDirectPath>(Math.Min((int)count, 32));
+        var list = new List<ZeroTierPushedDirectPath>(maxCount);
 
-        for (var i = 0; i < count; i++)
+        for (var i = 0; i < maxCount; i++)
         {
             if (ptr + 1 + 2 + 1 + 1 > payload.Length)
             {
