@@ -83,6 +83,45 @@ internal static class UdpCodec
         return true;
     }
 
+    public static bool TryParseWithChecksum(
+        IPAddress sourceIp,
+        IPAddress destinationIp,
+        ReadOnlySpan<byte> segment,
+        out ushort sourcePort,
+        out ushort destinationPort,
+        out ReadOnlySpan<byte> payload)
+    {
+        if (!TryParse(segment, out sourcePort, out destinationPort, out payload))
+        {
+            return false;
+        }
+
+        if (sourceIp.AddressFamily != destinationIp.AddressFamily)
+        {
+            return false;
+        }
+
+        var checksum = BinaryPrimitives.ReadUInt16BigEndian(segment.Slice(6, 2));
+        if (sourceIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && checksum == 0)
+        {
+            return true; // IPv4 UDP checksum 0 means "no checksum"
+        }
+
+        if (sourceIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 && checksum == 0)
+        {
+            return false; // IPv6 UDP checksum is mandatory
+        }
+
+        try
+        {
+            return ComputeChecksum(sourceIp, destinationIp, segment) == 0;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
     private static ushort ComputeChecksum(IPAddress sourceIp, IPAddress destinationIp, ReadOnlySpan<byte> udpSegment)
     {
         var sum = 0u;

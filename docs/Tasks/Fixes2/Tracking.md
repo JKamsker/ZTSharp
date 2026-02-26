@@ -15,7 +15,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 ## Phase 2 - Dataplane + IP layer
 
 - [x] 2.1 IPv4 header checksum policy enforced: new tests in `ZTSharp.Tests`
-- [ ] 2.1 UDP checksum validation: new tests in `ZTSharp.Tests` (invalid checksum dropped)
+- [x] 2.1 UDP checksum validation: new tests in `ZTSharp.Tests` (invalid checksum dropped)
 - [ ] 2.1 TCP checksum validation: new tests in `ZTSharp.Tests` (invalid checksum SYN dropped)
 - [ ] 2.1 ICMPv6 checksum validation: new tests in `ZTSharp.Tests` (invalid NS dropped)
 - [ ] 2.1 TCP encode oversized payload guarded: new tests in `ZTSharp.Tests`

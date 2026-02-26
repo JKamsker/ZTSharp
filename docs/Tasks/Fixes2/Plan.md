@@ -98,8 +98,9 @@ Primary goals:
   - Test: `Ipv4CodecChecksumTests.TryParse_RejectsInvalidHeaderChecksum`
 - [x] Fix: decide and implement IPv4 header checksum policy (validate or explicitly ignore with rationale)
   - Policy: validate header checksum in `Ipv4Codec.TryParse` and drop invalid packets.
-- [ ] Add test: invalid-checksum UDP to registered port is dropped (`ZTSharp/ZeroTier/Net/UdpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
-- [ ] Fix: verify UDP checksum on receive (IPv4 + IPv6) before delivering to UDP handlers
+- [x] Add test: invalid-checksum UDP to registered port is dropped (`ZTSharp/ZeroTier/Net/UdpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
+  - Test: `ZeroTierDataplaneUdpChecksumTests.InvalidUdpChecksum_IsDropped_BeforeUdpHandlerDispatch`
+- [x] Fix: verify UDP checksum on receive (IPv4 + IPv6) before delivering to UDP handlers
 - [ ] Add test: invalid-checksum TCP SYN is dropped / does not trigger listener dispatch (`ZTSharp/ZeroTier/Net/TcpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
 - [ ] Fix: use `TcpCodec.TryParseWithChecksum` for TCP receive paths that influence routing/state
 - [ ] Add test: invalid-checksum ICMPv6 NS is dropped (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIcmpv6Handler.cs`)

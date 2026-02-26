@@ -86,7 +86,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (nextHeader == UdpCodec.ProtocolNumber && isUnicastToUs)
         {
-            if (!UdpCodec.TryParse(ipPayload, out _, out var dstPort, out _))
+            if (!UdpCodec.TryParseWithChecksum(src, dst, ipPayload, out _, out var dstPort, out _))
             {
                 return;
             }
@@ -187,7 +187,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (protocol == UdpCodec.ProtocolNumber)
         {
-            if (!UdpCodec.TryParse(ipPayload, out _, out var udpDstPort, out _))
+            if (!UdpCodec.TryParseWithChecksum(src, dst, ipPayload, out _, out var udpDstPort, out _))
             {
                 return;
             }
