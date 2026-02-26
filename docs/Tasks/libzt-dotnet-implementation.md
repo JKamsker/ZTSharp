@@ -1,8 +1,8 @@
 # libzt-dotnet implementation plan
 
 ## Status legend
-- `[ ]` Pending
-- `[x]` Completed
+- Pending (unchecked)
+- Completed
 
 This file tracks the full implementation of a fully managed .NET 10 replacement for `libzt` (no P/Invoke, no native daemon/binaries).
 

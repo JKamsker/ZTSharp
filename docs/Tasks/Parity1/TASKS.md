@@ -13,8 +13,8 @@ Non-goals (tracked in `docs/Tasks/Future-Parity-Notes.md`):
 - Creating an OS-visible network adapter (TUN/TAP/WFP/NPCAP/etc.)
 
 Status legend:
-- `[ ]` Pending
-- `[x]` Completed (implemented + validated + committed)
+- Pending (unchecked)
+- Completed (implemented + validated + committed)
 
 ## Milestone P0 — Planning + acceptance criteria
 - [x] Create this Parity1 task list.

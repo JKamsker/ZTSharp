@@ -3,8 +3,8 @@
 Goal: join an existing controller-based ZeroTier network (normal NWIDs like `9ad07d01093a69e3`) without an OS ZeroTier install and without native binaries, then open outbound TCP connections by managed IP (e.g. `10.121.15.99:5380`) via `HttpClient`.
 
 Status legend:
-- `[ ]` Pending
-- `[x]` Completed (implemented + validated + committed)
+- Pending (unchecked)
+- Completed (implemented + validated + committed)
 
 ## Milestone Z0 — Repo/task scaffolding
 - [x] Add initial task breakdown (this file).
