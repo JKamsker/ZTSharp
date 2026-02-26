@@ -550,7 +550,7 @@ Files
 
 Changes
 
-- [ ] ActiveTaskSet.WaitAsync: never return early due to empty snapshot; honor cancellation by throwing (or return, but ensure disposal sites don't pass already-canceled token when they intend to wait).
+- [x] ActiveTaskSet.WaitAsync: never return early due to empty snapshot; honor cancellation by throwing (or return, but ensure disposal sites don't pass already-canceled token when they intend to wait).
 
 ### 6.7 Validate codec inputs on decode
 
@@ -576,7 +576,7 @@ Changes
 - [x] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
 - [x] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
 - [x] Subscriber exception: throwing callback must not kill OS-UDP receive loop.
-- [ ] ActiveTaskSet wait correctness under concurrency.
+- [x] ActiveTaskSet wait correctness under concurrency.
 
 Acceptance: legacy overlay stack no longer has the identified correctness holes; receive loops stay alive under callback faults; queues are bounded.
 
