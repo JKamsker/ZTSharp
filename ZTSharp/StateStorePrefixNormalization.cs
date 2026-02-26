@@ -33,6 +33,8 @@ internal static class StateStorePrefixNormalization
             {
                 throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
             }
+
+            StateStoreKeySegmentValidation.ValidateSegment(parts[i], prefix, nameof(prefix));
         }
 
         return string.Join('/', parts);

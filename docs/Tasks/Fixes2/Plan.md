@@ -264,8 +264,8 @@ Primary goals:
 - [x] Add tests/notes: ensure atomic replace does not accidentally weaken permissions (platform-dependent)
 
 ### 4.6 Key normalization edge cases (cross-platform)
-- [ ] Add tests: invalid filename chars / reserved device names don't cause traversal or confusing collisions (Windows/macOS/Linux) (`ZTSharp/StateStoreKeyNormalization.cs`, `ZTSharp/StateStorePrefixNormalization.cs`)
-- [ ] Fix: decide policy (reject vs encode) for platform-invalid key segments and document it (`docs/PERSISTENCE.md`)
+- [x] Add tests: invalid filename chars / reserved device names don't cause traversal or confusing collisions (Windows/macOS/Linux) (`ZTSharp/StateStoreKeyNormalization.cs`, `ZTSharp/StateStorePrefixNormalization.cs`)
+- [x] Fix: decide policy (reject vs encode) for platform-invalid key segments and document it (`docs/PERSISTENCE.md`)
 
 ---
 

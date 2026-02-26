@@ -13,6 +13,11 @@ Built-in stores normalize and validate keys/prefixes:
 - Keys/prefixes must not contain `:` (drive roots / NTFS ADS on Windows).
 - Keys/prefixes must not contain `\0`.
 - Keys/prefixes must not contain `.` or `..` segments.
+- Each key segment must be cross-platform safe (rejected rather than encoded):
+  - No ASCII control characters.
+  - No Windows-invalid filename characters: `<`, `>`, `"`, `:`, `|`, `?`, `*`.
+  - Must not end in a space or `.` (Windows path normalization can collapse these).
+  - Must not be a Windows reserved device name (case-insensitive), even with an extension (e.g. `CON`, `NUL`, `CON.txt`, `LPT1`).
 
 Invalid keys/prefixes throw `ArgumentException`.
 
