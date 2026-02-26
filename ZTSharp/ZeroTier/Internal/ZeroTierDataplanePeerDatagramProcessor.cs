@@ -4,6 +4,7 @@ using ZTSharp.ZeroTier.Transport;
 namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplanePeerDatagramProcessor
+    : IZeroTierDataplanePeerDatagramProcessor
 {
     private readonly NodeId _localNodeId;
     private readonly ZeroTierDataplanePeerSecurity _peerSecurity;

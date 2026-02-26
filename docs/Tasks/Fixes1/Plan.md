@@ -309,10 +309,10 @@ Changes
 
 Add/extend:
 
-- [ ] Drop/queue tests: bounded queues don't grow unbounded under flood (use synthetic loops).
-- [ ] PeerLoop resilience: inject a peer processor that throws once; loop continues.
-- [ ] Root endpoint filtering: spoofed packets from non-root endpoint are dropped before crypto/WHOIS.
-- [ ] ResolveNodeId caching: second resolve hits cache (mock gather).
+- [x] Drop/queue tests: bounded queues don't grow unbounded under flood (use synthetic loops).
+- [x] PeerLoop resilience: inject a peer processor that throws once; loop continues.
+- [x] Root endpoint filtering: spoofed packets from non-root endpoint are dropped before crypto/WHOIS.
+- [x] ResolveNodeId caching: second resolve hits cache (mock gather).
 
 Acceptance: dataplane remains responsive under malformed/flood input; memory bounded; no loop death on single exception.
 

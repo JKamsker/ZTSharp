@@ -13,7 +13,7 @@ internal sealed class ZeroTierDataplaneRxLoops
     private readonly byte[] _rootKey;
     private readonly NodeId _localNodeId;
     private readonly ZeroTierDataplaneRootClient _rootClient;
-    private readonly ZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
+    private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
 
     private int _traceRxRemaining = 200;
 
@@ -24,7 +24,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         byte[] rootKey,
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
-        ZeroTierDataplanePeerDatagramProcessor peerDatagrams)
+        IZeroTierDataplanePeerDatagramProcessor peerDatagrams)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
