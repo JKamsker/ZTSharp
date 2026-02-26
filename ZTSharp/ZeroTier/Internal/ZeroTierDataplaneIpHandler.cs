@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using ZTSharp.ZeroTier.Net;
@@ -100,7 +101,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (nextHeader == TcpCodec.ProtocolNumber && isUnicastToUs)
         {
-            if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
+            if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
             {
                 return;
             }
@@ -108,7 +109,41 @@ internal sealed class ZeroTierDataplaneIpHandler
             var routeKey = ZeroTierTcpRouteKeyV6.FromAddresses(dst, dstPort, src, srcPort);
             if (_routes.TryGetRoute(routeKey, out var route))
             {
-                route.IncomingWriter.TryWrite(ipv6Packet);
+                if (!route.TryEnqueueIncoming(ipv6Packet))
+                {
+                    if (ZeroTierTrace.Enabled)
+                    {
+                        ZeroTierTrace.WriteLine($"[zerotier] Drop+RST: TCP route backlog overflow for {dst}:{dstPort} <- {src}:{srcPort} (drops={route.IncomingDropCount}).");
+                    }
+
+                    var ackIncrement = 0u;
+                    if ((flags & TcpCodec.Flags.Syn) != 0)
+                    {
+                        ackIncrement++;
+                    }
+
+                    if ((flags & TcpCodec.Flags.Fin) != 0)
+                    {
+                        ackIncrement++;
+                    }
+
+                    try
+                    {
+                        await SendTcpRstAsync(
+                                peerNodeId,
+                                localIp: dst,
+                                remoteIp: src,
+                                localPort: dstPort,
+                                remotePort: srcPort,
+                                acknowledgmentNumber: unchecked(seq + (uint)tcpPayload.Length + ackIncrement),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException or IOException)
+                    {
+                    }
+                }
+
                 return;
             }
 
@@ -170,7 +205,7 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
+        if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
         {
             return;
         }
@@ -183,7 +218,41 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (_routes.TryGetRoute(routeKey, out var route))
         {
-            route.IncomingWriter.TryWrite(ipv4Packet);
+            if (!route.TryEnqueueIncoming(ipv4Packet))
+            {
+                if (ZeroTierTrace.Enabled)
+                {
+                    ZeroTierTrace.WriteLine($"[zerotier] Drop+RST: TCP route backlog overflow for {dst}:{dstPort} <- {src}:{srcPort} (drops={route.IncomingDropCount}).");
+                }
+
+                var ackIncrement = 0u;
+                if ((flags & TcpCodec.Flags.Syn) != 0)
+                {
+                    ackIncrement++;
+                }
+
+                if ((flags & TcpCodec.Flags.Fin) != 0)
+                {
+                    ackIncrement++;
+                }
+
+                try
+                {
+                    await SendTcpRstAsync(
+                            peerNodeId,
+                            localIp: dst,
+                            remoteIp: src,
+                            localPort: dstPort,
+                            remotePort: srcPort,
+                            acknowledgmentNumber: unchecked(seq + (uint)tcpPayload.Length + ackIncrement),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException or IOException)
+                {
+                }
+            }
+
             return;
         }
 

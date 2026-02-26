@@ -84,8 +84,10 @@ Primary goals:
   - `ZeroTierTcpListener.AcceptQueueCapacity`, `PendingAcceptCount`, `DroppedAcceptCount`
 
 ### 1.7 Routed link drop policy for TCP-like traffic
-- [ ] Repro + add test: overload routed link channel; ensure TCP can still make progress or fails predictably (`ZTSharp/ZeroTier/Internal/ZeroTierRoutedIpv4Link.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierRoutedIpv6Link.cs`)
-- [ ] Fix: separate control vs data, or avoid `DropOldest` for in-order TCP segments (or increase capacity + add drop telemetry)
+- [x] Repro + add test: overload routed link channel; ensure TCP can still make progress or fails predictably (`ZTSharp/ZeroTier/Internal/ZeroTierRoutedIpv4Link.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierRoutedIpv6Link.cs`)
+  - Test: `ZeroTierRoutedLinkOverflowTests.RouteBacklogOverflow_FailsWithIOException_InsteadOfSilentDrop`
+- [x] Fix: separate control vs data, or avoid `DropOldest` for in-order TCP segments (or increase capacity + add drop telemetry)
+  - Policy: detect route backlog overflow, fail the route with `IOException`, and send RST from the dataplane.
 
 ---
 
