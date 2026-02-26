@@ -185,7 +185,7 @@ Changes
 
 Add/extend:
 
-- [ ] Add/extend `ZTSharp.Tests/UserSpaceTcp*` with:
+- [x] Add/extend `ZTSharp.Tests/UserSpaceTcp*` with:
   - [x] ACK race reproduction: delayed ACK arriving after timeout must still complete send.
   - [x] Wrap-around ACK==0 case: `iss=0xFFFF_FFFF -> expectedAck=0`; ACK(0) completes.
   - [x] Out-of-order overlap trimming: scenario 1100.. then 1050.. then 1000.. must not leak window.
