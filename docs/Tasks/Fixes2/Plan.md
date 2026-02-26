@@ -185,9 +185,10 @@ Primary goals:
 - [x] Fix: cap compression input length / reuse buffers / avoid per-packet fixed-size allocations where possible (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
 
 ### 2.10 Queue backpressure + drop policy visibility
-- [ ] Add test: control-plane packets (HELLO/OK/WHOIS/MulticastGather/SYN) are not silently dropped under moderate load (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)
-- [ ] Fix: split control vs data queues and/or switch critical paths away from `DropOldest` (or make drops observable and trigger reconnect) (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)
-- [ ] Add tracing/metrics: record drop counts per queue and surface via `ZeroTierTrace` or injectable logger
+- [x] Add test: control-plane packets (HELLO/OK/WHOIS/MulticastGather/SYN) are not silently dropped under moderate load (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)
+- [x] Fix: split control vs data queues and/or switch critical paths away from `DropOldest` (or make drops observable and trigger reconnect) (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)
+  - Policy: UDP transport receive queue uses backpressure (no in-process `DropOldest`); peer queue drops new items when full and increments drop telemetry.
+- [x] Add tracing/metrics: record drop counts per queue and surface via `ZeroTierTrace` or injectable logger
 
 ---
 

@@ -35,8 +35,8 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 2.5 Direct-endpoint selection ordering/filtering: new tests in `ZTSharp.Tests`
 - [x] 2.9 HELLO flood CPU/alloc bounded: new tests in `ZTSharp.Tests`
 - [x] 2.9 Compression invalid payload allocation bounded: new tests in `ZTSharp.Tests`
-- [ ] 2.10 Control-plane packets not silently dropped: new tests in `ZTSharp.Tests`
-- [ ] 2.10 Drop telemetry surfaced: tests/validation in `ZTSharp.Tests`
+- [x] 2.10 Control-plane packets not silently dropped: new tests in `ZTSharp.Tests`
+- [x] 2.10 Drop telemetry surfaced: tests/validation in `ZTSharp.Tests`
 
 ## Phase 3 - Socket surface + lifecycle
 

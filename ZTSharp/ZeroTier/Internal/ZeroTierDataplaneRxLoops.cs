@@ -15,6 +15,7 @@ internal sealed class ZeroTierDataplaneRxLoops
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
     private readonly Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? _handleRootControlAsync;
+    private readonly Action? _onPeerQueueDrop;
 
     private int _traceRxRemaining = 200;
 
@@ -26,7 +27,8 @@ internal sealed class ZeroTierDataplaneRxLoops
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
         IZeroTierDataplanePeerDatagramProcessor peerDatagrams,
-        Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null)
+        Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null,
+        Action? onPeerQueueDrop = null)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
@@ -42,6 +44,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         _rootClient = rootClient;
         _peerDatagrams = peerDatagrams;
         _handleRootControlAsync = handleRootControlAsync;
+        _onPeerQueueDrop = onPeerQueueDrop;
     }
 
     public async Task DispatcherLoopAsync(ChannelWriter<ZeroTierUdpDatagram> peerWriter, CancellationToken cancellationToken)
@@ -131,7 +134,13 @@ internal sealed class ZeroTierDataplaneRxLoops
 
             if (!peerWriter.TryWrite(datagram))
             {
-                return;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                _onPeerQueueDrop?.Invoke();
+                continue;
             }
         }
     }

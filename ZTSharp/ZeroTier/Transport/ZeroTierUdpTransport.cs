@@ -13,6 +13,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
     private readonly Action<string>? _log;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _receiverLoop;
+    private long _incomingBackpressureCount;
     private bool _disposed;
 
     public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null)
@@ -22,13 +23,15 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
 
         _incoming = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleWriter = true
         });
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
 
     public IPEndPoint LocalEndpoint => UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
+
+    public long IncomingBackpressureCount => Interlocked.Read(ref _incomingBackpressureCount);
 
     public ValueTask<ZeroTierUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
     {
@@ -108,7 +111,22 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
                     UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
                     result.Buffer)))
             {
-                return;
+                try
+                {
+                    var write = _incoming.Writer.WriteAsync(new ZeroTierUdpDatagram(
+                        UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
+                        result.Buffer), token);
+                    if (!write.IsCompletedSuccessfully)
+                    {
+                        Interlocked.Increment(ref _incomingBackpressureCount);
+                    }
+
+                    await write.ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or ChannelClosedException)
+                {
+                    return;
+                }
             }
         }
     }

@@ -26,10 +26,11 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
     {
-        FullMode = BoundedChannelFullMode.DropOldest,
+        FullMode = BoundedChannelFullMode.Wait,
         SingleReader = true,
         SingleWriter = true
     });
+    private long _peerQueueDropCount;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _dispatcherLoop;
     private readonly Task _peerLoop;
@@ -127,7 +128,15 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             _localIdentity.NodeId,
             _rootClient,
             _peerDatagrams,
-            handleRootControlAsync: HandleRootControlPacketAsync);
+            handleRootControlAsync: HandleRootControlPacketAsync,
+            onPeerQueueDrop: () =>
+            {
+                Interlocked.Increment(ref _peerQueueDropCount);
+                if (ZeroTierTrace.Enabled)
+                {
+                    ZeroTierTrace.WriteLine("[zerotier] Drop: peer queue is full.");
+                }
+            });
 
         _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
         _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);
@@ -136,6 +145,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     public NodeId NodeId => _localIdentity.NodeId;
 
     public IPEndPoint LocalUdp => _udp.LocalEndpoint;
+
+    public long PeerQueueDropCount => Interlocked.Read(ref _peerQueueDropCount);
 
     public IZeroTierRoutedIpLink RegisterTcpRoute(NodeId peerNodeId, IPEndPoint localEndpoint, IPEndPoint remoteEndpoint)
     {
