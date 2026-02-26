@@ -244,7 +244,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         Span<byte> payload = stackalloc byte[OsUdpPeerDiscoveryProtocol.PayloadLength];
-        OsUdpPeerDiscoveryProtocol.WritePayload(frameType, nodeId, payload);
+        OsUdpPeerDiscoveryProtocol.WritePayload(frameType, nodeId, networkId, payload);
 
         var frame = ArrayPool<byte>.Shared.Rent(NodeFrameCodec.GetEncodedLength(OsUdpPeerDiscoveryProtocol.PayloadLength));
         try

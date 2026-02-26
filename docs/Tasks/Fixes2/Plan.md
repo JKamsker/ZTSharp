@@ -279,8 +279,9 @@ Primary goals:
 - [x] Fix: add retry-on-collision (or increase range / document constraints) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
 
 ### 6.4 Peer discovery framing collision risk
-- [ ] Add test: payload that matches discovery magic does not get dropped as “control” when it’s actually application data (`ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
-- [ ] Fix: make discovery/control frames unambiguous (e.g., reserved frame type range + versioned header) or scope control frames to a dedicated channel/port
+- [x] Add test: payload that matches discovery magic does not get dropped as “control” when it’s actually application data (`ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
+  - Test: `OsUdpPeerDiscoveryTests.OsUdp_DiscoveryPayloadShape_DoesNotSwallowApplicationPayload`
+- [x] Fix: make discovery/control frames unambiguous (e.g., reserved frame type range + versioned header) or scope control frames to a dedicated channel/port
 
 ### 6.5 Legacy node lifecycle deadlocks + event isolation
 - [ ] Add test: event handler re-entrancy cannot deadlock `StartAsync`/`StopAsync`/`JoinNetworkAsync` (`ZTSharp/Internal/NodeLifecycleService.cs`, `ZTSharp/Internal/NodeEventStream.cs`)

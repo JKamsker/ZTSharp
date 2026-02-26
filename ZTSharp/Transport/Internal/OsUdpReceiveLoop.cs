@@ -57,9 +57,9 @@ internal sealed class OsUdpReceiveLoop
                 continue;
             }
 
-            if (OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
+            if (_enablePeerDiscovery && OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, networkId, out var controlFrameType, out var discoveredNodeId))
             {
-                if (_enablePeerDiscovery && discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
+                if (discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
                 {
                     _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
                     if (_peers.TryGetLocalNodeId(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
