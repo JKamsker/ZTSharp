@@ -26,6 +26,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZeroTierMac _localMac;
     private readonly ConcurrentDictionary<NodeId, ZeroTierDirectEndpointManager> _directEndpoints = new();
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
+    private readonly ZeroTierPeerEchoManager _peerEcho;
 
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
     {
@@ -119,6 +120,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             inlineCom);
         _peerSecurity = new ZeroTierDataplanePeerSecurity(udp, _rootClient, localIdentity);
         _peerPaths = new ZeroTierPeerPhysicalPathTracker(ttl: TimeSpan.FromSeconds(30));
+        _peerEcho = new ZeroTierPeerEchoManager(udp, localIdentity.NodeId, _peerSecurity.GetPeerProtocolVersionOrDefault);
 
         var icmpv6 = new ZeroTierDataplaneIcmpv6Handler(this, _localMac, _localManagedIpsV6, _managedIpToNodeId);
         var ip = new ZeroTierDataplaneIpHandler(
@@ -132,7 +134,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localManagedIpsV4Bytes: _localManagedIpsV4Bytes,
             localManagedIpsV6: _localManagedIpsV6);
         _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip, handleControlAsync: HandlePeerControlPacketAsync);
-        _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets, _peerPaths);
+        _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets, _peerPaths, _peerEcho);
         _rxLoops = new ZeroTierDataplaneRxLoops(
             _udp,
             _rootNodeId,

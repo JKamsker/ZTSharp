@@ -17,7 +17,7 @@ Status legend:
 
 ## P1 — Direct path learning + keepalives
 - [x] Track per-peer physical paths `(LocalSocketId, RemoteEndPoint)` for **hops==0** traffic only (learn/refresh/expire).
-- [ ] Implement `ECHO` + `OK(ECHO)` for keepalives and latency measurement (rate-limited).
+- [x] Implement `ECHO` + `OK(ECHO)` for keepalives and latency measurement (rate-limited).
 - [ ] Parse `OK(HELLO)` for peer protocol version + latency update and store external surface addresses (self-awareness seed).
 
 ## P2 — Direct path sending policy (direct + root fallback)
