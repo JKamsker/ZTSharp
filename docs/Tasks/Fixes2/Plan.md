@@ -280,11 +280,11 @@ Primary goals:
 - [x] Fix: canonicalize endpoints consistently (e.g., map v4-mapped-v6 -> v4) before comparing/storing/selecting
 
 ### 5.3 OS UDP receive-loop resilience
-- [ ] Add test: non-`ConnectionReset` `SocketException` does not kill OS UDP receive loop (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
-- [ ] Fix: catch/log other `SocketException` values and continue (similar to `ZeroTierUdpTransport`)
-- [ ] Fix: ensure `OsUdpNodeTransport.SendFrameAsync` can't be derailed by one bad peer endpoint (catch send exceptions per peer)
-- [ ] Add test: discovery replies do not block the receive loop under backpressure (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
-- [ ] Fix: don't await discovery reply sends inline on the receive loop (enqueue/async with exception capture) (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
+- [x] Add test: non-`ConnectionReset` `SocketException` does not kill OS UDP receive loop (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
+- [x] Fix: catch/log other `SocketException` values and continue (similar to `ZeroTierUdpTransport`)
+- [x] Fix: ensure `OsUdpNodeTransport.SendFrameAsync` can't be derailed by one bad peer endpoint (catch send exceptions per peer)
+- [x] Add test: discovery replies do not block the receive loop under backpressure (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
+- [x] Fix: don't await discovery reply sends inline on the receive loop (enqueue/async with exception capture) (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
 
 ### 5.4 Windows `SIO_UDP_CONNRESET` IOCTL correctness
 - [ ] Validate expected IOCTL input size on Windows and update to a compatible buffer (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)

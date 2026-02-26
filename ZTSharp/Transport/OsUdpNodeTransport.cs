@@ -144,9 +144,20 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                     continue;
                 }
 
-                await _udp
-                    .SendAsync(frame, peer.Value, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await _udp
+                        .SendAsync(frame, peer.Value, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is ObjectDisposedException or SocketException or InvalidOperationException or ArgumentException)
+                {
+                    continue;
+                }
             }
         }
         finally
