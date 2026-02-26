@@ -94,5 +94,5 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 
 ## Phase 7 - Docs + test stability
 
-- [ ] Docs updated: `docs/COMPATIBILITY.md`, `docs/ZEROTIER_STACK.md`, `docs/ZEROTIER_SOCKETS.md`
-- [ ] Flaky delays replaced with deterministic waits: `ZTSharp.Tests/**`
+- [x] Docs updated: `docs/COMPATIBILITY.md`, `docs/ZEROTIER_STACK.md`, `docs/ZEROTIER_SOCKETS.md`
+- [x] Flaky delays replaced with deterministic waits: `ZTSharp.Tests/**`

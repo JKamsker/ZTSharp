@@ -12,9 +12,9 @@ controller-based networks and provide user-space TCP/UDP sockets. The following 
 | Area | Gap |
 |:-----|:----|
 | OS adapter | No virtual network interface -- traffic is in-process only |
-| Dataplane | Root-relayed only; no direct path negotiation or NAT traversal |
+| Dataplane | Data-plane traffic is root-relayed; limited direct-endpoint handling exists (e.g. hole-punch attempts) but there is no full peer path negotiation / NAT traversal optimization yet |
 | Protocol coverage | Focused on join + IP dataplane + TCP/UDP socket MVP |
-| Socket options | No `SocketOptionName` support; accepted sockets lack reliable `RemoteEndPoint` |
+| Socket options | No `SocketOptionName` support (`NoDelay`, `KeepAlive`, etc.); some endpoint metadata differs from OS sockets |
 | TCP performance | No congestion control or high-throughput send pipelines |
 
 ---

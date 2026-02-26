@@ -126,10 +126,12 @@ There is no virtual network interface visible to the operating system.
 
 ### Bind Semantics
 
-- `ZeroTierSocket` binds to one of its managed IPs.
-- `ManagedSocket.BindAsync(IPAddress.Any, port)` maps to the node's first managed IPv4.
-- `ManagedSocket.BindAsync(IPAddress.IPv6Any, port)` maps to the node's first managed IPv6.
-- Port `0` (ephemeral) is **not supported** -- bind to a concrete port.
+- TCP listeners can bind either to a specific managed IP or to a wildcard:
+  - `ZeroTierSocket.ListenTcpAsync(IPAddress.Any, port)` / `ManagedSocket.BindAsync(IPAddress.Any, port)` + `ListenAsync(...)` create a wildcard listener that accepts connections addressed to any of the node's managed IPv4s.
+  - `ZeroTierSocket.ListenTcpAsync(IPAddress.IPv6Any, port)` / `ManagedSocket.BindAsync(IPAddress.IPv6Any, port)` + `ListenAsync(...)` create a wildcard listener that accepts connections addressed to any of the node's managed IPv6s.
+- TCP connect may use `IPAddress.Any` / `IPAddress.IPv6Any` as the local endpoint to mean "choose a managed IP" (the selected local endpoint is returned by APIs that surface it).
+- TCP listen with port `0` is **not supported** (`NotSupportedException`).
+- UDP bind supports port `0` (ephemeral); the bound local port is assigned by the OS and can be read back from the socket.
 
 ### Socket Options
 
@@ -138,13 +140,14 @@ No `Select` or `Poll`.
 
 ### Half-close
 
-The managed TCP stack does not currently support half-close.
-After the peer sends FIN, further writes fail with an `IOException`.
+The managed TCP stack does not currently support half-close:
+
+- `ManagedSocket.Shutdown(SocketShutdown.Send)` and `.Shutdown(SocketShutdown.Receive)` throw `NotSupportedException`.
+- `ManagedSocket.Shutdown(SocketShutdown.Both)` closes the connection.
 
 ### Accepted Connection Metadata
 
-`ManagedSocket.RemoteEndPoint` is currently `null` for accepted sockets.
-The underlying listener hands off a `Stream` without endpoint metadata.
+Accepted sockets populate `ManagedSocket.RemoteEndPoint` (peer IP/port).
 
 ### Performance
 

@@ -378,7 +378,7 @@ Primary goals:
 
 ## Phase 7 - Docs + test stability
 
-- [ ] Update docs to match behavior for direct endpoints / NAT traversal claims (`docs/COMPATIBILITY.md`, `docs/ZEROTIER_STACK.md`)
-- [ ] Update docs to match port-0 semantics (supported where it is supported, and rejected where it is not) (`docs/ZEROTIER_SOCKETS.md`)
-- [ ] Reduce test flakiness: replace `Task.Delay(...)` assertions with observable conditions or deterministic hooks (`ZTSharp.Tests/**`)
-- [ ] Add missing unit tests called out by Fixes2 Tracking (no new E2E dependencies unless necessary)
+- [x] Update docs to match behavior for direct endpoints / NAT traversal claims (`docs/COMPATIBILITY.md`, `docs/ZEROTIER_STACK.md`)
+- [x] Update docs to match port-0 semantics (supported where it is supported, and rejected where it is not) (`docs/ZEROTIER_SOCKETS.md`)
+- [x] Reduce test flakiness: replace `Task.Delay(...)` assertions with observable conditions or deterministic hooks (`ZTSharp.Tests/**`)
+- [x] Add missing unit tests called out by Fixes2 Tracking (no new E2E dependencies unless necessary)

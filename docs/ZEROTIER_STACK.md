@@ -41,8 +41,8 @@ var body = await http.GetStringAsync("http://10.121.15.99:5380/");
 ## Current Limitations
 
 - **No OS adapter** -- traffic is only visible to in-process callers using these APIs.
-- **Root-relayed dataplane** -- no full peer path negotiation or NAT traversal yet.
-- **Incomplete socket options** -- no `NoDelay`, `KeepAlive`, `Poll`, etc.; limited endpoint metadata for accepted sockets.
+- **Root-relayed dataplane** -- limited direct-endpoint handling exists (e.g. hole-punch attempts), but there is no full peer path negotiation / NAT traversal optimization yet.
+- **Incomplete socket options** -- no `NoDelay`, `KeepAlive`, `Poll`, etc.; some endpoint metadata differs from OS sockets.
 - **Performance** -- the user-space TCP stack is correctness-oriented and may be significantly slower for large transfers.
 
 For a detailed comparison with upstream `libzt`, see [Compatibility](COMPATIBILITY.md).
