@@ -68,6 +68,15 @@ internal sealed class ZeroTierPeerBondPolicyEngine
         }
     }
 
+    public void MaintenanceTick()
+    {
+        var now = _nowMs();
+        foreach (var state in _peerStates.Values)
+        {
+            CleanupFlowsIfNeeded(state, now);
+        }
+    }
+
     public static ZeroTierSelectedPeerPath[] GetBroadcastPaths(ZeroTierPeerPhysicalPath[] observedPaths)
     {
         if (observedPaths.Length == 0)

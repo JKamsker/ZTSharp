@@ -33,7 +33,7 @@ Status legend:
 
 ## P4 — Multipath bonding policies
 - [x] Implement bond policy engine with: active-backup, broadcast, balance-rr, balance-xor, balance-aware.
-- [ ] Implement background maintenance loop (tick) for: heartbeats, QoS sends, flow expiration/rebalance, negotiation checks.
+- [x] Implement background maintenance loop (tick) for: heartbeats, QoS sends, flow expiration/rebalance, negotiation checks.
 
 ## P5 — CLI/docs/tests
 - [ ] Add CLI flags to enable/configure multipath and bond policy (enough for manual verification).

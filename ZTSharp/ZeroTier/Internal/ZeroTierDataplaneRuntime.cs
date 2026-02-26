@@ -516,6 +516,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private async Task RunMultipathMaintenanceOnceAsync(CancellationToken cancellationToken)
     {
+        _bondEngine.MaintenanceTick();
+
         var peers = _peerPaths.GetPeersSnapshot();
         if (peers.Length == 0)
         {
@@ -540,6 +542,11 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             for (var p = 0; p < paths.Length; p++)
             {
                 var path = paths[p];
+
+                await _peerEcho
+                    .TrySendEchoProbeAsync(peerNodeId, path.LocalSocketId, path.RemoteEndPoint, key, cancellationToken)
+                    .ConfigureAwait(false);
+
                 if (!_peerQos.TryBuildOutboundPayload(peerNodeId, path.LocalSocketId, path.RemoteEndPoint, out var qosPayload))
                 {
                     continue;
