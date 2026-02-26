@@ -287,12 +287,12 @@ Primary goals:
 - [x] Fix: don't await discovery reply sends inline on the receive loop (enqueue/async with exception capture) (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
 
 ### 5.4 Windows `SIO_UDP_CONNRESET` IOCTL correctness
-- [ ] Validate expected IOCTL input size on Windows and update to a compatible buffer (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)
-- [ ] Add a Windows-only test or diagnostic assertion around IOCTL failure behavior (best-effort, non-fatal)
+- [x] Validate expected IOCTL input size on Windows and update to a compatible buffer (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)
+- [x] Add a Windows-only test or diagnostic assertion around IOCTL failure behavior (best-effort, non-fatal)
 
 ### 5.5 Socket creation resilience (IPv6-only vs dual-mode vs IPv4 fallback)
-- [ ] Add test: when dual-mode bind fails, IPv6-only bind is attempted before falling back to IPv4 (or document the behavior) (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)
-- [ ] Fix: improve fallback strategy and ensure endpoint families remain consistent across registry/sends
+- [x] Add test: when dual-mode bind fails, IPv6-only bind is attempted before falling back to IPv4 (or document the behavior) (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)
+- [x] Fix: improve fallback strategy and ensure endpoint families remain consistent across registry/sends
 
 ### 5.6 OS-UDP peer registry bounds
 - [ ] Add test: peer registry does not grow without bound across node lifetimes and networks (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
