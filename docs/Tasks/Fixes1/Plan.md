@@ -65,7 +65,7 @@ Files
 
 Changes
 
-- [ ] Enforce root confinement: after combining, compute full path and ensure it stays under `_rootPath` (OrdinalIgnoreCase on Windows, Ordinal elsewhere).
+- [x] Enforce root confinement: after combining, compute full path and ensure it stays under `_rootPath` (OrdinalIgnoreCase on Windows, Ordinal elsewhere).
 - [ ] Planet/roots alias semantics:
   - [ ] Reads/Exists/Delete: prefer planet if present, else fallback to roots.
   - [ ] Writes: always write to planet.

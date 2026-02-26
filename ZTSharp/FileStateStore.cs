@@ -7,11 +7,17 @@ namespace ZTSharp;
 public sealed class FileStateStore : IStateStore
 {
     private readonly string _rootPath;
+    private readonly StringComparison _pathComparison;
+    private readonly string _rootPathPrefix;
+    private readonly string _rootPathTrimmed;
 
     public FileStateStore(string rootPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
-        _rootPath = rootPath;
+        _rootPath = Path.GetFullPath(rootPath);
+        _rootPathTrimmed = Path.TrimEndingDirectorySeparator(_rootPath);
+        _rootPathPrefix = _rootPathTrimmed + Path.DirectorySeparatorChar;
+        _pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         Directory.CreateDirectory(_rootPath);
     }
 
@@ -72,6 +78,12 @@ public sealed class FileStateStore : IStateStore
         }
 
         var path = virtualPrefix.Length == 0 ? _rootPath : Path.Combine(_rootPath, virtualPrefix);
+        path = Path.GetFullPath(path);
+        if (!IsUnderRoot(path))
+        {
+            throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
+        }
+
         if (virtualPrefix.Length != 0 && File.Exists(path))
         {
             return Task.FromResult<IReadOnlyList<string>>([virtualPrefix]);
@@ -131,12 +143,29 @@ public sealed class FileStateStore : IStateStore
             normalized = StateStorePlanetAliases.PlanetKey;
         }
 
-        return Path.Combine(_rootPath, normalized);
+        var path = Path.Combine(_rootPath, normalized);
+        path = Path.GetFullPath(path);
+        if (!IsUnderRoot(path))
+        {
+            throw new ArgumentException($"Invalid key path: {key}", nameof(key));
+        }
+
+        return path;
     }
 
     private static string NormalizeKey(string key)
     {
         return StateStoreKeyNormalization.NormalizeKey(key);
+    }
+
+    private bool IsUnderRoot(string fullPath)
+    {
+        if (string.Equals(fullPath, _rootPathTrimmed, _pathComparison))
+        {
+            return true;
+        }
+
+        return fullPath.StartsWith(_rootPathPrefix, _pathComparison);
     }
 
 }
