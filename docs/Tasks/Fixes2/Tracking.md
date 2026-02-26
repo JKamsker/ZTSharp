@@ -24,7 +24,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
 - [x] 2.5 Root endpoint filtering policy: new tests in `ZTSharp.Tests`
 - [x] 2.6 Peer key negative-cache race: new tests in `ZTSharp.Tests`
-- [ ] 2.7 Dispatcher loop shutdown correctness (`ChannelClosedException`): new tests in `ZTSharp.Tests`
+- [x] 2.7 Dispatcher loop shutdown correctness (`ChannelClosedException`): new tests in `ZTSharp.Tests`
 - [ ] 2.8 Hello root correlation: new tests in `ZTSharp.Tests`
 - [ ] 2.8 Netconf chunk overlap/DoS resistance: new tests in `ZTSharp.Tests`
 - [ ] 2.8 Netconf signature policy (legacy unsigned configs): new tests in `ZTSharp.Tests`

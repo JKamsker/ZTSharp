@@ -57,6 +57,10 @@ internal sealed class ZeroTierDataplaneRxLoops
             {
                 return;
             }
+            catch (ChannelClosedException)
+            {
+                return;
+            }
             catch (ObjectDisposedException)
             {
                 return;

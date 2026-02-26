@@ -246,12 +246,18 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
         }
+        catch (ChannelClosedException) when (_cts.IsCancellationRequested)
+        {
+        }
 
         try
         {
             await _peerLoop.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+        }
+        catch (ChannelClosedException) when (_cts.IsCancellationRequested)
         {
         }
 

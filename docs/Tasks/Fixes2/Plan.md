@@ -152,8 +152,8 @@ Primary goals:
 - [x] Fix: prevent negative caching from overriding a non-expired positive key; special-case shutdown cancellation
 
 ### 2.7 Dispatcher/peer-loop shutdown correctness
-- [ ] Add test: disposing UDP transport/runtime cannot fault dispatcher loop with `ChannelClosedException` (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRxLoops.cs`, `ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`)
-- [ ] Fix: handle `ChannelClosedException` in dispatcher loop (treat as shutdown) and ensure runtime dispose swallows expected loop termination
+- [x] Add test: disposing UDP transport/runtime cannot fault dispatcher loop with `ChannelClosedException` (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRxLoops.cs`, `ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`)
+- [x] Fix: handle `ChannelClosedException` in dispatcher loop (treat as shutdown) and ensure runtime dispose swallows expected loop termination
 
 ### 2.8 Join + protocol parsing robustness (Hello/Whois/Netconf/Planet)
 - [ ] Add test: OK(HELLO) is only accepted if `Header.Source` matches the root that was pinged for the referenced `inRePacketId` (`ZTSharp/ZeroTier/Internal/ZeroTierHelloClient.cs`)
