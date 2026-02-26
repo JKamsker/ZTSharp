@@ -10,14 +10,23 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDirectEndpointManager
 {
+    private const int MaxEndpoints = 8;
     private const long HolePunchMinIntervalMs = 5_000;
+    private const long PushDirectPathsCutoffTimeMs = 30_000;
+    private const int PushDirectPathsCutoffLimit = 8;
+
+    private const byte PushDirectPathsFlagForgetPath = 0x01;
+    private const byte PushDirectPathsFlagClusterRedirect = 0x02;
 
     private readonly IZeroTierUdpTransport _udp;
     private readonly IPEndPoint _relayEndpoint;
     private readonly NodeId _remoteNodeId;
+    private readonly object _lock = new();
 
     private IPEndPoint[] _directEndpoints = Array.Empty<IPEndPoint>();
     private readonly ConcurrentDictionary<string, long> _holePunchLastSentMs = new(StringComparer.Ordinal);
+    private long _lastDirectPathPushReceiveMs;
+    private int _directPathPushCutoffCount;
 
     public ZeroTierDirectEndpointManager(IZeroTierUdpTransport udp, IPEndPoint relayEndpoint, NodeId remoteNodeId)
     {
@@ -37,13 +46,16 @@ internal sealed class ZeroTierDirectEndpointManager
 
         if (ZeroTierRendezvousCodec.TryParse(payload.Span, out var rendezvous) && rendezvous.With == _remoteNodeId)
         {
-            var endpoints = ZeroTierDirectEndpointSelection.Normalize([rendezvous.Endpoint], _relayEndpoint, maxEndpoints: 8);
+            var endpoints = ZeroTierDirectEndpointSelection.Normalize([rendezvous.Endpoint], _relayEndpoint, maxEndpoints: MaxEndpoints);
             if (ZeroTierTrace.Enabled)
             {
                 ZeroTierTrace.WriteLine($"[zerotier] RX RENDEZVOUS: {rendezvous.With} endpoints: {ZeroTierDirectEndpointSelection.Format(endpoints)} via {receivedVia}.");
             }
 
-            _directEndpoints = endpoints;
+            lock (_lock)
+            {
+                _directEndpoints = endpoints;
+            }
 
             foreach (var endpoint in endpoints)
             {
@@ -67,7 +79,55 @@ internal sealed class ZeroTierDirectEndpointManager
             return ValueTask.CompletedTask;
         }
 
-        var endpoints = ZeroTierDirectEndpointSelection.Normalize(paths.Select(p => p.Endpoint), _relayEndpoint, maxEndpoints: 8);
+        var now = Environment.TickCount64;
+        if (!RateGatePushDirectPaths(now))
+        {
+            if (ZeroTierTrace.Enabled)
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Drop: PUSH_DIRECT_PATHS rate-gated (peer={_remoteNodeId}).");
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        var forget = new HashSet<string>(StringComparer.Ordinal);
+        var redirect = new List<IPEndPoint>();
+        var add = new List<IPEndPoint>();
+
+        for (var i = 0; i < paths.Length; i++)
+        {
+            var flags = paths[i].Flags;
+            var endpoint = paths[i].Endpoint;
+            var key = FormatEndpointKey(endpoint);
+
+            if ((flags & PushDirectPathsFlagForgetPath) != 0)
+            {
+                forget.Add(key);
+                continue;
+            }
+
+            if ((flags & PushDirectPathsFlagClusterRedirect) != 0)
+            {
+                redirect.Add(endpoint);
+            }
+            else
+            {
+                add.Add(endpoint);
+            }
+        }
+
+        IPEndPoint[] endpoints;
+        lock (_lock)
+        {
+            var merged = _directEndpoints
+                .Where(ep => !forget.Contains(FormatEndpointKey(ep)))
+                .Concat(redirect)
+                .Concat(add);
+
+            endpoints = ZeroTierDirectEndpointSelection.Normalize(merged, _relayEndpoint, maxEndpoints: MaxEndpoints);
+            _directEndpoints = endpoints;
+        }
+
         if (endpoints.Length == 0)
         {
             return ValueTask.CompletedTask;
@@ -78,14 +138,30 @@ internal sealed class ZeroTierDirectEndpointManager
             ZeroTierTrace.WriteLine($"[zerotier] RX PUSH_DIRECT_PATHS: endpoints: {ZeroTierDirectEndpointSelection.Format(endpoints)} (candidates: {paths.Length}).");
         }
 
-        _directEndpoints = endpoints;
-
         foreach (var endpoint in endpoints)
         {
             TrySendHolePunch(endpoint);
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private bool RateGatePushDirectPaths(long nowMs)
+    {
+        lock (_lock)
+        {
+            if (unchecked(nowMs - _lastDirectPathPushReceiveMs) <= PushDirectPathsCutoffTimeMs)
+            {
+                _directPathPushCutoffCount++;
+            }
+            else
+            {
+                _directPathPushCutoffCount = 0;
+            }
+
+            _lastDirectPathPushReceiveMs = nowMs;
+            return _directPathPushCutoffCount < PushDirectPathsCutoffLimit;
+        }
     }
 
     private void TrySendHolePunch(IPEndPoint endpoint)
@@ -151,5 +227,16 @@ internal sealed class ZeroTierDirectEndpointManager
                 return true;
             }
         }
+    }
+
+    private static string FormatEndpointKey(IPEndPoint endpoint)
+    {
+        var address = endpoint.Address;
+        if (address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
+        return $"{address}:{endpoint.Port}";
     }
 }
