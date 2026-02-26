@@ -279,6 +279,68 @@ public sealed class UserSpaceTcpClientIoTests
     }
 
     [Fact]
+    public async Task ReadAsync_DropsSegmentsWithInvalidChecksum()
+    {
+        await using var link = new InspectableIpv4Link();
+        var localIp = IPAddress.Parse("10.0.0.1");
+        var remoteIp = IPAddress.Parse("10.0.0.2");
+        const ushort remotePort = 80;
+        const ushort localPort = 50000;
+
+        await using var client = new UserSpaceTcpClient(link, localIp, remoteIp, remotePort, localPort: localPort, mss: 1200);
+
+        var connectTask = client.ConnectAsync();
+
+        var syn = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(Ipv4Codec.TryParse(syn.Span, out _, out _, out _, out var synPayload));
+        Assert.True(TcpCodec.TryParse(synPayload, out _, out _, out var synSeq, out _, out _, out _, out _));
+
+        var synAckTcp = TcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: 1000,
+            acknowledgmentNumber: unchecked(synSeq + 1),
+            flags: TcpCodec.Flags.Syn | TcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, synAckTcp, identification: 1));
+
+        await connectTask.WaitAsync(TimeSpan.FromSeconds(2));
+        _ = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)); // final ACK
+
+        var clientSeq = unchecked(synSeq + 1);
+        var serverSeqStart = 1001u;
+
+        var helloTcp = TcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: serverSeqStart,
+            acknowledgmentNumber: clientSeq,
+            flags: TcpCodec.Flags.Ack | TcpCodec.Flags.Psh,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: "hello"u8);
+
+        var corruptedHelloTcp = (byte[])helloTcp.Clone();
+        corruptedHelloTcp[corruptedHelloTcp.Length - 1] ^= 0x01;
+
+        link.Incoming.Writer.TryWrite(Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, corruptedHelloTcp, identification: 2));
+        link.Incoming.Writer.TryWrite(Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, helloTcp, identification: 3));
+
+        var buffer = new byte[5];
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var read = await UserSpaceTcpTestHelpers.ReadExactAsync(client, buffer, buffer.Length, cts.Token);
+        Assert.Equal(buffer.Length, read);
+        Assert.Equal("hello", System.Text.Encoding.ASCII.GetString(buffer));
+    }
+
+    [Fact]
     public async Task ReadAsync_SendsWindowUpdate_WhenReceiveWindowOpens()
     {
         await using var link = new InspectableIpv4Link();

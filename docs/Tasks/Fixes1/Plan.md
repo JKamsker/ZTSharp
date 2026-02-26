@@ -190,7 +190,7 @@ Add/extend:
   - [x] Wrap-around ACK==0 case: `iss=0xFFFF_FFFF -> expectedAck=0`; ACK(0) completes.
   - [x] Out-of-order overlap trimming: scenario 1100.. then 1050.. then 1000.. must not leak window.
   - [x] Error propagation: RST causes `ReadAsync` to throw after drain, not return 0.
-  - [ ] Checksum validation: flip one bit in segment -> dropped.
+  - [x] Checksum validation: flip one bit in segment -> dropped.
   - [ ] MSS negotiation: peer advertises MSS 536 -> outbound chunks never exceed 536.
 
 Acceptance: all TCP tests stable under stress; no deadlocks; window recovers; no spurious timeouts.
