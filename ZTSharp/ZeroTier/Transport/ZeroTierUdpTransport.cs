@@ -1,13 +1,13 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
+using ZTSharp.Transport.Internal;
+using ZTSharp.ZeroTier.Internal;
 
 namespace ZTSharp.ZeroTier.Transport;
 
 internal sealed class ZeroTierUdpTransport : IAsyncDisposable
 {
-    private const int WindowsSioUdpConnReset = unchecked((int)0x9800000C);
-
     private readonly UdpClient _udp;
     private readonly Channel<ZeroTierUdpDatagram> _incoming;
     private readonly Action<string>? _log;
@@ -18,41 +18,17 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
     public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null)
     {
         _log = log;
-        _udp = CreateSocket(localPort, enableIpv6);
+        _udp = OsUdpSocketFactory.Create(localPort, enableIpv6, Log);
 
-        if (OperatingSystem.IsWindows())
+        _incoming = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
         {
-            try
-            {
-                _udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, [0], null);
-            }
-            catch (SocketException)
-            {
-                Log("Failed to disable UDP connection reset handling (SocketException).");
-            }
-            catch (PlatformNotSupportedException)
-            {
-                Log("Failed to disable UDP connection reset handling (PlatformNotSupportedException).");
-            }
-            catch (NotSupportedException)
-            {
-                Log("Failed to disable UDP connection reset handling (NotSupportedException).");
-            }
-            catch (ObjectDisposedException)
-            {
-                Log("Failed to disable UDP connection reset handling (ObjectDisposedException).");
-            }
-            catch (InvalidOperationException)
-            {
-                Log("Failed to disable UDP connection reset handling (InvalidOperationException).");
-            }
-        }
-
-        _incoming = Channel.CreateUnbounded<ZeroTierUdpDatagram>();
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleWriter = true
+        });
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
 
-    public IPEndPoint LocalEndpoint => NormalizeEndpointForLocalDelivery((IPEndPoint)_udp.Client.LocalEndPoint!);
+    public IPEndPoint LocalEndpoint => UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
 
     public ValueTask<ZeroTierUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
     {
@@ -64,24 +40,10 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
-        }
-
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
-
-        try
-        {
-            return await _incoming.Reader.ReadAsync(timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"UDP receive timed out after {timeout}.");
-        }
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "UDP receive", _incoming.Reader.ReadAsync, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public Task SendAsync(IPEndPoint remoteEndpoint, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
@@ -108,10 +70,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
         {
             await _receiverLoop.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (ObjectDisposedException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
     }
@@ -126,11 +85,7 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             {
                 result = await _udp.ReceiveAsync(token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (ObjectDisposedException)
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
             {
                 return;
             }
@@ -150,73 +105,12 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             }
 
             if (!_incoming.Writer.TryWrite(new ZeroTierUdpDatagram(
-                    NormalizeEndpointForRemoteDelivery(result.RemoteEndPoint),
+                    UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
                     result.Buffer)))
             {
                 return;
             }
         }
-    }
-
-    private static UdpClient CreateSocket(int localPort, bool enableIpv6)
-    {
-        if (!enableIpv6)
-        {
-            var udp4 = new UdpClient(AddressFamily.InterNetwork);
-            udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-            return udp4;
-        }
-
-        try
-        {
-            var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
-            udp6.Client.DualMode = true;
-            udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
-            return udp6;
-        }
-        catch (SocketException)
-        {
-        }
-        catch (PlatformNotSupportedException)
-        {
-        }
-        catch (NotSupportedException)
-        {
-        }
-
-        var udpFallback = new UdpClient(AddressFamily.InterNetwork);
-        udpFallback.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-        return udpFallback;
-    }
-
-    private static IPEndPoint NormalizeEndpointForLocalDelivery(IPEndPoint endpoint)
-    {
-        if (endpoint.Address.Equals(IPAddress.Any))
-        {
-            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
-        }
-
-        if (endpoint.Address.Equals(IPAddress.IPv6Any))
-        {
-            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
-        }
-
-        return endpoint;
-    }
-
-    private static IPEndPoint NormalizeEndpointForRemoteDelivery(IPEndPoint endpoint)
-    {
-        if (endpoint.Address.Equals(IPAddress.Any))
-        {
-            return new IPEndPoint(IPAddress.Loopback, endpoint.Port);
-        }
-
-        if (endpoint.Address.Equals(IPAddress.IPv6Any))
-        {
-            return new IPEndPoint(IPAddress.IPv6Loopback, endpoint.Port);
-        }
-
-        return endpoint;
     }
 
     private void Log(string message)

@@ -7,10 +7,6 @@ namespace ZTSharp;
 /// </summary>
 public sealed class MemoryStateStore : IStateStore
 {
-    private static readonly string[] _planetAliases = ["planet", "roots"];
-    private static readonly string _planetAlias = _planetAliases[0];
-    private static readonly string _rootsAlias = _planetAliases[1];
-
     private readonly ConcurrentDictionary<string, byte[]> _storage = new(StringComparer.Ordinal);
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -49,31 +45,33 @@ public sealed class MemoryStateStore : IStateStore
     public Task<IReadOnlyList<string>> ListAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var normalizedPrefix = NormalizePrefix(prefix);
+        var normalizedPrefix = StateStorePrefixNormalization.NormalizeForList(prefix);
+        var normalizedPrefixWithSlash = normalizedPrefix.Length == 0 ? string.Empty : normalizedPrefix + "/";
         var keys = new List<string>();
         foreach (var key in _storage.Keys)
         {
-            if (key.StartsWith(normalizedPrefix, StringComparison.Ordinal))
+            if (normalizedPrefixWithSlash.Length == 0 ||
+                string.Equals(key, normalizedPrefix, StringComparison.Ordinal) ||
+                key.StartsWith(normalizedPrefixWithSlash, StringComparison.Ordinal))
             {
                 keys.Add(key);
             }
         }
 
-        if (normalizedPrefix.Length == 0)
+        if (normalizedPrefix.Length == 0 && _storage.ContainsKey(StateStorePlanetAliases.PlanetKey))
         {
-            var hasRootsAlias = false;
-            for (var i = 0; i < keys.Count; i++)
+            var comparer = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+
+            if (!keys.Contains(StateStorePlanetAliases.PlanetKey, comparer))
             {
-                if (string.Equals(keys[i], _rootsAlias, StringComparison.Ordinal))
-                {
-                    hasRootsAlias = true;
-                    break;
-                }
+                keys.Add(StateStorePlanetAliases.PlanetKey);
             }
 
-            if (_storage.ContainsKey(_planetAlias) && !hasRootsAlias)
+            if (!keys.Contains(StateStorePlanetAliases.RootsKey, comparer))
             {
-                keys.Add(_rootsAlias);
+                keys.Add(StateStorePlanetAliases.RootsKey);
             }
         }
 
@@ -86,25 +84,12 @@ public sealed class MemoryStateStore : IStateStore
         return Task.CompletedTask;
     }
 
-    private static string NormalizePrefix(string prefix)
-    {
-        return string.IsNullOrWhiteSpace(prefix) ? string.Empty : prefix.Replace('\\', '/');
-    }
-
     private static string NormalizeKey(string key)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        var normalized = key.Replace('\\', '/').TrimStart('/');
-        var parts = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Any(part => part == "." || part == ".."))
+        var normalized = StateStoreKeyNormalization.NormalizeKey(key);
+        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
         {
-            throw new ArgumentException($"Invalid key path: {key}", nameof(key));
-        }
-
-        normalized = string.Join('/', parts);
-        if (_planetAliases.Contains(normalized, StringComparer.OrdinalIgnoreCase))
-        {
-            normalized = _planetAlias;
+            normalized = StateStorePlanetAliases.PlanetKey;
         }
 
         return normalized;

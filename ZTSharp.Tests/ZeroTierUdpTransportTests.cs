@@ -16,13 +16,12 @@ public sealed class ZeroTierUdpTransportTests
         await a.SendAsync(b.LocalEndpoint, ping, cts.Token);
 
         var receivedPing = await b.ReceiveAsync(cts.Token);
-        Assert.True(receivedPing.Payload.Span.SequenceEqual(ping));
+        Assert.True(receivedPing.Payload.AsSpan().SequenceEqual(ping));
 
         var pong = "pong"u8.ToArray();
         await b.SendAsync(receivedPing.RemoteEndPoint, pong, cts.Token);
 
         var receivedPong = await a.ReceiveAsync(cts.Token);
-        Assert.True(receivedPong.Payload.Span.SequenceEqual(pong));
+        Assert.True(receivedPong.Payload.AsSpan().SequenceEqual(pong));
     }
 }
-

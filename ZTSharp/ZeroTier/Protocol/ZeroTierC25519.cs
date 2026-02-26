@@ -39,7 +39,21 @@ internal static class ZeroTierC25519
         agreement.Init(priv);
 
         var rawKey = new byte[DhKeyLength];
-        agreement.CalculateAgreement(pub, rawKey, 0);
+        try
+        {
+            agreement.CalculateAgreement(pub, rawKey, 0);
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new CryptographicException("X25519 agreement failed.", ex);
+        }
+
+        Span<byte> zero = stackalloc byte[DhKeyLength];
+        zero.Clear();
+        if (CryptographicOperations.FixedTimeEquals(rawKey, zero))
+        {
+            throw new CryptographicException("X25519 shared secret is all-zero.");
+        }
 
         var digest = SHA512.HashData(rawKey);
         var i = 0;

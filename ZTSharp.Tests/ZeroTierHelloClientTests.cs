@@ -106,7 +106,7 @@ public sealed class ZeroTierHelloClientTests
         ZeroTierIdentity localIdentity)
     {
         var helloDatagram = await transport.ReceiveAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-        var helloPacketBytes = helloDatagram.Payload.ToArray();
+        var helloPacketBytes = helloDatagram.Payload;
         Assert.True(ZeroTierPacketCodec.TryDecode(helloPacketBytes, out var hello));
         Assert.Equal(ZeroTierVerb.Hello, hello.Header.Verb);
 

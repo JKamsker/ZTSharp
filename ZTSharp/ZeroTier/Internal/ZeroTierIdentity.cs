@@ -1,4 +1,5 @@
 using System.Globalization;
+using ZTSharp.ZeroTier.Protocol;
 
 namespace ZTSharp.ZeroTier.Internal;
 
@@ -71,7 +72,7 @@ internal sealed class ZeroTierIdentity
     {
         // Format matches ZeroTierOne Identity::toString:
         // <hex10 address>:0:<hex public key 64 bytes>[:<hex private key 64 bytes>]
-        var addressText = NodeId.Value.ToString("x10", CultureInfo.InvariantCulture);
+        var addressText = NodeId.ToHexString();
         var publicHex = ToLowerHex(PublicKey);
         if (!includePrivate || PrivateKey is null)
         {
@@ -172,15 +173,6 @@ internal sealed class ZeroTierIdentity
 
     private static void WriteAddressBytes(ulong address, Span<byte> destination)
     {
-        if (destination.Length < 5)
-        {
-            throw new ArgumentException("Destination must be at least 5 bytes.", nameof(destination));
-        }
-
-        destination[0] = (byte)((address >> 32) & 0xFF);
-        destination[1] = (byte)((address >> 24) & 0xFF);
-        destination[2] = (byte)((address >> 16) & 0xFF);
-        destination[3] = (byte)((address >> 8) & 0xFF);
-        destination[4] = (byte)(address & 0xFF);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(destination, address);
     }
 }

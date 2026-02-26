@@ -157,6 +157,8 @@ await node.SendFrameAsync(networkId, new byte[] { 1, 2, 3 });
 
 `ZtUdpClient` multiplexes datagrams by a managed port pair inside the node-to-node transport.
 
+As of UDP frame version 2, datagrams include the destination node id to prevent `SendToAsync` from being delivered to every peer. Version 1 frames are still accepted for back-compat and are treated as broadcast.
+
 ```csharp
 using ZTSharp.Sockets;
 

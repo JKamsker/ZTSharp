@@ -1,6 +1,4 @@
-using System.Buffers.Binary;
 using System.Net;
-using System.Security.Cryptography;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
 
@@ -24,16 +22,6 @@ internal static class ZeroTierHelloClient
     internal const byte AdvertisedMinorVersion = 12;
     internal const ushort AdvertisedRevision = 0;
 
-    private const int OkIndexInReVerb = ZeroTierPacketHeader.Length;
-    private const int OkIndexInRePacketId = OkIndexInReVerb + 1;
-    private const int OkIndexPayload = OkIndexInRePacketId + 8;
-
-    private const int HelloOkIndexTimestamp = OkIndexPayload;
-    private const int HelloOkIndexProtocolVersion = HelloOkIndexTimestamp + 8;
-    private const int HelloOkIndexMajorVersion = HelloOkIndexProtocolVersion + 1;
-    private const int HelloOkIndexMinorVersion = HelloOkIndexMajorVersion + 1;
-    private const int HelloOkIndexRevision = HelloOkIndexMinorVersion + 1;
-
     public static async Task<ZeroTierHelloOk> HelloRootsAsync(
         ZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
@@ -54,13 +42,7 @@ internal static class ZeroTierHelloClient
             throw new InvalidOperationException("Local identity must contain a private key.");
         }
 
-        var rootKeys = new Dictionary<NodeId, byte[]>(planet.Roots.Count);
-        foreach (var root in planet.Roots)
-        {
-            var key = new byte[48];
-            ZeroTierC25519.Agree(localIdentity.PrivateKey, root.Identity.PublicKey, key);
-            rootKeys[root.Identity.NodeId] = key;
-        }
+        var rootKeys = ZeroTierRootKeyDerivation.BuildRootKeys(localIdentity, planet);
 
         var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var pending = new Dictionary<ulong, NodeId>(capacity: planet.Roots.Count);
@@ -74,13 +56,17 @@ internal static class ZeroTierHelloClient
 
             foreach (var endpoint in root.StableEndpoints)
             {
-                var packet = BuildHelloPacket(
+                var packet = ZeroTierHelloPacketBuilder.BuildPacket(
                     localIdentity,
                     destination: root.Identity.NodeId,
                     physicalDestination: endpoint,
                     planet,
                     helloTimestamp,
                     key,
+                    advertisedProtocolVersion: AdvertisedProtocolVersion,
+                    advertisedMajorVersion: AdvertisedMajorVersion,
+                    advertisedMinorVersion: AdvertisedMinorVersion,
+                    advertisedRevision: AdvertisedRevision,
                     out var packetId);
 
                 try
@@ -101,97 +87,48 @@ internal static class ZeroTierHelloClient
             throw new InvalidOperationException("Failed to send HELLO to any root endpoints (no reachable network?).");
         }
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "HELLO response", WaitForHelloOkAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        while (true)
+        async ValueTask<ZeroTierHelloOk> WaitForHelloOkAsync(CancellationToken token)
         {
-            ZeroTierUdpDatagram datagram;
-            try
+            while (true)
             {
-                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
-            }
+                var datagram = await udp.ReceiveAsync(token).ConfigureAwait(false);
 
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
-            {
-                continue;
-            }
-
-            if (!rootKeys.TryGetValue(packet.Header.Source, out var key))
-            {
-                continue;
-            }
-
-            if (!ZeroTierPacketCrypto.Dearmor(packetBytes, key))
-            {
-                continue;
-            }
-
-            if ((packetBytes[27] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-            {
-                if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                var packetBytes = datagram.Payload;
+                if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var packet))
                 {
                     continue;
                 }
 
-                packetBytes = uncompressed;
-            }
-
-            var verb = (ZeroTierVerb)(packetBytes[27] & 0x1F);
-            if (verb != ZeroTierVerb.Ok)
-            {
-                continue;
-            }
-
-            if (packetBytes.Length < HelloOkIndexRevision + 2)
-            {
-                continue;
-            }
-
-            var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-            if (inReVerb != ZeroTierVerb.Hello)
-            {
-                continue;
-            }
-
-            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (!pending.TryGetValue(inRePacketId, out var rootNodeId))
-            {
-                continue;
-            }
-
-            var timestampEcho = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(HelloOkIndexTimestamp, 8));
-            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
-            var remoteMajor = packetBytes[HelloOkIndexMajorVersion];
-            var remoteMinor = packetBytes[HelloOkIndexMinorVersion];
-            var remoteRevision = BinaryPrimitives.ReadUInt16BigEndian(packetBytes.AsSpan(HelloOkIndexRevision, 2));
-
-            var ptr = HelloOkIndexRevision + 2;
-            IPEndPoint? surface = null;
-            if (ptr < packetBytes.Length)
-            {
-                if (ZeroTierInetAddressCodec.TryDeserialize(packetBytes.AsSpan(ptr), out var parsed, out var consumed))
+                if (!rootKeys.TryGetValue(packet.Header.Source, out var key))
                 {
-                    surface = parsed;
-                    ptr += consumed;
+                    continue;
                 }
-            }
 
-            return new ZeroTierHelloOk(
-                RootNodeId: rootNodeId,
-                RootEndpoint: datagram.RemoteEndPoint,
-                HelloPacketId: inRePacketId,
-                HelloTimestampEcho: timestampEcho,
-                RemoteProtocolVersion: remoteProto,
-                RemoteMajorVersion: remoteMajor,
-                RemoteMinorVersion: remoteMinor,
-                RemoteRevision: remoteRevision,
-                ExternalSurfaceAddress: surface);
+                if (!ZeroTierHelloOkParser.TryParse(packetBytes, key, out var ok))
+                {
+                    continue;
+                }
+
+                if (!pending.TryGetValue(ok.InRePacketId, out var rootNodeId))
+                {
+                    continue;
+                }
+
+                return new ZeroTierHelloOk(
+                    RootNodeId: rootNodeId,
+                    RootEndpoint: datagram.RemoteEndPoint,
+                    HelloPacketId: ok.InRePacketId,
+                    HelloTimestampEcho: ok.TimestampEcho,
+                    RemoteProtocolVersion: ok.RemoteProtocolVersion,
+                    RemoteMajorVersion: ok.RemoteMajorVersion,
+                    RemoteMinorVersion: ok.RemoteMinorVersion,
+                    RemoteRevision: ok.RemoteRevision,
+                    ExternalSurfaceAddress: ok.ExternalSurfaceAddress);
+            }
         }
     }
 
@@ -222,83 +159,54 @@ internal static class ZeroTierHelloClient
 
         var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        var packet = BuildHelloPacket(
+        var packet = ZeroTierHelloPacketBuilder.BuildPacket(
             localIdentity,
             destination,
             physicalDestination,
             planet,
             helloTimestamp,
             sharedKey,
+            advertisedProtocolVersion: AdvertisedProtocolVersion,
+            advertisedMajorVersion: AdvertisedMajorVersion,
+            advertisedMinorVersion: AdvertisedMinorVersion,
+            advertisedRevision: AdvertisedRevision,
             out var packetId);
 
         await udp.SendAsync(physicalDestination, packet, cancellationToken).ConfigureAwait(false);
 
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "HELLO response", WaitForHelloOkAsync, cancellationToken)
+            .ConfigureAwait(false);
 
-        while (true)
+        async ValueTask<byte> WaitForHelloOkAsync(CancellationToken token)
         {
-            ZeroTierUdpDatagram datagram;
-            try
+            while (true)
             {
-                datagram = await udp.ReceiveAsync(timeoutCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException($"Timed out waiting for HELLO response after {timeout}.");
-            }
+                var datagram = await udp.ReceiveAsync(token).ConfigureAwait(false);
 
-            var packetBytes = datagram.Payload.ToArray();
-            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
-            {
-                continue;
-            }
-
-            if (decoded.Header.Source != destination)
-            {
-                continue;
-            }
-
-            if (!ZeroTierPacketCrypto.Dearmor(packetBytes, sharedKey))
-            {
-                continue;
-            }
-
-            if ((packetBytes[27] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
-            {
-                if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                var packetBytes = datagram.Payload;
+                if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
                 {
                     continue;
                 }
 
-                packetBytes = uncompressed;
-            }
+                if (decoded.Header.Source != destination)
+                {
+                    continue;
+                }
 
-            var verb = (ZeroTierVerb)(packetBytes[27] & 0x1F);
-            if (verb != ZeroTierVerb.Ok)
-            {
-                continue;
-            }
+                if (!ZeroTierHelloOkParser.TryParse(packetBytes, sharedKey, out var ok))
+                {
+                    continue;
+                }
 
-            if (packetBytes.Length < HelloOkIndexRevision + 2)
-            {
-                continue;
-            }
+                if (ok.InRePacketId != packetId)
+                {
+                    continue;
+                }
 
-            var inReVerb = (ZeroTierVerb)(packetBytes[OkIndexInReVerb] & 0x1F);
-            if (inReVerb != ZeroTierVerb.Hello)
-            {
-                continue;
+                return ok.RemoteProtocolVersion;
             }
-
-            var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-            if (inRePacketId != packetId)
-            {
-                continue;
-            }
-
-            var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
-            return remoteProto;
         }
     }
 
@@ -319,110 +227,4 @@ internal static class ZeroTierHelloClient
         }
     }
 
-    private static byte[] BuildHelloPacket(
-        ZeroTierIdentity localIdentity,
-        NodeId destination,
-        IPEndPoint physicalDestination,
-        ZeroTierWorld planet,
-        ulong timestamp,
-        ReadOnlySpan<byte> sharedKey,
-        out ulong packetId)
-    {
-        var iv = new byte[8];
-        RandomNumberGenerator.Fill(iv);
-        packetId = BinaryPrimitives.ReadUInt64BigEndian(iv);
-
-        var identityLength = ZeroTierIdentityCodec.GetSerializedLength(localIdentity, includePrivate: false);
-        var inetLength = ZeroTierInetAddressCodec.GetSerializedLength(physicalDestination);
-
-        var payloadFixedLength =
-            1 + // protocol version
-            1 + // major
-            1 + // minor
-            2 + // revision
-            8 + // timestamp
-            identityLength +
-            inetLength +
-            8 + // planet world id
-            8; // planet timestamp
-
-        var startCryptedPortionAtPayloadOffset = payloadFixedLength;
-
-        var moonListLength = 2; // u16 count (0)
-        var payload = new byte[payloadFixedLength + moonListLength];
-
-        var p = 0;
-        payload[p++] = AdvertisedProtocolVersion;
-        payload[p++] = AdvertisedMajorVersion;
-        payload[p++] = AdvertisedMinorVersion;
-        BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(p, 2), AdvertisedRevision);
-        p += 2;
-        BinaryPrimitives.WriteUInt64BigEndian(payload.AsSpan(p, 8), timestamp);
-        p += 8;
-
-        p += ZeroTierIdentityCodec.Serialize(localIdentity, payload.AsSpan(p), includePrivate: false);
-        p += ZeroTierInetAddressCodec.Serialize(physicalDestination, payload.AsSpan(p));
-
-        BinaryPrimitives.WriteUInt64BigEndian(payload.AsSpan(p, 8), planet.Id);
-        p += 8;
-        BinaryPrimitives.WriteUInt64BigEndian(payload.AsSpan(p, 8), planet.Timestamp);
-        p += 8;
-
-        // Encrypted portion: moon count (0) (no moons advertised).
-        BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(p, 2), 0);
-        p += 2;
-
-        if (p != payload.Length)
-        {
-            throw new InvalidOperationException("HELLO payload size mismatch.");
-        }
-
-        var header = new ZeroTierPacketHeader(
-            PacketId: packetId,
-            Destination: destination,
-            Source: localIdentity.NodeId,
-            Flags: 0,
-            Mac: 0,
-            VerbRaw: (byte)ZeroTierVerb.Hello);
-
-        var packet = ZeroTierPacketCodec.Encode(header, payload);
-
-        // cryptField() encrypts the remainder of HELLO (moon list), using the raw key and IV with low 3 bits masked off.
-        CryptHelloRemainder(packet, sharedKey, ZeroTierPacketHeader.Length + startCryptedPortionAtPayloadOffset);
-
-        // HELLO is not fully encrypted, but must be MACed.
-        ZeroTierPacketCrypto.Armor(packet, sharedKey, encryptPayload: false);
-
-        return packet;
-    }
-
-    private static void CryptHelloRemainder(byte[] packet, ReadOnlySpan<byte> key, int start)
-    {
-        if (key.Length < 32)
-        {
-            throw new ArgumentException("Key must be at least 32 bytes.", nameof(key));
-        }
-
-        if ((uint)start > (uint)packet.Length)
-        {
-            throw new ArgumentOutOfRangeException(nameof(start));
-        }
-
-        var length = packet.Length - start;
-        if (length == 0)
-        {
-            return;
-        }
-
-        Span<byte> iv = stackalloc byte[8];
-        packet.AsSpan(0, 8).CopyTo(iv);
-        iv[7] &= 0xF8;
-
-        var keystream = new byte[length];
-        ZeroTierSalsa20.GenerateKeyStream12(key.Slice(0, 32), iv, keystream);
-        for (var i = 0; i < length; i++)
-        {
-            packet[start + i] ^= keystream[i];
-        }
-    }
 }

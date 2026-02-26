@@ -9,13 +9,13 @@ public sealed class VirtualNetworkInterfaceTests
 
         await using var node1 = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore()
         });
 
         await using var node2 = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore()
         });
 
@@ -38,4 +38,3 @@ public sealed class VirtualNetworkInterfaceTests
         Assert.True(packet.Payload.Span.SequenceEqual(payload));
     }
 }
-

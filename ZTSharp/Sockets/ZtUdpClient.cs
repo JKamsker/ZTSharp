@@ -9,15 +9,17 @@ namespace ZTSharp.Sockets;
 /// </summary>
 public sealed class ZtUdpClient : IAsyncDisposable
 {
-    private const byte UdpFrameVersion = 1;
+    private const byte UdpFrameVersion1 = 1;
+    private const byte UdpFrameVersion2 = 2;
     private const byte UdpFrameType = 1;
+    private const int UdpFrameHeaderV1Length = 6;
+    private const int UdpFrameHeaderV2Length = 14;
+
     private readonly Channel<UdpDatagram> _incoming;
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
-    private readonly ulong _localNodeId;
     private readonly ulong _networkId;
     private readonly int _localPort;
     private readonly Node _node;
-    private readonly bool _ownsConnection;
 
     private ulong _connectedNode;
     private int _connectedPort;
@@ -33,9 +35,13 @@ public sealed class ZtUdpClient : IAsyncDisposable
         _node = node;
         _networkId = networkId;
         _localPort = localPort;
-        _localNodeId = node.NodeId.Value;
-        _incoming = Channel.CreateUnbounded<UdpDatagram>();
-        _ownsConnection = ownsConnection;
+        _incoming = Channel.CreateBounded<UdpDatagram>(new BoundedChannelOptions(capacity: 1024)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite,
+            SingleWriter = true,
+            SingleReader = true
+        });
+        _ = ownsConnection;
 
         _node.RawFrameReceived += OnFrameReceived;
     }
@@ -82,14 +88,14 @@ public sealed class ZtUdpClient : IAsyncDisposable
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var frameLength = 6 + datagram.Length;
+        var frameLength = UdpFrameHeaderV2Length + datagram.Length;
         var usesPool = _node.LocalTransportEndpoint is not null;
         var frame = usesPool
             ? ArrayPool<byte>.Shared.Rent(frameLength)
             : new byte[frameLength];
         try
         {
-            BuildFrame(_localPort, remotePort, datagram.Span, frame.AsSpan(0, frameLength));
+            BuildFrameV2(_localPort, remotePort, remoteNodeId, datagram.Span, frame.AsSpan(0, frameLength));
             await _node.SendFrameAsync(_networkId, frame.AsMemory(0, frameLength), cancellationToken).ConfigureAwait(false);
             return datagram.Length;
         }
@@ -121,10 +127,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
             }
 
             _disposed = true;
-            if (_ownsConnection)
-            {
-                _node.RawFrameReceived -= OnFrameReceived;
-            }
+            _node.RawFrameReceived -= OnFrameReceived;
 
             _incoming.Writer.TryComplete();
         }
@@ -137,17 +140,34 @@ public sealed class ZtUdpClient : IAsyncDisposable
 
     private void OnFrameReceived(in RawFrame frame)
     {
-        if (_disposed || frame.NetworkId != _networkId || frame.Payload.Length < 6)
+        if (_disposed || frame.NetworkId != _networkId || frame.Payload.Length < UdpFrameHeaderV1Length)
         {
             return;
         }
 
-        if (!_tryParseUdpFrame(frame.Payload.Span, out var sourcePort, out var destinationPort, out var payloadOffset, out var payloadLength))
+        if (!TryParseUdpFrame(frame.Payload.Span, out var version, out var sourcePort, out var destinationPort, out var destinationNodeId, out var payloadOffset, out var payloadLength))
         {
             return;
         }
 
-        if (destinationPort != _localPort || frame.SourceNodeId == _localNodeId)
+        if (destinationPort != _localPort)
+        {
+            return;
+        }
+
+        var localNodeId = _node.NodeId.Value;
+        if (frame.SourceNodeId == localNodeId)
+        {
+            return;
+        }
+
+        if (version == UdpFrameVersion2 && (localNodeId == 0 || destinationNodeId != localNodeId))
+        {
+            return;
+        }
+
+        if (_connectedNode != 0 && _connectedPort != 0 &&
+            (frame.SourceNodeId != _connectedNode || sourcePort != _connectedPort))
         {
             return;
         }
@@ -160,40 +180,67 @@ public sealed class ZtUdpClient : IAsyncDisposable
             DateTimeOffset.UtcNow));
     }
 
-    private static bool _tryParseUdpFrame(
+    private static bool TryParseUdpFrame(
         ReadOnlySpan<byte> payload,
+        out byte version,
         out int sourcePort,
         out int destinationPort,
+        out ulong destinationNodeId,
         out int dataOffset,
         out int dataLength)
     {
+        version = 0;
         sourcePort = 0;
         destinationPort = 0;
+        destinationNodeId = 0;
         dataOffset = 0;
         dataLength = 0;
 
-        if (payload.Length < 6 || payload[0] != UdpFrameVersion || payload[1] != UdpFrameType)
+        if (payload.Length < UdpFrameHeaderV1Length || payload[1] != UdpFrameType)
         {
             return false;
         }
 
-        sourcePort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
-        destinationPort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
-        dataOffset = 6;
-        dataLength = payload.Length - 6;
-        return true;
+        version = payload[0];
+        if (version == UdpFrameVersion1)
+        {
+            sourcePort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
+            destinationPort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
+            dataOffset = UdpFrameHeaderV1Length;
+            dataLength = payload.Length - UdpFrameHeaderV1Length;
+            return true;
+        }
+
+        if (version == UdpFrameVersion2)
+        {
+            if (payload.Length < UdpFrameHeaderV2Length)
+            {
+                return false;
+            }
+
+            sourcePort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(2, 2));
+            destinationPort = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(4, 2));
+            destinationNodeId = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(6, 8));
+            dataOffset = UdpFrameHeaderV2Length;
+            dataLength = payload.Length - UdpFrameHeaderV2Length;
+            return true;
+        }
+
+        return false;
     }
 
-    private static void BuildFrame(
+    private static void BuildFrameV2(
         int sourcePort,
         int destinationPort,
+        ulong destinationNodeId,
         ReadOnlySpan<byte> payload,
         Span<byte> destination)
     {
-        destination[0] = UdpFrameVersion;
+        destination[0] = UdpFrameVersion2;
         destination[1] = UdpFrameType;
         BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(2, 2), (ushort)sourcePort);
         BinaryPrimitives.WriteUInt16BigEndian(destination.Slice(4, 2), (ushort)destinationPort);
-        payload.CopyTo(destination.Slice(6));
+        BinaryPrimitives.WriteUInt64LittleEndian(destination.Slice(6, 8), destinationNodeId);
+        payload.CopyTo(destination.Slice(UdpFrameHeaderV2Length));
     }
 }

@@ -22,7 +22,7 @@ internal static class ZeroTierRendezvousCodec
         }
 
         var flags = payload[0];
-        var with = new NodeId(ReadUInt40(payload.Slice(1, AddressLength)));
+        var with = new NodeId(ZeroTierBinaryPrimitives.ReadUInt40BigEndian(payload.Slice(1, AddressLength)));
         var port = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(1 + AddressLength, 2));
         var addrLen = payload[1 + AddressLength + 2];
 
@@ -43,19 +43,4 @@ internal static class ZeroTierRendezvousCodec
         return true;
     }
 
-    private static ulong ReadUInt40(ReadOnlySpan<byte> value)
-    {
-        if (value.Length < AddressLength)
-        {
-            throw new ArgumentException("Address must be at least 5 bytes.", nameof(value));
-        }
-
-        return
-            ((ulong)value[0] << 32) |
-            ((ulong)value[1] << 24) |
-            ((ulong)value[2] << 16) |
-            ((ulong)value[3] << 8) |
-            value[4];
-    }
 }
-

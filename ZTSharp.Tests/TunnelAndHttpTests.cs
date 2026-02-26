@@ -38,7 +38,7 @@ public sealed class TunnelAndHttpTests
                 using var stream = tcp.GetStream();
 
                 var buffer = new byte[4];
-                var read = await ReadExactAsync(stream, buffer, buffer.Length, cts.Token).ConfigureAwait(false);
+                var read = await StreamTestHelpers.ReadExactAsync(stream, buffer, buffer.Length, cts.Token).ConfigureAwait(false);
                 if (read == 0)
                 {
                     return;
@@ -63,7 +63,7 @@ public sealed class TunnelAndHttpTests
             await stream.WriteAsync("ping"u8.ToArray(), cts.Token);
 
             var reply = new byte[4];
-            var replyRead = await ReadExactAsync(stream, reply, reply.Length, cts.Token);
+            var replyRead = await StreamTestHelpers.ReadExactAsync(stream, reply, reply.Length, cts.Token);
             Assert.Equal(reply.Length, replyRead);
             Assert.True(reply.AsSpan().SequenceEqual("ping"u8));
 
@@ -73,7 +73,7 @@ public sealed class TunnelAndHttpTests
             {
                 await Task.WhenAll(echoTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
             }
         }
@@ -143,7 +143,7 @@ public sealed class TunnelAndHttpTests
             var forwarderTask = Task.Run(() => forwarder.RunAsync(cts.Token), cts.Token);
 
             using var httpClient = new HttpClient(new OverlayHttpMessageHandler(clientNode, networkId));
-            var uri = new Uri($"http://{serverNode.NodeId}:28080/hello");
+            var uri = new Uri($"http://{serverNode.NodeId.ToHexString()}:28080/hello");
             var text = await httpClient.GetStringAsync(uri, cts.Token);
             Assert.Equal("zt-ok", text);
 
@@ -153,7 +153,7 @@ public sealed class TunnelAndHttpTests
             {
                 await Task.WhenAll(httpTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
             }
         }
@@ -240,7 +240,7 @@ public sealed class TunnelAndHttpTests
             {
                 await Task.WhenAll(httpTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {
             }
         }
@@ -254,27 +254,9 @@ public sealed class TunnelAndHttpTests
     {
         return new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore()
         });
     }
 
-    private static async Task<int> ReadExactAsync(Stream stream, byte[] buffer, int length, CancellationToken cancellationToken)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await stream.ReadAsync(
-                buffer.AsMemory(readTotal, length - readTotal),
-                cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
-    }
 }

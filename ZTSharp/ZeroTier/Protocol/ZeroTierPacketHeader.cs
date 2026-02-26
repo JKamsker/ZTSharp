@@ -10,6 +10,14 @@ internal readonly record struct ZeroTierPacketHeader(
 {
     public const int Length = 28;
 
+    public const int IndexPacketId = 0;
+    public const int IndexDestination = 8;
+    public const int IndexSource = 13;
+    public const int IndexFlags = 18;
+    public const int IndexMac = 19;
+    public const int IndexVerb = 27;
+    public const int IndexPayload = Length;
+
     public const byte FlagEncryptedDeprecated = 0x80;
     public const byte FlagFragmented = 0x40;
     public const byte VerbFlagCompressed = 0x80;
@@ -24,4 +32,3 @@ internal readonly record struct ZeroTierPacketHeader(
 
     public bool IsCompressed => (VerbRaw & VerbFlagCompressed) != 0;
 }
-

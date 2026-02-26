@@ -127,6 +127,11 @@ internal static class NetworkAddressCodec
             var prefix = encoded[offset + 1];
             if (tag == TagV4)
             {
+                if (prefix > 32)
+                {
+                    return false;
+                }
+
                 if (offset + EntryV4Length > encoded.Length)
                 {
                     return false;
@@ -139,6 +144,11 @@ internal static class NetworkAddressCodec
 
             if (tag == TagV6)
             {
+                if (prefix > 128)
+                {
+                    return false;
+                }
+
                 if (offset + EntryV6Length > encoded.Length)
                 {
                     return false;
@@ -163,4 +173,3 @@ internal static class NetworkAddressCodec
         return true;
     }
 }
-

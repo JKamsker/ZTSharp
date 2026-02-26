@@ -74,6 +74,11 @@ internal static class PeerEndpointCodec
         }
 
         var port = BinaryPrimitives.ReadUInt16BigEndian(encoded.Slice(2, 2));
+        if (port == 0)
+        {
+            return false;
+        }
+
         var tag = encoded[1];
 
         if (tag == TagV4)
@@ -108,4 +113,3 @@ internal static class PeerEndpointCodec
         return false;
     }
 }
-

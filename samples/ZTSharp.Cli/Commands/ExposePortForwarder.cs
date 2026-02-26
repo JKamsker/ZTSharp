@@ -1,0 +1,84 @@
+using System.Net.Sockets;
+using System.Threading.Channels;
+using ZTSharp.ZeroTier;
+
+namespace ZTSharp.Cli.Commands;
+
+internal sealed class ExposePortForwarder
+{
+    private readonly string _targetHost;
+    private readonly int _targetPort;
+
+    public ExposePortForwarder(string targetHost, int targetPort)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetHost);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetPort);
+
+        _targetHost = targetHost;
+        _targetPort = targetPort;
+    }
+
+    public async Task RunAcceptorAsync(ZeroTierTcpListener listener, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            Stream accepted;
+            try
+            {
+                accepted = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (ChannelClosedException)
+            {
+                break;
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+
+            try
+            {
+                await HandleConnectionAsync(accepted, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex) when (ex is SocketException or IOException or ObjectDisposedException)
+            {
+            }
+        }
+    }
+
+    private async Task HandleConnectionAsync(Stream accepted, CancellationToken cancellationToken)
+    {
+        var overlayStream = accepted;
+        using var localClient = new TcpClient { NoDelay = true };
+
+        try
+        {
+            await localClient.ConnectAsync(_targetHost, _targetPort, cancellationToken).ConfigureAwait(false);
+            var localStream = localClient.GetStream();
+            try
+            {
+                await StreamUtilities.BridgeDuplexAsync(overlayStream, localStream, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await localStream.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            await overlayStream.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+}

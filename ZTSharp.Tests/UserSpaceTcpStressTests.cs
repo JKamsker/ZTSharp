@@ -38,7 +38,7 @@ public sealed class UserSpaceTcpStressTests
                 await client.WriteAsync(payload, cts.Token);
 
                 var received = new byte[payloadBytes];
-                var read = await ReadExactAsync(server, received, payloadBytes, cts.Token);
+                var read = await UserSpaceTcpTestHelpers.ReadExactAsync(server, received, payloadBytes, cts.Token);
                 Assert.Equal(payloadBytes, read);
                 Assert.Equal(payload, received);
 
@@ -47,7 +47,7 @@ public sealed class UserSpaceTcpStressTests
                 await server.WriteAsync(reply, cts.Token);
 
                 var replyReceived = new byte[reply.Length];
-                var replyRead = await ReadExactAsync(client, replyReceived, replyReceived.Length, cts.Token);
+                var replyRead = await UserSpaceTcpTestHelpers.ReadExactAsync(client, replyReceived, replyReceived.Length, cts.Token);
                 Assert.Equal(reply.Length, replyRead);
                 Assert.Equal(reply, replyReceived);
             })
@@ -80,11 +80,11 @@ public sealed class UserSpaceTcpStressTests
         FillPattern(payload);
 
         var received = new byte[payload.Length];
-        var readTask = ReadExactAsync(server, received, received.Length, cts.Token);
+        var readTask = UserSpaceTcpTestHelpers.ReadExactAsync(server, received, received.Length, cts.Token);
         var writeTask = client.WriteAsync(payload, cts.Token).AsTask();
 
         var received2 = new byte[payload.Length];
-        var readTask2 = ReadExactAsync(client, received2, received2.Length, cts.Token);
+        var readTask2 = UserSpaceTcpTestHelpers.ReadExactAsync(client, received2, received2.Length, cts.Token);
         var writeTask2 = server.WriteAsync(payload, cts.Token).AsTask();
 
         await Task.WhenAll(writeTask, readTask);
@@ -123,7 +123,7 @@ public sealed class UserSpaceTcpStressTests
         Assert.False(writeTask.IsCompleted, "Writer should block when the remote receive window reaches 0.");
 
         var received = new byte[payload.Length];
-        var readTask = ReadExactAsync(server, received, received.Length, cts.Token);
+        var readTask = UserSpaceTcpTestHelpers.ReadExactAsync(server, received, received.Length, cts.Token);
 
         await Task.WhenAll(writeTask, readTask);
         Assert.Equal(payload, received);
@@ -135,40 +135,6 @@ public sealed class UserSpaceTcpStressTests
         {
             buffer[i] = (byte)i;
         }
-    }
-
-    private static async Task<int> ReadExactAsync(UserSpaceTcpClient client, byte[] buffer, int length, CancellationToken cancellationToken)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await client.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken);
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
-    }
-
-    private static async Task<int> ReadExactAsync(UserSpaceTcpServerConnection server, byte[] buffer, int length, CancellationToken cancellationToken)
-    {
-        var readTotal = 0;
-        while (readTotal < length)
-        {
-            var read = await server.ReadAsync(buffer.AsMemory(readTotal, length - readTotal), cancellationToken);
-            if (read == 0)
-            {
-                return readTotal;
-            }
-
-            readTotal += read;
-        }
-
-        return readTotal;
     }
 
     private sealed class InMemoryIpv4Link : IUserSpaceIpLink

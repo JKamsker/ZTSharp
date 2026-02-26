@@ -9,13 +9,13 @@ public sealed class OsUdpPeerPersistenceTests
     public async Task OsUdp_PeerDirectory_IsPersisted_AndRecovered_OnRestart()
     {
         var networkId = 0xBEEF1235UL;
-        var nodeARoot = Path.Combine(Path.GetTempPath(), "zt-node-peer-persist-" + Guid.NewGuid());
+        var nodeARoot = TestTempPaths.CreateGuidSuffixed("zt-node-peer-persist-");
 
         try
         {
             await using var nodeB = new Node(new NodeOptions
             {
-                StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+                StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
                 StateStore = new MemoryStateStore(),
                 TransportMode = TransportMode.OsUdp,
                 EnablePeerDiscovery = false
@@ -80,4 +80,3 @@ public sealed class OsUdpPeerPersistenceTests
         }
     }
 }
-

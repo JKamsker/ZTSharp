@@ -1,0 +1,155 @@
+using System.Net;
+using System.Threading.Channels;
+using ZTSharp.ZeroTier.Protocol;
+using ZTSharp.ZeroTier.Transport;
+
+namespace ZTSharp.ZeroTier.Internal;
+
+internal sealed class ZeroTierDataplaneRxLoops
+{
+    private readonly ZeroTierUdpTransport _udp;
+    private readonly NodeId _rootNodeId;
+    private readonly IPEndPoint _rootEndpoint;
+    private readonly byte[] _rootKey;
+    private readonly NodeId _localNodeId;
+    private readonly ZeroTierDataplaneRootClient _rootClient;
+    private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
+
+    private int _traceRxRemaining = 200;
+
+    public ZeroTierDataplaneRxLoops(
+        ZeroTierUdpTransport udp,
+        NodeId rootNodeId,
+        IPEndPoint rootEndpoint,
+        byte[] rootKey,
+        NodeId localNodeId,
+        ZeroTierDataplaneRootClient rootClient,
+        IZeroTierDataplanePeerDatagramProcessor peerDatagrams)
+    {
+        ArgumentNullException.ThrowIfNull(udp);
+        ArgumentNullException.ThrowIfNull(rootEndpoint);
+        ArgumentNullException.ThrowIfNull(rootKey);
+        ArgumentNullException.ThrowIfNull(rootClient);
+        ArgumentNullException.ThrowIfNull(peerDatagrams);
+
+        _udp = udp;
+        _rootNodeId = rootNodeId;
+        _rootEndpoint = rootEndpoint;
+        _rootKey = rootKey;
+        _localNodeId = localNodeId;
+        _rootClient = rootClient;
+        _peerDatagrams = peerDatagrams;
+    }
+
+    public async Task DispatcherLoopAsync(ChannelWriter<ZeroTierUdpDatagram> peerWriter, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            ZeroTierUdpDatagram datagram;
+            try
+            {
+                datagram = await _udp.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
+                continue;
+            }
+
+            var packetBytes = datagram.Payload;
+            if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
+            {
+                continue;
+            }
+
+            if (decoded.Header.Destination != _localNodeId)
+            {
+                continue;
+            }
+
+            if (ZeroTierTrace.Enabled && _traceRxRemaining > 0)
+            {
+                _traceRxRemaining--;
+                ZeroTierTrace.WriteLine(
+                    $"[zerotier] RX raw: src={decoded.Header.Source} dst={decoded.Header.Destination} cipher={decoded.Header.CipherSuite} flags=0x{decoded.Header.Flags:x2} verbRaw=0x{decoded.Header.VerbRaw:x2} via {datagram.RemoteEndPoint}.");
+            }
+
+            if (decoded.Header.Source == _rootNodeId)
+            {
+                if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+                {
+                    continue;
+                }
+
+                if (!ZeroTierPacketCrypto.Dearmor(packetBytes, _rootKey))
+                {
+                    continue;
+                }
+
+                if ((packetBytes[ZeroTierPacketHeader.IndexVerb] & ZeroTierPacketHeader.VerbFlagCompressed) != 0)
+                {
+                    if (!ZeroTierPacketCompression.TryUncompress(packetBytes, out var uncompressed))
+                    {
+                        continue;
+                    }
+
+                    packetBytes = uncompressed;
+                }
+
+                var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
+                var payload = packetBytes.AsSpan(ZeroTierPacketHeader.IndexPayload);
+
+                _rootClient.TryDispatchResponse(verb, payload);
+                continue;
+            }
+
+            if (!peerWriter.TryWrite(datagram))
+            {
+                return;
+            }
+        }
+    }
+
+    public async Task PeerLoopAsync(ChannelReader<ZeroTierUdpDatagram> peerReader, CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            ZeroTierUdpDatagram datagram;
+            try
+            {
+                datagram = await peerReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (ChannelClosedException)
+            {
+                return;
+            }
+
+            try
+            {
+                await _peerDatagrams.ProcessAsync(datagram, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // Peer loop must survive per-packet faults.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Peer loop processor fault: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
+}

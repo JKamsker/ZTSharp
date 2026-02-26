@@ -37,7 +37,7 @@ internal static class ZeroTierIdentityCodec
             throw new ArgumentException($"Destination must be at least {requiredLength} bytes.", nameof(destination));
         }
 
-        WriteUInt40(destination.Slice(0, AddressLength), identity.NodeId.Value);
+        ZeroTierBinaryPrimitives.WriteUInt40BigEndian(destination.Slice(0, AddressLength), identity.NodeId.Value);
         destination[AddressLength] = IdentityTypeC25519;
         identity.PublicKey.CopyTo(destination.Slice(AddressLength + 1, ZeroTierIdentity.PublicKeyLength));
 
@@ -60,7 +60,7 @@ internal static class ZeroTierIdentityCodec
             throw new FormatException("Identity data is too short.");
         }
 
-        var nodeId = ReadUInt40(data.Slice(0, AddressLength));
+        var nodeId = ZeroTierBinaryPrimitives.ReadUInt40BigEndian(data.Slice(0, AddressLength));
         var type = data[AddressLength];
         if (type != IdentityTypeC25519)
         {
@@ -92,33 +92,4 @@ internal static class ZeroTierIdentityCodec
         return new ZeroTierIdentity(new NodeId(nodeId), publicKey, privateKey);
     }
 
-    private static ulong ReadUInt40(ReadOnlySpan<byte> data)
-    {
-        if (data.Length < AddressLength)
-        {
-            throw new ArgumentException("Address must be at least 5 bytes.", nameof(data));
-        }
-
-        return
-            ((ulong)data[0] << 32) |
-            ((ulong)data[1] << 24) |
-            ((ulong)data[2] << 16) |
-            ((ulong)data[3] << 8) |
-            data[4];
-    }
-
-    private static void WriteUInt40(Span<byte> destination, ulong value)
-    {
-        if (destination.Length < AddressLength)
-        {
-            throw new ArgumentException("Destination must be at least 5 bytes.", nameof(destination));
-        }
-
-        destination[0] = (byte)((value >> 32) & 0xFF);
-        destination[1] = (byte)((value >> 24) & 0xFF);
-        destination[2] = (byte)((value >> 16) & 0xFF);
-        destination[3] = (byte)((value >> 8) & 0xFF);
-        destination[4] = (byte)(value & 0xFF);
-    }
 }
-

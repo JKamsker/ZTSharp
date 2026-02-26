@@ -1,28 +1,9 @@
-using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using ZTSharp.Sockets;
 
 namespace ZTSharp.Http;
-
-public sealed class OverlayHttpMessageHandlerOptions
-{
-    /// <summary>
-    /// Optional mapping of IP addresses to node ids.
-    /// </summary>
-    public OverlayAddressBook? AddressBook { get; init; }
-
-    /// <summary>
-    /// Optional custom resolver for mapping the request host to a node id.
-    /// When provided, it is consulted before <see cref="AddressBook"/> and the built-in node id parsing.
-    /// </summary>
-    public Func<string, ulong?>? HostResolver { get; init; }
-
-    public int LocalPortStart { get; init; } = 49152;
-
-    public int LocalPortEnd { get; init; } = 65535;
-}
 
 /// <summary>
 /// HttpClient handler that dials overlay TCP streams (not OS TCP) using <see cref="OverlayTcpClient"/>.
@@ -67,20 +48,21 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Reliability",
         "CA2000:Dispose objects before losing scope",
-        Justification = "Ownership transfers to OwnedZtOverlayStream, which disposes the client when the HTTP connection is closed.")]
+        Justification = "Ownership transfers to OwnedOverlayTcpClientStream, which disposes the client when the HTTP connection is closed.")]
     private async ValueTask<Stream> ConnectOverlayAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         var endpoint = context.DnsEndPoint;
-        var remoteNodeId = ResolveNodeId(endpoint.Host);
+        var host = GetOriginalHostOrFallback(context, endpoint.Host);
+        var remoteNodeId = ResolveNodeId(host);
         var localPort = AllocateLocalPort();
 
         var client = new OverlayTcpClient(_node, _networkId, localPort);
         try
         {
             await client.ConnectAsync(remoteNodeId, endpoint.Port, cancellationToken).ConfigureAwait(false);
-            return new OwnedZtOverlayStream(client);
+            return new OwnedOverlayTcpClientStream(client);
         }
         catch
         {
@@ -125,173 +107,100 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
             }
         }
 
-        if (TryParseNodeId(host, out var parsed))
+        if (NodeId.TryParse(host, out var parsed))
         {
-            return parsed;
+            return parsed.Value;
         }
 
         throw new HttpRequestException($"Could not resolve host '{host}' to a managed node id.");
     }
 
-    private static bool TryParseNodeId(string value, out ulong nodeId)
+    private static string GetOriginalHostOrFallback(SocketsHttpConnectionContext context, string fallbackHost)
     {
-        nodeId = 0;
-        if (string.IsNullOrWhiteSpace(value))
+        if (context.InitialRequestMessage?.RequestUri is not { } requestUri)
+        {
+            return fallbackHost;
+        }
+
+        var original = requestUri.OriginalString;
+        if (string.IsNullOrWhiteSpace(original))
+        {
+            return fallbackHost;
+        }
+
+        return TryGetHostFromUriString(original, out var host) ? host : fallbackHost;
+    }
+
+    private static bool TryGetHostFromUriString(string uri, out string host)
+    {
+        host = string.Empty;
+
+        var schemeTerminator = uri.IndexOf("://", StringComparison.Ordinal);
+        if (schemeTerminator < 0)
         {
             return false;
         }
 
-        var trimmed = value.AsSpan().Trim();
-        var hasHexPrefix = false;
-        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            hasHexPrefix = true;
-            trimmed = trimmed.Slice(2);
-        }
-
-        if (trimmed.Length == 0)
+        var authorityStart = schemeTerminator + 3;
+        if (authorityStart >= uri.Length)
         {
             return false;
         }
 
-        var treatAsHex = hasHexPrefix || trimmed.Length == 10 || ContainsHexLetters(trimmed);
-        if (treatAsHex)
+        var authorityEnd = uri.Length;
+        for (var i = authorityStart; i < uri.Length; i++)
         {
-            if (!IsHex(trimmed))
+            var c = uri[i];
+            if (c is '/' or '?' or '#')
+            {
+                authorityEnd = i;
+                break;
+            }
+        }
+
+        var hostStart = authorityStart;
+        for (var i = authorityStart; i < authorityEnd; i++)
+        {
+            if (uri[i] == '@')
+            {
+                hostStart = i + 1;
+                break;
+            }
+        }
+
+        if (hostStart >= authorityEnd)
+        {
+            return false;
+        }
+
+        if (uri[hostStart] == '[')
+        {
+            var closingBracket = uri.IndexOf(']', hostStart + 1);
+            if (closingBracket < 0 || closingBracket >= authorityEnd)
             {
                 return false;
             }
 
-            if (!ulong.TryParse(trimmed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var parsed) ||
-                parsed == 0 ||
-                parsed > NodeId.MaxValue)
-            {
-                return false;
-            }
-
-            nodeId = parsed;
-            return true;
+            host = uri.Substring(hostStart + 1, closingBracket - hostStart - 1);
+            return host.Length != 0;
         }
 
-        if (!ulong.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedDec) ||
-            parsedDec == 0 ||
-            parsedDec > NodeId.MaxValue)
+        var hostEnd = authorityEnd;
+        for (var i = hostStart; i < authorityEnd; i++)
+        {
+            if (uri[i] == ':')
+            {
+                hostEnd = i;
+                break;
+            }
+        }
+
+        if (hostEnd <= hostStart)
         {
             return false;
         }
 
-        nodeId = parsedDec;
-        return true;
-    }
-
-    private static bool ContainsHexLetters(ReadOnlySpan<char> value)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (c is >= 'a' and <= 'f' or >= 'A' and <= 'F')
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsHex(ReadOnlySpan<char> value)
-    {
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (c is >= '0' and <= '9')
-            {
-                continue;
-            }
-
-            if (c is >= 'a' and <= 'f')
-            {
-                continue;
-            }
-
-            if (c is >= 'A' and <= 'F')
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private sealed class OwnedZtOverlayStream : Stream
-    {
-        private readonly OverlayTcpClient _client;
-        private readonly Stream _inner;
-        private int _disposed;
-
-        public OwnedZtOverlayStream(OverlayTcpClient client)
-        {
-            _client = client;
-            _inner = client.GetStream();
-        }
-
-        public override bool CanRead => _inner.CanRead;
-        public override bool CanSeek => _inner.CanSeek;
-        public override bool CanWrite => _inner.CanWrite;
-        public override long Length => _inner.Length;
-        public override long Position { get => _inner.Position; set => _inner.Position = value; }
-
-        public override void Flush() => _inner.Flush();
-
-        public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
-
-        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            => _inner.ReadAsync(buffer, offset, count, cancellationToken);
-
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-            => _inner.ReadAsync(buffer, cancellationToken);
-
-        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
-
-        public override void SetLength(long value) => _inner.SetLength(value);
-
-        public override void Write(byte[] buffer, int offset, int count) => _inner.Write(buffer, offset, count);
-
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            => _inner.WriteAsync(buffer, offset, count, cancellationToken);
-
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-            => _inner.WriteAsync(buffer, cancellationToken);
-
-        protected override void Dispose(bool disposing)
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) == 1)
-            {
-                return;
-            }
-
-            if (disposing)
-            {
-                _inner.Dispose();
-                _client.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            }
-
-            base.Dispose(disposing);
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            if (Interlocked.Exchange(ref _disposed, 1) == 1)
-            {
-                return;
-            }
-
-            await _inner.DisposeAsync().ConfigureAwait(false);
-            await _client.DisposeAsync().ConfigureAwait(false);
-            await base.DisposeAsync().ConfigureAwait(false);
-        }
+        host = uri.Substring(hostStart, hostEnd - hostStart);
+        return host.Length != 0;
     }
 }

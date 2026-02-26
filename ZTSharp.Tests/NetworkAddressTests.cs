@@ -11,7 +11,7 @@ public sealed class NetworkAddressTests
 
         await using var node = new Node(new NodeOptions
         {
-            StateRootPath = Path.Combine(Path.GetTempPath(), "zt-node-" + Guid.NewGuid()),
+            StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore()
         });
 
@@ -32,4 +32,3 @@ public sealed class NetworkAddressTests
         Assert.Equal(expected[1], actual[1]);
     }
 }
-

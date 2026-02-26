@@ -171,24 +171,10 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be greater than zero.");
-        }
-
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(timeout);
-
-        try
-        {
-            return await ReceiveFromAsync(buffer, timeoutCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new TimeoutException($"UDP receive timed out after {timeout}.");
-        }
+        return await ZeroTierTimeouts
+            .RunWithTimeoutAsync(timeout, operation: "UDP receive", ct => ReceiveFromAsync(buffer, ct), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()

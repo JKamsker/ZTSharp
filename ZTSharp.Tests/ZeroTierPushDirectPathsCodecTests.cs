@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net;
 using ZTSharp.ZeroTier.Protocol;
 
@@ -47,5 +48,35 @@ public sealed class ZeroTierPushDirectPathsCodecTests
         Assert.Equal(IPAddress.Parse("2001:db8::1"), paths[0].Endpoint.Address);
         Assert.Equal(80, paths[0].Endpoint.Port);
     }
-}
 
+    [Fact]
+    public void TryParse_Clamps_PathCount()
+    {
+        var count = ZeroTierProtocolLimits.MaxPushedDirectPaths + 1;
+        var payload = new byte[2 + (count * 11)];
+        BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(0, 2), (ushort)count);
+
+        var ptr = 2;
+        for (var i = 0; i < count; i++)
+        {
+            payload[ptr++] = 0x00; // flags
+            payload[ptr++] = 0x00;
+            payload[ptr++] = 0x00; // extLen
+            payload[ptr++] = 0x04; // addrType (v4)
+            payload[ptr++] = 0x06; // addrLen (4 + 2)
+            payload[ptr++] = 10;
+            payload[ptr++] = 0;
+            payload[ptr++] = 0;
+            payload[ptr++] = (byte)(i + 1);
+            BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(ptr, 2), 5000);
+            ptr += 2;
+        }
+
+        Assert.True(ZeroTierPushDirectPathsCodec.TryParse(payload, out var paths));
+        Assert.Equal(ZeroTierProtocolLimits.MaxPushedDirectPaths, paths.Length);
+        var expectedLast = new IPEndPoint(
+            new IPAddress(new byte[] { 10, 0, 0, (byte)ZeroTierProtocolLimits.MaxPushedDirectPaths }),
+            5000);
+        Assert.Equal(expectedLast, paths[^1].Endpoint);
+    }
+}
