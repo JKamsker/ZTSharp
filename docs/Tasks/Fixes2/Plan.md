@@ -296,8 +296,9 @@ Primary goals:
 - [x] Fix: either mark loop as faulted and reject further work, or keep running and isolate callback failures deterministically
 
 ### 6.9 ActiveTaskSet shutdown semantics
-- [ ] Add test: one tracked task fault does not crash shutdown paths unexpectedly (`ZTSharp/Internal/ActiveTaskSet.cs`)
-- [ ] Fix: decide whether `WaitAsync` should aggregate/ignore faults during shutdown; ensure all call sites use a cancellation token and don’t wedge (`ZTSharp/Internal/ActiveTaskSet.cs`, call sites in listeners/forwarders)
+- [x] Add test: one tracked task fault does not crash shutdown paths unexpectedly (`ZTSharp/Internal/ActiveTaskSet.cs`)
+  - Test: `ActiveTaskSetTests.WaitAsync_DoesNotThrow_WhenTrackedTaskFaults`
+- [x] Fix: decide whether `WaitAsync` should aggregate/ignore faults during shutdown; ensure all call sites use a cancellation token and don’t wedge (`ZTSharp/Internal/ActiveTaskSet.cs`, call sites in listeners/forwarders)
 
 ### 6.10 Overlay TCP background task safety
 - [ ] Add test: overlay SYN-ACK send failures don’t produce unobserved task exceptions (`ZTSharp/Sockets/OverlayTcpListener.cs`)

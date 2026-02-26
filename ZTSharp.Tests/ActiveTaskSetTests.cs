@@ -24,5 +24,19 @@ public sealed class ActiveTaskSetTests
         second.TrySetResult(true);
         await waitTask.WaitAsync(TimeSpan.FromSeconds(1));
     }
+
+    [Fact]
+    public async Task WaitAsync_DoesNotThrow_WhenTrackedTaskFaults()
+    {
+        var set = new ActiveTaskSet();
+
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        set.Track(tcs.Task);
+
+        tcs.TrySetException(new InvalidOperationException("boom"));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await set.WaitAsync(cts.Token);
+    }
 }
 

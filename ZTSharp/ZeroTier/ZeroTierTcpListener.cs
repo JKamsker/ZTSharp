@@ -80,7 +80,14 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
 
-            await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _connectionTasks.WaitAsync(drainCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (drainCts.IsCancellationRequested)
+            {
+            }
         }
         finally
         {
