@@ -291,8 +291,9 @@ Primary goals:
 - [ ] Fix: isolate/guard user callback exceptions and surface them via events/logging without faulting node (`ZTSharp/Internal/NodeEventStream.cs`)
 
 ### 6.6 EventLoop “poisoned” state
-- [ ] Add test: one callback throwing does not permanently stop subsequent work without surfacing failure (`ZTSharp/EventLoop.cs`)
-- [ ] Fix: either mark loop as faulted and reject further work, or keep running and isolate callback failures deterministically
+- [x] Add test: one callback throwing does not permanently stop subsequent work without surfacing failure (`ZTSharp/EventLoop.cs`)
+  - Test: `EventLoopTests.EventLoop_CallbackThrow_FaultsLoopAndSurfacesFailureOnPost`
+- [x] Fix: either mark loop as faulted and reject further work, or keep running and isolate callback failures deterministically
 
 ### 6.9 ActiveTaskSet shutdown semantics
 - [ ] Add test: one tracked task fault does not crash shutdown paths unexpectedly (`ZTSharp/Internal/ActiveTaskSet.cs`)

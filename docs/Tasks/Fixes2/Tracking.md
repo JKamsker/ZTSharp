@@ -84,7 +84,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 6.5 Node lifecycle event re-entrancy deadlock prevented: new tests in `ZTSharp.Tests`
 - [ ] 6.5 Node dispose cannot wedge indefinitely: new tests in `ZTSharp.Tests`
 - [ ] 6.5 User event handler exceptions isolated: new tests in `ZTSharp.Tests`
-- [ ] 6.6 EventLoop not poisoned by callback throw: new tests in `ZTSharp.Tests`
+- [x] 6.6 EventLoop not poisoned by callback throw: new tests in `ZTSharp.Tests`
 - [ ] 6.7 LeaveNetwork ordering avoids transport subscription leak: new tests in `ZTSharp.Tests`
 - [ ] 6.8 InMemory transport cancellation token doesn’t break fanout: new tests in `ZTSharp.Tests`
 - [ ] 6.9 ActiveTaskSet shutdown semantics: new tests in `ZTSharp.Tests`
