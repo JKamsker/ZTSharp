@@ -163,9 +163,9 @@ File
 
 Changes
 
-- [ ] Add `TryParseWithChecksum(...)` overload taking `(srcIp, dstIp, segment)`:
-  - [ ] Validates checksum without allocations (treat checksum field as zero or validate ones'-complement rule).
-- [ ] In receive loops, use the validating parse so corrupted segments are dropped.
+- [x] Add `TryParseWithChecksum(...)` overload taking `(srcIp, dstIp, segment)`:
+  - [x] Validates checksum without allocations (treat checksum field as zero or validate ones'-complement rule).
+- [x] In receive loops, use the validating parse so corrupted segments are dropped.
 
 ### 2.4 MSS negotiation
 

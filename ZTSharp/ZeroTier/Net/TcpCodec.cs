@@ -121,6 +121,33 @@ internal static class TcpCodec
         return true;
     }
 
+    public static bool TryParseWithChecksum(
+        IPAddress sourceIp,
+        IPAddress destinationIp,
+        ReadOnlySpan<byte> segment,
+        out ushort sourcePort,
+        out ushort destinationPort,
+        out uint sequenceNumber,
+        out uint acknowledgmentNumber,
+        out Flags flags,
+        out ushort windowSize,
+        out ReadOnlySpan<byte> payload)
+    {
+        if (!TryParse(segment, out sourcePort, out destinationPort, out sequenceNumber, out acknowledgmentNumber, out flags, out windowSize, out payload))
+        {
+            return false;
+        }
+
+        try
+        {
+            return ComputeChecksum(sourceIp, destinationIp, segment) == 0;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
     public static byte[] EncodeMssOption(ushort mss)
     {
         var option = new byte[4];
@@ -132,30 +159,42 @@ internal static class TcpCodec
 
     private static ushort ComputeChecksum(IPAddress sourceIp, IPAddress destinationIp, ReadOnlySpan<byte> tcpSegment)
     {
+        ArgumentNullException.ThrowIfNull(sourceIp);
+        ArgumentNullException.ThrowIfNull(destinationIp);
+
+        Span<byte> srcBytes = stackalloc byte[16];
+        Span<byte> dstBytes = stackalloc byte[16];
+
+        if (!sourceIp.TryWriteBytes(srcBytes, out var srcWritten) ||
+            !destinationIp.TryWriteBytes(dstBytes, out var dstWritten) ||
+            srcWritten != dstWritten)
+        {
+            throw new ArgumentOutOfRangeException(nameof(destinationIp), "Source and destination address families must match.");
+        }
+
+        return ComputeChecksum(srcBytes.Slice(0, srcWritten), dstBytes.Slice(0, dstWritten), tcpSegment);
+    }
+
+    private static ushort ComputeChecksum(ReadOnlySpan<byte> sourceIp, ReadOnlySpan<byte> destinationIp, ReadOnlySpan<byte> tcpSegment)
+    {
         var sum = 0u;
 
         // pseudo header
-        if (sourceIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        if (sourceIp.Length == 4)
         {
-            var src = sourceIp.GetAddressBytes();
-            var dst = destinationIp.GetAddressBytes();
-
-            sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(0, 2));
-            sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(2, 2));
-            sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(0, 2));
-            sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(2, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(sourceIp.Slice(0, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(sourceIp.Slice(2, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(destinationIp.Slice(0, 2));
+            sum += BinaryPrimitives.ReadUInt16BigEndian(destinationIp.Slice(2, 2));
             sum += ProtocolNumber;
             sum += (ushort)tcpSegment.Length;
         }
-        else if (sourceIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+        else if (sourceIp.Length == 16)
         {
-            var src = sourceIp.GetAddressBytes();
-            var dst = destinationIp.GetAddressBytes();
-
             for (var i = 0; i < 16; i += 2)
             {
-                sum += BinaryPrimitives.ReadUInt16BigEndian(src.AsSpan(i, 2));
-                sum += BinaryPrimitives.ReadUInt16BigEndian(dst.AsSpan(i, 2));
+                sum += BinaryPrimitives.ReadUInt16BigEndian(sourceIp.Slice(i, 2));
+                sum += BinaryPrimitives.ReadUInt16BigEndian(destinationIp.Slice(i, 2));
             }
 
             var upperLayerLength = (uint)tcpSegment.Length;
@@ -165,7 +204,7 @@ internal static class TcpCodec
         }
         else
         {
-            throw new ArgumentOutOfRangeException(nameof(sourceIp), $"Unsupported address family: {sourceIp.AddressFamily}.");
+            throw new ArgumentOutOfRangeException(nameof(sourceIp), $"Unsupported address family length: {sourceIp.Length}.");
         }
 
         // tcp header+payload

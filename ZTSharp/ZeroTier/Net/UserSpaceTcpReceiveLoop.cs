@@ -167,7 +167,7 @@ internal sealed class UserSpaceTcpReceiveLoop
             }
         }
 
-        if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out seq, out ack, out flags, out windowSize, out tcpPayload))
+        if (!TcpCodec.TryParseWithChecksum(_remoteAddress, _localAddress, ipPayload, out var srcPort, out var dstPort, out seq, out ack, out flags, out windowSize, out tcpPayload))
         {
             return false;
         }
