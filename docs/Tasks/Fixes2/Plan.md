@@ -156,8 +156,8 @@ Primary goals:
 - [x] Fix: handle `ChannelClosedException` in dispatcher loop (treat as shutdown) and ensure runtime dispose swallows expected loop termination
 
 ### 2.8 Join + protocol parsing robustness (Hello/Whois/Netconf/Planet)
-- [ ] Add test: OK(HELLO) is only accepted if `Header.Source` matches the root that was pinged for the referenced `inRePacketId` (`ZTSharp/ZeroTier/Internal/ZeroTierHelloClient.cs`)
-- [ ] Fix: validate OK(HELLO) source/root correlation to prevent root selection mixups
+- [x] Add test: OK(HELLO) is only accepted if `Header.Source` matches the root that was pinged for the referenced `inRePacketId` (`ZTSharp/ZeroTier/Internal/ZeroTierHelloClient.cs`)
+- [x] Fix: validate OK(HELLO) source/root correlation to prevent root selection mixups
 - [ ] Add tests: netconf chunk assembly rejects overlaps/dup-length attacks and fails fast (not timeout) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
 - [ ] Fix: track received byte ranges (not just `chunkIndex`) and enforce sane bounds (max chunks, max total length)
 - [ ] Decide + document: legacy "unsigned config" acceptance policy (allowed vs rejected) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigParsing.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)

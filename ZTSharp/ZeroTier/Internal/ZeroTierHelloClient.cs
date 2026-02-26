@@ -118,6 +118,11 @@ internal static class ZeroTierHelloClient
                     continue;
                 }
 
+                if (rootNodeId != packet.Header.Source)
+                {
+                    continue;
+                }
+
                 return new ZeroTierHelloOk(
                     RootNodeId: rootNodeId,
                     RootEndpoint: datagram.RemoteEndPoint,
