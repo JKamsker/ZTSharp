@@ -9,7 +9,7 @@ Status legend:
 - Completed (implemented + validated): `- [x]`
 
 ## P0 — Task breakdown + guardrails
-- [ ] Add `ZeroTierSocketOptions` multipath/bonding configuration surface (default disabled).
+- [x] Add `ZeroTierSocketOptions` multipath/bonding configuration surface (default disabled).
 - [x] Add internal transport abstraction that supports multi-socket receive/send with `LocalSocketId`.
 - [x] Thread `LocalSocketId` + remote endpoint through dataplane RX loops into peer processing.
 

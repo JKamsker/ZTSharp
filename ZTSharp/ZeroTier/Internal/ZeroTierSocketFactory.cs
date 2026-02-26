@@ -7,6 +7,7 @@ internal static class ZeroTierSocketFactory
     public static Task<ZeroTierSocket> CreateAsync(ZeroTierSocketOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Multipath);
         cancellationToken.ThrowIfCancellationRequested();
 
         ArgumentException.ThrowIfNullOrWhiteSpace(options.StateRootPath);
@@ -31,7 +32,36 @@ internal static class ZeroTierSocketFactory
             throw new ArgumentOutOfRangeException(nameof(options), "Invalid PlanetSource value.");
         }
 
+        if (options.Multipath.UdpSocketCount <= 0 || options.Multipath.UdpSocketCount > 8)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), "Multipath UdpSocketCount must be in the range [1, 8].");
+        }
+
+        if (options.Multipath.LocalUdpPorts is { } ports)
+        {
+            if (ports.Count != options.Multipath.UdpSocketCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts length must match UdpSocketCount.");
+            }
+
+            for (var i = 0; i < ports.Count; i++)
+            {
+                if (ports[i] < 0 || ports[i] > 65535)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts entries must be in the range [0, 65535].");
+                }
+            }
+        }
+
         var normalizedStateRootPath = Path.GetFullPath(options.StateRootPath);
+        var normalizedMultipath = new ZeroTierMultipathOptions
+        {
+            Enabled = options.Multipath.Enabled,
+            BondPolicy = options.Multipath.BondPolicy,
+            UdpSocketCount = options.Multipath.UdpSocketCount,
+            LocalUdpPorts = options.Multipath.LocalUdpPorts is { } localPorts ? localPorts.ToArray() : null
+        };
+
         var normalizedOptions = new ZeroTierSocketOptions
         {
             StateRootPath = normalizedStateRootPath,
@@ -39,7 +69,8 @@ internal static class ZeroTierSocketFactory
             JoinTimeout = options.JoinTimeout,
             LoggerFactory = options.LoggerFactory,
             PlanetSource = options.PlanetSource,
-            PlanetFilePath = options.PlanetFilePath
+            PlanetFilePath = options.PlanetFilePath,
+            Multipath = normalizedMultipath
         };
 
         var statePath = Path.Combine(normalizedOptions.StateRootPath, "zerotier");
