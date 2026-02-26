@@ -103,19 +103,19 @@ Files
 
 Changes
 
-- [ ] Ensure alias insertions are deduped and case-normalized consistently.
+- [x] Ensure alias insertions are deduped and case-normalized consistently.
 
 ### Tests (Phase 1)
 
 Add/extend:
 
-- [ ] Add/extend `ZTSharp.Tests/StateStoreTests.cs` (or new `FileStateStoreSecurityTests.cs`) with:
-  - [ ] Windows-only: `WriteAsync("C:/Windows/Temp/pwn", ...)` throws; no file created.
-  - [ ] Windows-only: `WriteAsync("planet:ads", ...)` throws.
-  - [ ] Cross-platform: `WriteAsync("/etc/passwd", ...)` throws (after normalization/root check).
-  - [ ] Alias: if only `roots` exists, `ReadAsync("planet")` returns data and `ListAsync("")` contains both keys.
-  - [ ] Root confinement: `ListAsync("C:/")` throws on Windows.
-- [ ] Durability: verify atomic replace (write old then new; ensure file content is either old or new, never partial) using controlled IO (best-effort test).
+- [x] Add/extend `ZTSharp.Tests/StateStoreTests.cs` (or new `FileStateStoreSecurityTests.cs`) with:
+  - [x] Windows-only: `WriteAsync("C:/Windows/Temp/pwn", ...)` throws; no file created.
+  - [x] Windows-only: `WriteAsync("planet:ads", ...)` throws.
+  - [x] Cross-platform: `WriteAsync("/etc/passwd", ...)` throws (after normalization/root check).
+  - [x] Alias: if only `roots` exists, `ReadAsync("planet")` returns data and `ListAsync("")` contains both keys.
+  - [x] Root confinement: `ListAsync("C:/")` throws on Windows.
+- [x] Durability: verify atomic replace (write old then new; ensure file content is either old or new, never partial) using controlled IO (best-effort test).
 
 Acceptance: traversal blocked; alias semantics match docs; all persistence writes are atomic.
 
