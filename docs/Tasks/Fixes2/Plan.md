@@ -318,8 +318,9 @@ Primary goals:
 - [ ] Fix: remove registration only after successful transport leave (or add compensating cleanup on failure)
 
 ### 6.8 InMemory transport cancellation-token semantics
-- [ ] Add test: canceling sender token does not cause partial fanout/receiver drops in InMemory transport (`ZTSharp/Transport/InMemoryNodeTransport.cs`)
-- [ ] Fix: use a transport-owned token for delivery, not the sender’s cancellation token
+- [x] Add test: canceling sender token does not cause partial fanout/receiver drops in InMemory transport (`ZTSharp/Transport/InMemoryNodeTransport.cs`)
+  - Test: `InMemoryNodeTransportCancellationTests.SendFrameAsync_SenderCancellation_DoesNotCausePartialFanout`
+- [x] Fix: use a transport-owned token for delivery, not the sender’s cancellation token
 
 ---
 

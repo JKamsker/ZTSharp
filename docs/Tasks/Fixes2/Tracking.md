@@ -86,7 +86,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 6.5 User event handler exceptions isolated: new tests in `ZTSharp.Tests`
 - [x] 6.6 EventLoop not poisoned by callback throw: new tests in `ZTSharp.Tests`
 - [ ] 6.7 LeaveNetwork ordering avoids transport subscription leak: new tests in `ZTSharp.Tests`
-- [ ] 6.8 InMemory transport cancellation token doesn’t break fanout: new tests in `ZTSharp.Tests`
+- [x] 6.8 InMemory transport cancellation token doesn’t break fanout: new tests in `ZTSharp.Tests`
 - [x] 6.9 ActiveTaskSet shutdown semantics: new tests in `ZTSharp.Tests`
 - [x] 6.10 Overlay background tasks observed (no unobserved exceptions): new tests in `ZTSharp.Tests`
 - [x] 6.10 Overlay dispose bounded (no hang): new tests in `ZTSharp.Tests`
