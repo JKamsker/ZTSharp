@@ -49,6 +49,15 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     public byte GetPeerProtocolVersionOrDefault(NodeId peerNodeId)
         => _peerProtocolVersions.TryGetValue(peerNodeId, out var version) ? version : (byte)0;
 
+    internal void ObservePeerProtocolVersion(NodeId peerNodeId, byte peerProtocolVersion)
+    {
+        peerProtocolVersion = peerProtocolVersion <= ZeroTierHelloClient.AdvertisedProtocolVersion
+            ? peerProtocolVersion
+            : ZeroTierHelloClient.AdvertisedProtocolVersion;
+
+        _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
+    }
+
     public bool TryGetPeerKey(NodeId peerNodeId, out byte[] key)
     {
         key = Array.Empty<byte>();
@@ -167,10 +176,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
         CachePeerKey(peerNodeId, sharedKey, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var peerProtocolVersion = payload[0];
-        peerProtocolVersion = peerProtocolVersion <= ZeroTierHelloClient.AdvertisedProtocolVersion
-            ? peerProtocolVersion
-            : ZeroTierHelloClient.AdvertisedProtocolVersion;
-        _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
+        ObservePeerProtocolVersion(peerNodeId, peerProtocolVersion);
 
         var okPacket = ZeroTierHelloOkPacketBuilder.BuildPacket(
             packetId: ZeroTierPacketIdGenerator.GeneratePacketId(),

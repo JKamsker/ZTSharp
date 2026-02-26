@@ -46,7 +46,18 @@ internal static class ZeroTierHelloOkParser
             }
 
             packetBytes = uncompressed;
-            verbRaw = packetBytes[ZeroTierPacketHeader.IndexVerb];
+        }
+
+        return TryParseDecryptedOkHello(packetBytes, out payload);
+    }
+
+    public static bool TryParseDecryptedOkHello(ReadOnlySpan<byte> packetBytes, out ZeroTierHelloOkPayload payload)
+    {
+        payload = default;
+
+        if (packetBytes.Length <= ZeroTierPacketHeader.IndexVerb)
+        {
+            return false;
         }
 
         if (packetBytes.Length < HelloOkIndexRevision + 2)
@@ -54,7 +65,7 @@ internal static class ZeroTierHelloOkParser
             return false;
         }
 
-        var verb = (ZeroTierVerb)(verbRaw & 0x1F);
+        var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
         if (verb != ZeroTierVerb.Ok)
         {
             return false;
@@ -66,18 +77,18 @@ internal static class ZeroTierHelloOkParser
             return false;
         }
 
-        var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(OkIndexInRePacketId, 8));
-        var timestampEcho = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.AsSpan(HelloOkIndexTimestamp, 8));
+        var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.Slice(OkIndexInRePacketId, 8));
+        var timestampEcho = BinaryPrimitives.ReadUInt64BigEndian(packetBytes.Slice(HelloOkIndexTimestamp, 8));
         var remoteProto = packetBytes[HelloOkIndexProtocolVersion];
         var remoteMajor = packetBytes[HelloOkIndexMajorVersion];
         var remoteMinor = packetBytes[HelloOkIndexMinorVersion];
-        var remoteRevision = BinaryPrimitives.ReadUInt16BigEndian(packetBytes.AsSpan(HelloOkIndexRevision, 2));
+        var remoteRevision = BinaryPrimitives.ReadUInt16BigEndian(packetBytes.Slice(HelloOkIndexRevision, 2));
 
         var ptr = HelloOkIndexRevision + 2;
         IPEndPoint? surface = null;
         if (ptr < packetBytes.Length)
         {
-            if (ZeroTierInetAddressCodec.TryDeserialize(packetBytes.AsSpan(ptr), out var parsed, out _))
+            if (ZeroTierInetAddressCodec.TryDeserialize(packetBytes.Slice(ptr), out var parsed, out _))
             {
                 surface = parsed;
             }

@@ -12,24 +12,28 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
     private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
     private readonly ZeroTierPeerEchoManager _peerEcho;
+    private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
 
     public ZeroTierDataplanePeerDatagramProcessor(
         NodeId localNodeId,
         ZeroTierDataplanePeerSecurity peerSecurity,
         ZeroTierDataplanePeerPacketHandler peerPackets,
         ZeroTierPeerPhysicalPathTracker peerPaths,
-        ZeroTierPeerEchoManager peerEcho)
+        ZeroTierPeerEchoManager peerEcho,
+        ZeroTierExternalSurfaceAddressTracker surfaceAddresses)
     {
         ArgumentNullException.ThrowIfNull(peerSecurity);
         ArgumentNullException.ThrowIfNull(peerPackets);
         ArgumentNullException.ThrowIfNull(peerPaths);
         ArgumentNullException.ThrowIfNull(peerEcho);
+        ArgumentNullException.ThrowIfNull(surfaceAddresses);
 
         _localNodeId = localNodeId;
         _peerSecurity = peerSecurity;
         _peerPackets = peerPackets;
         _peerPaths = peerPaths;
         _peerEcho = peerEcho;
+        _surfaceAddresses = surfaceAddresses;
     }
 
     public async Task ProcessAsync(ZeroTierUdpDatagram datagram, CancellationToken cancellationToken)
@@ -112,6 +116,22 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
             {
                 var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payloadSpan.Slice(1, 8));
                 _peerEcho.HandleEchoOk(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, inRePacketId, payloadSpan.Slice(1 + 8));
+                return;
+            }
+
+            if (inReVerb == ZeroTierVerb.Hello)
+            {
+                if (ZeroTierHelloOkParser.TryParseDecryptedOkHello(packetBytes, out var ok))
+                {
+                    _peerSecurity.ObservePeerProtocolVersion(peerNodeId, ok.RemoteProtocolVersion);
+                    _peerEcho.ObserveHelloOkRtt(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, ok.TimestampEcho);
+
+                    if (ok.ExternalSurfaceAddress is { } surface)
+                    {
+                        _surfaceAddresses.Observe(peerNodeId, datagram.LocalSocketId, surface);
+                    }
+                }
+
                 return;
             }
         }

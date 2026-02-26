@@ -43,6 +43,21 @@ internal sealed class ZeroTierPeerEchoManager
         return _lastRttMsByPath.TryGetValue(key, out rttMs);
     }
 
+    public void ObserveHelloOkRtt(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint, ulong helloTimestampEcho)
+    {
+        ArgumentNullException.ThrowIfNull(remoteEndPoint);
+
+        var now = _nowUnixMs();
+        var rtt = unchecked((long)now - (long)helloTimestampEcho);
+        if (rtt < 0 || rtt > int.MaxValue)
+        {
+            return;
+        }
+
+        var key = new ZeroTierPeerEchoPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
+        _lastRttMsByPath[key] = (int)rtt;
+    }
+
     public async ValueTask TrySendEchoProbeAsync(
         NodeId peerNodeId,
         int localSocketId,
