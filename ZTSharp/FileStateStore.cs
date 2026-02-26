@@ -23,14 +23,28 @@ public sealed class FileStateStore : IStateStore
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
-        var path = GetPhysicalPath(key);
         cancellationToken.ThrowIfCancellationRequested();
+
+        var normalized = NormalizeKey(key);
+        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
+        {
+            var planetPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.PlanetKey, key);
+            if (File.Exists(planetPath))
+            {
+                return Task.FromResult(true);
+            }
+
+            var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, key);
+            return Task.FromResult(File.Exists(rootsPath));
+        }
+
+        var path = GetPhysicalPathForNormalizedKey(normalized, key);
         return Task.FromResult(File.Exists(path));
     }
 
     public async Task<ReadOnlyMemory<byte>?> ReadAsync(string key, CancellationToken cancellationToken = default)
     {
-        var path = GetPhysicalPath(key);
+        var path = GetPhysicalPathForRead(key);
         if (!File.Exists(path))
         {
             return null;
@@ -44,7 +58,13 @@ public sealed class FileStateStore : IStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var path = GetPhysicalPath(key);
+        var normalized = NormalizeKey(key);
+        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
+        {
+            normalized = StateStorePlanetAliases.PlanetKey;
+        }
+
+        var path = GetPhysicalPathForNormalizedKey(normalized, key);
         var parent = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(parent))
         {
@@ -56,8 +76,29 @@ public sealed class FileStateStore : IStateStore
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
     {
-        var path = GetPhysicalPath(key);
         cancellationToken.ThrowIfCancellationRequested();
+
+        var normalized = NormalizeKey(key);
+        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
+        {
+            var planetPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.PlanetKey, key);
+            if (File.Exists(planetPath))
+            {
+                File.Delete(planetPath);
+                return Task.FromResult(true);
+            }
+
+            var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, key);
+            if (!File.Exists(rootsPath))
+            {
+                return Task.FromResult(false);
+            }
+
+            File.Delete(rootsPath);
+            return Task.FromResult(true);
+        }
+
+        var path = GetPhysicalPathForNormalizedKey(normalized, key);
         if (!File.Exists(path))
         {
             return Task.FromResult(false);
@@ -74,6 +115,19 @@ public sealed class FileStateStore : IStateStore
 
         if (!Directory.Exists(_rootPath))
         {
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        }
+
+        if (virtualPrefix.Length != 0 &&
+            StateStorePlanetAliases.TryGetCanonicalAliasKey(virtualPrefix, out var canonicalAliasPrefix))
+        {
+            var planetPath = Path.Combine(_rootPath, StateStorePlanetAliases.PlanetKey);
+            var rootsPath = Path.Combine(_rootPath, StateStorePlanetAliases.RootsKey);
+            if (File.Exists(planetPath) || File.Exists(rootsPath))
+            {
+                return Task.FromResult<IReadOnlyList<string>>([canonicalAliasPrefix]);
+            }
+
             return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
         }
 
@@ -95,32 +149,37 @@ public sealed class FileStateStore : IStateStore
         }
 
         var entries = new List<string>();
+        var seen = new HashSet<string>(
+            OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
         {
-            entries.Add(Path.GetRelativePath(_rootPath, file).Replace('\\', '/'));
+            var relativePath = Path.GetRelativePath(_rootPath, file).Replace('\\', '/');
+            if (StateStorePlanetAliases.TryGetCanonicalAliasKey(relativePath, out var canonicalAliasKey))
+            {
+                relativePath = canonicalAliasKey;
+            }
+
+            if (seen.Add(relativePath))
+            {
+                entries.Add(relativePath);
+            }
         }
 
         if (virtualPrefix.Length == 0)
         {
-            var hasRootsAlias = false;
-            for (var i = 0; i < entries.Count; i++)
+            var planetPath = Path.Combine(_rootPath, StateStorePlanetAliases.PlanetKey);
+            var rootsPath = Path.Combine(_rootPath, StateStorePlanetAliases.RootsKey);
+            if (File.Exists(planetPath) || File.Exists(rootsPath))
             {
-                if (string.Equals(entries[i], StateStorePlanetAliases.RootsKey, StringComparison.Ordinal))
+                if (seen.Add(StateStorePlanetAliases.PlanetKey))
                 {
-                    hasRootsAlias = true;
-                    break;
+                    entries.Add(StateStorePlanetAliases.PlanetKey);
                 }
-            }
 
-            if (File.Exists(Path.Combine(_rootPath, StateStorePlanetAliases.PlanetKey)) && !hasRootsAlias)
-            {
-                entries.Add(StateStorePlanetAliases.RootsKey);
-                hasRootsAlias = true;
-            }
-
-            if (File.Exists(Path.Combine(_rootPath, StateStorePlanetAliases.RootsKey)) && !hasRootsAlias)
-            {
-                entries.Add(StateStorePlanetAliases.RootsKey);
+                if (seen.Add(StateStorePlanetAliases.RootsKey))
+                {
+                    entries.Add(StateStorePlanetAliases.RootsKey);
+                }
             }
 
             return Task.FromResult<IReadOnlyList<string>>(entries);
@@ -135,27 +194,64 @@ public sealed class FileStateStore : IStateStore
         return Task.CompletedTask;
     }
 
-    private string GetPhysicalPath(string key)
+    private string GetPhysicalPathForRead(string key)
     {
         var normalized = NormalizeKey(key);
-        if (StateStorePlanetAliases.IsPlanetAlias(normalized))
+        if (!StateStorePlanetAliases.IsPlanetAlias(normalized))
         {
-            normalized = StateStorePlanetAliases.PlanetKey;
+            return GetPhysicalPathForNormalizedKey(normalized, key);
         }
 
-        var path = Path.Combine(_rootPath, normalized);
-        path = Path.GetFullPath(path);
-        if (!IsUnderRoot(path))
+        var planetPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.PlanetKey, key);
+        if (File.Exists(planetPath))
         {
-            throw new ArgumentException($"Invalid key path: {key}", nameof(key));
+            return planetPath;
         }
 
-        return path;
+        var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, key);
+        if (!File.Exists(rootsPath))
+        {
+            return planetPath;
+        }
+
+        TryMigrateRootsToPlanet(rootsPath, planetPath);
+        return File.Exists(planetPath) ? planetPath : rootsPath;
     }
 
     private static string NormalizeKey(string key)
     {
         return StateStoreKeyNormalization.NormalizeKey(key);
+    }
+
+    private string GetPhysicalPathForNormalizedKey(string normalizedKey, string originalKey)
+    {
+        var path = Path.Combine(_rootPath, normalizedKey);
+        path = Path.GetFullPath(path);
+        if (!IsUnderRoot(path))
+        {
+            throw new ArgumentException($"Invalid key path: {originalKey}", nameof(originalKey));
+        }
+
+        return path;
+    }
+
+    private static void TryMigrateRootsToPlanet(string rootsPath, string planetPath)
+    {
+        try
+        {
+            if (File.Exists(planetPath) || !File.Exists(rootsPath))
+            {
+                return;
+            }
+
+            File.Move(rootsPath, planetPath, overwrite: false);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private bool IsUnderRoot(string fullPath)

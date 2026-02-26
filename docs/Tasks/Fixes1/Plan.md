@@ -66,13 +66,13 @@ Files
 Changes
 
 - [x] Enforce root confinement: after combining, compute full path and ensure it stays under `_rootPath` (OrdinalIgnoreCase on Windows, Ordinal elsewhere).
-- [ ] Planet/roots alias semantics:
-  - [ ] Reads/Exists/Delete: prefer planet if present, else fallback to roots.
-  - [ ] Writes: always write to planet.
-  - [ ] Optional migration: if only roots exists, attempt atomic rename/move to planet once.
-- [ ] List behavior:
-  - [ ] Normalize returned entries to `/` separators.
-  - [ ] Ensure `ListAsync("")` includes both `planet` and `roots` when either exists (avoid duplicates; case-insensitive handling on Windows/macOS FS).
+- [x] Planet/roots alias semantics:
+  - [x] Reads/Exists/Delete: prefer planet if present, else fallback to roots.
+  - [x] Writes: always write to planet.
+  - [x] Optional migration: if only roots exists, attempt atomic rename/move to planet once.
+- [x] List behavior:
+  - [x] Normalize returned entries to `/` separators.
+  - [x] Ensure `ListAsync("")` includes both `planet` and `roots` when either exists (avoid duplicates; case-insensitive handling on Windows/macOS FS).
 - [ ] Replace non-atomic `WriteAllBytesAsync` with atomic replace.
 
 ### 1.3 Atomic file helper + apply to managed stack persistence
