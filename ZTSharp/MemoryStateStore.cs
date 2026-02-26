@@ -58,19 +58,18 @@ public sealed class MemoryStateStore : IStateStore
             }
         }
 
-        if (normalizedPrefix.Length == 0)
+        if (normalizedPrefix.Length == 0 && _storage.ContainsKey(StateStorePlanetAliases.PlanetKey))
         {
-            var hasRootsAlias = false;
-            for (var i = 0; i < keys.Count; i++)
+            var comparer = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
+                ? StringComparer.OrdinalIgnoreCase
+                : StringComparer.Ordinal;
+
+            if (!keys.Contains(StateStorePlanetAliases.PlanetKey, comparer))
             {
-                if (string.Equals(keys[i], StateStorePlanetAliases.RootsKey, StringComparison.Ordinal))
-                {
-                    hasRootsAlias = true;
-                    break;
-                }
+                keys.Add(StateStorePlanetAliases.PlanetKey);
             }
 
-            if (_storage.ContainsKey(StateStorePlanetAliases.PlanetKey) && !hasRootsAlias)
+            if (!keys.Contains(StateStorePlanetAliases.RootsKey, comparer))
             {
                 keys.Add(StateStorePlanetAliases.RootsKey);
             }

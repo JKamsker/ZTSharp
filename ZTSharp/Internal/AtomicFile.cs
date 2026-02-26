@@ -27,7 +27,23 @@ internal static class AtomicFile
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(tmpPath, path, overwrite: true);
+            const int maxAttempts = 10;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    File.Move(tmpPath, path, overwrite: true);
+                    break;
+                }
+                catch (IOException) when (attempt < maxAttempts - 1)
+                {
+                    Thread.Sleep(TimeSpan.FromMilliseconds(10 * (attempt + 1)));
+                }
+                catch (UnauthorizedAccessException) when (attempt < maxAttempts - 1)
+                {
+                    Thread.Sleep(TimeSpan.FromMilliseconds(10 * (attempt + 1)));
+                }
+            }
         }
         finally
         {
@@ -78,7 +94,23 @@ internal static class AtomicFile
 #pragma warning restore CA1849
             }
 
-            File.Move(tmpPath, path, overwrite: true);
+            const int maxAttempts = 10;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    File.Move(tmpPath, path, overwrite: true);
+                    break;
+                }
+                catch (IOException) when (attempt < maxAttempts - 1)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(10 * (attempt + 1)), cancellationToken).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException) when (attempt < maxAttempts - 1)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(10 * (attempt + 1)), cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
         finally
         {

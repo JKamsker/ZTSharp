@@ -50,7 +50,7 @@ public sealed class FileStateStore : IStateStore
             return null;
         }
 
-        var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        var bytes = await ReadAllBytesWithSharingAsync(path, cancellationToken).ConfigureAwait(false);
         return bytes;
     }
 
@@ -215,6 +215,21 @@ public sealed class FileStateStore : IStateStore
     private static string NormalizeKey(string key)
     {
         return StateStoreKeyNormalization.NormalizeKey(key);
+    }
+
+    private static async Task<byte[]> ReadAllBytesWithSharingAsync(string path, CancellationToken cancellationToken)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 16 * 1024,
+            options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+        using var memory = stream.Length <= int.MaxValue ? new MemoryStream((int)stream.Length) : new MemoryStream();
+        await stream.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
+        return memory.ToArray();
     }
 
     private string GetPhysicalPathForNormalizedKey(string normalizedKey, string originalKey)
