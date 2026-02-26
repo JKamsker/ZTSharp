@@ -14,6 +14,7 @@ Status legend:
 - [x] Thread `LocalSocketId` + remote endpoint through dataplane RX loops into peer processing.
 - [x] Refactor dataplane internals to use `IZeroTierUdpTransport` (single-socket default, multi-socket supported).
 - [x] Bootstrap UDP socket(s) from `ZeroTierSocketOptions.Multipath` (single-socket default).
+- [x] Gate path learning/echo parsing behind `ZeroTierSocketOptions.Multipath.Enabled` (default off).
 
 ## P1 — Direct path learning + keepalives
 - [x] Track per-peer physical paths `(LocalSocketId, RemoteEndPoint)` for **hops==0** traffic only (learn/refresh/expire).

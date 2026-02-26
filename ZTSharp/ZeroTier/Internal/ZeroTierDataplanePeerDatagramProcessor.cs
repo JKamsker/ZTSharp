@@ -13,6 +13,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
+    private readonly bool _multipathEnabled;
 
     public ZeroTierDataplanePeerDatagramProcessor(
         NodeId localNodeId,
@@ -20,7 +21,8 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         ZeroTierDataplanePeerPacketHandler peerPackets,
         ZeroTierPeerPhysicalPathTracker peerPaths,
         ZeroTierPeerEchoManager peerEcho,
-        ZeroTierExternalSurfaceAddressTracker surfaceAddresses)
+        ZeroTierExternalSurfaceAddressTracker surfaceAddresses,
+        bool multipathEnabled)
     {
         ArgumentNullException.ThrowIfNull(peerSecurity);
         ArgumentNullException.ThrowIfNull(peerPackets);
@@ -34,6 +36,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         _peerPaths = peerPaths;
         _peerEcho = peerEcho;
         _surfaceAddresses = surfaceAddresses;
+        _multipathEnabled = multipathEnabled;
     }
 
     public async Task ProcessAsync(ZeroTierUdpDatagram datagram, CancellationToken cancellationToken)
@@ -82,57 +85,60 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
             packetBytes = uncompressed;
         }
 
-        if (decoded.Header.HopCount == 0)
+        if (_multipathEnabled)
         {
-            _peerPaths.ObserveHop0(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint);
-            await _peerEcho
-                .TrySendEchoProbeAsync(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, key, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
-        var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
-
-        if (verb == ZeroTierVerb.Echo)
-        {
-            await _peerEcho
-                .HandleEchoRequestAsync(
-                    peerNodeId,
-                    datagram.LocalSocketId,
-                    datagram.RemoteEndPoint,
-                    inRePacketId: decoded.Header.PacketId,
-                    payload,
-                    key,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        var payloadSpan = payload.Span;
-        if (verb == ZeroTierVerb.Ok && payloadSpan.Length >= 1 + 8)
-        {
-            var inReVerb = (ZeroTierVerb)(payloadSpan[0] & 0x1F);
-            if (inReVerb == ZeroTierVerb.Echo)
+            if (decoded.Header.HopCount == 0)
             {
-                var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payloadSpan.Slice(1, 8));
-                _peerEcho.HandleEchoOk(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, inRePacketId, payloadSpan.Slice(1 + 8));
+                _peerPaths.ObserveHop0(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint);
+                await _peerEcho
+                    .TrySendEchoProbeAsync(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, key, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
+            var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
+
+            if (verb == ZeroTierVerb.Echo)
+            {
+                await _peerEcho
+                    .HandleEchoRequestAsync(
+                        peerNodeId,
+                        datagram.LocalSocketId,
+                        datagram.RemoteEndPoint,
+                        inRePacketId: decoded.Header.PacketId,
+                        payload,
+                        key,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 return;
             }
 
-            if (inReVerb == ZeroTierVerb.Hello)
+            var payloadSpan = payload.Span;
+            if (verb == ZeroTierVerb.Ok && payloadSpan.Length >= 1 + 8)
             {
-                if (ZeroTierHelloOkParser.TryParseDecryptedOkHello(packetBytes, out var ok))
+                var inReVerb = (ZeroTierVerb)(payloadSpan[0] & 0x1F);
+                if (inReVerb == ZeroTierVerb.Echo)
                 {
-                    _peerSecurity.ObservePeerProtocolVersion(peerNodeId, ok.RemoteProtocolVersion);
-                    _peerEcho.ObserveHelloOkRtt(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, ok.TimestampEcho);
-
-                    if (ok.ExternalSurfaceAddress is { } surface)
-                    {
-                        _surfaceAddresses.Observe(peerNodeId, datagram.LocalSocketId, surface);
-                    }
+                    var inRePacketId = BinaryPrimitives.ReadUInt64BigEndian(payloadSpan.Slice(1, 8));
+                    _peerEcho.HandleEchoOk(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, inRePacketId, payloadSpan.Slice(1 + 8));
+                    return;
                 }
 
-                return;
+                if (inReVerb == ZeroTierVerb.Hello)
+                {
+                    if (ZeroTierHelloOkParser.TryParseDecryptedOkHello(packetBytes, out var ok))
+                    {
+                        _peerSecurity.ObservePeerProtocolVersion(peerNodeId, ok.RemoteProtocolVersion);
+                        _peerEcho.ObserveHelloOkRtt(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, ok.TimestampEcho);
+
+                        if (ok.ExternalSurfaceAddress is { } surface)
+                        {
+                            _surfaceAddresses.Observe(peerNodeId, datagram.LocalSocketId, surface);
+                        }
+                    }
+
+                    return;
+                }
             }
         }
 

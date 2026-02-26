@@ -15,6 +15,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
         IPAddress[] localManagedIpsV4,
         IPAddress[] localManagedIpsV6,
         byte[] inlineCom,
+        bool multipathEnabled,
         ZeroTierHelloOk? cachedRoot,
         byte[]? cachedRootKey,
         CancellationToken cancellationToken)
@@ -52,7 +53,8 @@ internal static class ZeroTierDataplaneRuntimeFactory
             networkId: networkId,
             localManagedIpsV4: localManagedIpsV4,
             localManagedIpsV6: localManagedIpsV6,
-            inlineCom: inlineCom);
+            inlineCom: inlineCom,
+            multipathEnabled: multipathEnabled);
 
         await TrySubscribeForAddressResolutionAsync(
                 udp,

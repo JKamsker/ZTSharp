@@ -61,6 +61,33 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         IReadOnlyList<IPAddress> localManagedIpsV4,
         IReadOnlyList<IPAddress> localManagedIpsV6,
         byte[] inlineCom)
+        : this(
+            udp,
+            rootNodeId,
+            rootEndpoint,
+            rootKey,
+            rootProtocolVersion,
+            localIdentity,
+            networkId,
+            localManagedIpsV4,
+            localManagedIpsV6,
+            inlineCom,
+            multipathEnabled: false)
+    {
+    }
+
+    public ZeroTierDataplaneRuntime(
+        IZeroTierUdpTransport udp,
+        NodeId rootNodeId,
+        IPEndPoint rootEndpoint,
+        byte[] rootKey,
+        byte rootProtocolVersion,
+        ZeroTierIdentity localIdentity,
+        ulong networkId,
+        IReadOnlyList<IPAddress> localManagedIpsV4,
+        IReadOnlyList<IPAddress> localManagedIpsV6,
+        byte[] inlineCom,
+        bool multipathEnabled)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
@@ -136,7 +163,14 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             localManagedIpsV4Bytes: _localManagedIpsV4Bytes,
             localManagedIpsV6: _localManagedIpsV6);
         _peerPackets = new ZeroTierDataplanePeerPacketHandler(_networkId, _localMac, ip, handleControlAsync: HandlePeerControlPacketAsync);
-        _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(localIdentity.NodeId, _peerSecurity, _peerPackets, _peerPaths, _peerEcho, _surfaceAddresses);
+        _peerDatagrams = new ZeroTierDataplanePeerDatagramProcessor(
+            localIdentity.NodeId,
+            _peerSecurity,
+            _peerPackets,
+            _peerPaths,
+            _peerEcho,
+            _surfaceAddresses,
+            multipathEnabled);
         _rxLoops = new ZeroTierDataplaneRxLoops(
             _udp,
             _rootNodeId,

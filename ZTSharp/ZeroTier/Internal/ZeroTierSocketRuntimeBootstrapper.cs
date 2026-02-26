@@ -100,6 +100,7 @@ internal static class ZeroTierSocketRuntimeBootstrapper
                     localManagedIpsV4: localManagedIpsV4,
                     localManagedIpsV6: localManagedIpsV6,
                     inlineCom: inlineCom,
+                    multipathEnabled: multipath.Enabled,
                     cachedRoot: cachedRoot,
                     cachedRootKey: cachedRootKey,
                     cancellationToken)
