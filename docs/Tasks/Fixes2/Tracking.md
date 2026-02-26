@@ -76,7 +76,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 ## Phase 6 - Overlay stack
 
 - [ ] 6.1 Channel writer concurrency correctness: new tests in `ZTSharp.Tests`
-- [ ] 6.2 No silent-drop hangs for overlay HTTP: new tests in `ZTSharp.Tests`
+- [x] 6.2 No silent-drop hangs for overlay HTTP: new tests in `ZTSharp.Tests`
 - [x] 6.3 `HttpResponseMessage.Dispose()` never throws/hangs due to overlay stream: new tests in `ZTSharp.Tests`
 - [x] 6.3 Overlay connect failures wrapped as `HttpRequestException`: new tests in `ZTSharp.Tests`
 - [ ] 6.3 Overlay local-port collisions handled: new tests in `ZTSharp.Tests`

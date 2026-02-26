@@ -262,7 +262,8 @@ Primary goals:
 
 ### 6.2 Silent drop policy for TCP-like overlay streams
 - [ ] Add test: large/slow HTTP response over overlay does not corrupt/hang due to silent drops (`ZTSharp/Sockets/OverlayTcpIncomingBuffer.cs`, `ZTSharp/Http/OverlayHttpMessageHandler.cs`)
-- [ ] Fix: replace `DropWrite` with backpressure or explicit connection failure (surface to caller), at least for TCP/HTTP paths
+- [x] Fix: replace `DropWrite` with backpressure or explicit connection failure (surface to caller), at least for TCP/HTTP paths
+  - `OverlayTcpIncomingBuffer` now fails fast on buffer overflow instead of silently dropping segments
 
 ### 6.3 HTTP stream disposal safety
 - [x] Add test: disposing `HttpResponseMessage` never throws due to stream disposal (`ZTSharp/Http/OwnedOverlayTcpClientStream.cs`)
