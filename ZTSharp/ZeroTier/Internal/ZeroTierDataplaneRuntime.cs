@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
+using ZTSharp.Transport.Internal;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
 using ZTSharp.ZeroTier.Transport;
@@ -64,6 +65,10 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(localIdentity);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
+
+        // Some local test harnesses pass wildcard-bound socket endpoints (0.0.0.0/::) as a "reachable" root endpoint.
+        // Normalize those to loopback to keep the dataplane's remote root endpoint concrete.
+        rootEndpoint = UdpEndpointNormalization.NormalizeForAdvertisement(rootEndpoint);
 
         if (localManagedIpsV4.Count == 0 && localManagedIpsV6.Count == 0)
         {
