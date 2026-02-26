@@ -16,7 +16,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
-    private bool _disposed;
+    private int _disposeState;
 
     internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort)
     {
@@ -42,7 +42,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
     public ValueTask<Stream> AcceptAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         return ReadFromQueueAsync(cancellationToken);
 
         async ValueTask<Stream> ReadFromQueueAsync(CancellationToken token)
@@ -60,7 +60,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
     public async ValueTask<Stream> AcceptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         return await ZeroTierTimeouts
             .RunWithTimeoutAsync(timeout, operation: "TCP accept", AcceptAsync, cancellationToken)
             .ConfigureAwait(false);
@@ -68,15 +68,14 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
         await _disposeLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
             _runtime.UnregisterTcpListener(_localAddress.AddressFamily, _localPort);
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
@@ -97,7 +96,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         Justification = "Ownership of accepted connections transfers to the accept queue consumer (via the returned Stream).")]
     private Task OnSynAsync(NodeId peerNodeId, ReadOnlyMemory<byte> ipPacket, CancellationToken cancellationToken)
     {
-        if (_disposed)
+        if (IsDisposed)
         {
             return Task.CompletedTask;
         }
@@ -207,4 +206,6 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             }
         }
     }
+
+    private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 }
