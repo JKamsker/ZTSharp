@@ -11,7 +11,7 @@ internal sealed class OverlayTcpIncomingBuffer
     private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateBounded<ReadOnlyMemory<byte>>(new BoundedChannelOptions(MaxQueuedSegments)
     {
         FullMode = BoundedChannelFullMode.Wait,
-        SingleWriter = true,
+        SingleWriter = false,
         SingleReader = true
     });
     private ReadOnlyMemory<byte> _currentSegment;

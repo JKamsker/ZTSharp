@@ -257,8 +257,9 @@ Primary goals:
 ## Phase 6 - Legacy overlay stack correctness (`ZTSharp/Sockets/**`, `ZTSharp/Http/**`, `ZTSharp/Transport/**`)
 
 ### 6.1 Channel SingleWriter correctness under concurrency
-- [ ] Add test: concurrent frame delivery (InMemory) does not violate channel writer assumptions (`ZTSharp/Transport/InMemoryNodeTransport.cs`, `ZTSharp/Sockets/OverlayTcpListener.cs`, `ZTSharp/Sockets/OverlayTcpIncomingBuffer.cs`, `ZTSharp/Sockets/ZtUdpClient.cs`)
-- [ ] Fix: remove `SingleWriter=true` where multiple producers can write concurrently (or serialize producers explicitly)
+- [x] Add test: concurrent frame delivery (InMemory) does not violate channel writer assumptions (`ZTSharp/Transport/InMemoryNodeTransport.cs`, `ZTSharp/Sockets/OverlayTcpListener.cs`, `ZTSharp/Sockets/OverlayTcpIncomingBuffer.cs`, `ZTSharp/Sockets/ZtUdpClient.cs`)
+  - Tests: `ChannelWriterConcurrencyTests.*`
+- [x] Fix: remove `SingleWriter=true` where multiple producers can write concurrently (or serialize producers explicitly)
 
 ### 6.2 Silent drop policy for TCP-like overlay streams
 - [ ] Add test: large/slow HTTP response over overlay does not corrupt/hang due to silent drops (`ZTSharp/Sockets/OverlayTcpIncomingBuffer.cs`, `ZTSharp/Http/OverlayHttpMessageHandler.cs`)
