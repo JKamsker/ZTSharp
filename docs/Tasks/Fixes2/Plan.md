@@ -49,10 +49,11 @@ Primary goals:
   - Test: `UserSpaceTcpFinTests.SendFinWithRetriesAsync_IsIdempotentWithRespectToSequenceNumber`
 
 ### 1.2 Handshake robustness (critical hang)
-- [ ] Repro + add test: drop client's final ACK after SYN-ACK; ensure server still completes accept (bounded) (`ZTSharp/ZeroTier/Net/UserSpaceTcpServerReceiveLoop.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpReceiveLoop.cs`)
-- [ ] Fix: add SYN-ACK retransmit timer until handshake completes (server side)
-- [ ] Fix: client should ACK SYN-ACK retransmissions even after it considers itself "connected"
-- [ ] Add test: SYN-ACK retransmit eventually recovers from a lost final ACK
+- [x] Repro + add test: drop client's final ACK after SYN-ACK; ensure server still completes accept (bounded) (`ZTSharp/ZeroTier/Net/UserSpaceTcpServerReceiveLoop.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpReceiveLoop.cs`)
+  - Test: `UserSpaceTcpHandshakeTests.LostFinalAck_ServerAcceptCompletesAfterSynAckRetransmit`
+- [x] Fix: add SYN-ACK retransmit timer until handshake completes (server side)
+- [x] Fix: client should ACK SYN-ACK retransmissions even after it considers itself "connected"
+- [x] Add test: SYN-ACK retransmit eventually recovers from a lost final ACK
 
 ### 1.3 Dispose/receive-loop race hardening
 - [ ] Repro + add test: dispose concurrently with inbound data; no `InvalidOperationException`/`ObjectDisposedException` escapes receive loop (`ZTSharp/ZeroTier/Net/UserSpaceTcpReceiver.cs`, `ZTSharp/ZeroTier/Net/UserSpaceTcpReceiveLoop.cs`)

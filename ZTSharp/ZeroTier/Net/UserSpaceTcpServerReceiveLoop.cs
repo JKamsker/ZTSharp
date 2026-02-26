@@ -19,6 +19,7 @@ internal sealed class UserSpaceTcpServerReceiveLoop
 
     private bool _handshakeStarted;
     private uint _synAckSeq;
+    private Task? _synAckRetransmitTask;
 
     public UserSpaceTcpServerReceiveLoop(
         IUserSpaceIpLink link,
@@ -113,6 +114,8 @@ internal sealed class UserSpaceTcpServerReceiveLoop
                                 var iss = GenerateInitialSequenceNumber();
                                 _sender.InitializeSendState(iss);
                                 _synAckSeq = _sender.AllocateNextSequence(bytes: 1);
+
+                                _synAckRetransmitTask ??= Task.Run(() => RetransmitSynAckUntilConnectedAsync(cancellationToken), CancellationToken.None);
                             }
 
                             if (TcpCodec.TryGetMssOption(tcpOptions, out var remoteMss))
@@ -180,6 +183,53 @@ internal sealed class UserSpaceTcpServerReceiveLoop
             {
                 await _sender.SendPureAckAsync(ackToSend, cancellationToken).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task RetransmitSynAckUntilConnectedAsync(CancellationToken cancellationToken)
+    {
+        var delay = TimeSpan.FromMilliseconds(250);
+        var maxDelay = TimeSpan.FromSeconds(2);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (!_handshakeStarted || _signals.Connected)
+            {
+                return;
+            }
+
+            try
+            {
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (!_handshakeStarted || _signals.Connected)
+            {
+                return;
+            }
+
+            try
+            {
+                await _sender
+                    .SendSegmentAsync(
+                        seq: _synAckSeq,
+                        ack: _receiver.RecvNext,
+                        flags: TcpCodec.Flags.Syn | TcpCodec.Flags.Ack,
+                        options: TcpCodec.EncodeMssOption(_mss),
+                        payload: ReadOnlyMemory<byte>.Empty,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException or IOException)
+            {
+                return;
+            }
+
+            delay = delay < maxDelay ? delay + delay : maxDelay;
         }
     }
 
