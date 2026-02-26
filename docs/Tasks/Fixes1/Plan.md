@@ -293,7 +293,7 @@ File
 
 Changes
 
-- [ ] After selecting remoteNodeId, store `cache[managedIp] = remoteNodeId` (optionally with TTL if using a richer cache).
+- [x] After selecting remoteNodeId, store `cache[managedIp] = remoteNodeId` (optionally with TTL if using a richer cache).
 
 ### 3.8 IPv6 scoped route key collision
 

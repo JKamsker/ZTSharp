@@ -82,6 +82,7 @@ internal sealed class ZeroTierDataplaneRootClient
             ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {_rootNodeId} via {_rootEndpoint}).");
         }
 
+        cache[managedIp] = remoteNodeId;
         return remoteNodeId;
     }
 
