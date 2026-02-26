@@ -32,7 +32,7 @@ Status legend:
 - [x] Implement `PATH_NEGOTIATION_REQUEST` RX/TX and utility-based tie-break logic.
 
 ## P4 — Multipath bonding policies
-- [ ] Implement bond policy engine with: active-backup, broadcast, balance-rr, balance-xor, balance-aware.
+- [x] Implement bond policy engine with: active-backup, broadcast, balance-rr, balance-xor, balance-aware.
 - [ ] Implement background maintenance loop (tick) for: heartbeats, QoS sends, flow expiration/rebalance, negotiation checks.
 
 ## P5 — CLI/docs/tests
