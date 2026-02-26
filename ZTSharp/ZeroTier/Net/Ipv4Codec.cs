@@ -7,6 +7,8 @@ internal static class Ipv4Codec
 {
     public const byte Version = 4;
     public const int MinimumHeaderLength = 20;
+    private const ushort MoreFragmentsFlag = 0x2000;
+    private const ushort FragmentOffsetMask = 0x1FFF;
 
     public static byte[] Encode(
         IPAddress source,
@@ -88,6 +90,11 @@ internal static class Ipv4Codec
             return false;
         }
 
+        if (IsFragmented(packet))
+        {
+            return false;
+        }
+
         if (ComputeHeaderChecksum(packet.Slice(0, headerLength)) != 0)
         {
             return false;
@@ -98,6 +105,25 @@ internal static class Ipv4Codec
         destination = new IPAddress(packet.Slice(16, 4));
         payload = packet.Slice(headerLength, totalLength - headerLength);
         return true;
+    }
+
+    public static bool IsFragmented(ReadOnlySpan<byte> packet)
+    {
+        if (packet.Length < MinimumHeaderLength)
+        {
+            return false;
+        }
+
+        var version = packet[0] >> 4;
+        if (version != Version)
+        {
+            return false;
+        }
+
+        var flagsAndOffset = BinaryPrimitives.ReadUInt16BigEndian(packet.Slice(6, 2));
+        var fragmentOffset = flagsAndOffset & FragmentOffsetMask;
+        var moreFragments = (flagsAndOffset & MoreFragmentsFlag) != 0;
+        return fragmentOffset != 0 || moreFragments;
     }
 
     private static ushort ComputeHeaderChecksum(ReadOnlySpan<byte> header)

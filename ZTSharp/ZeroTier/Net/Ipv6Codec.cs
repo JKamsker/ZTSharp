@@ -8,6 +8,9 @@ internal static class Ipv6Codec
     public const byte Version = 6;
     public const int HeaderLength = 40;
 
+    public static bool IsExtensionHeader(byte nextHeader)
+        => nextHeader is 0 or 43 or 44 or 50 or 51 or 60;
+
     public static byte[] Encode(
         IPAddress source,
         IPAddress destination,
@@ -90,4 +93,3 @@ internal static class Ipv6Codec
         return true;
     }
 }
-

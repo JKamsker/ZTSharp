@@ -19,7 +19,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 2.1 TCP checksum validation: new tests in `ZTSharp.Tests` (invalid checksum SYN dropped)
 - [x] 2.1 ICMPv6 checksum validation: new tests in `ZTSharp.Tests` (invalid NS dropped)
 - [x] 2.1 TCP encode oversized payload guarded: new tests in `ZTSharp.Tests`
-- [ ] 2.2 Fragmentation/exthdr policy: new tests in `ZTSharp.Tests` (fragment/exthdr packets handled per policy)
+- [x] 2.2 Fragmentation/exthdr policy: new tests in `ZTSharp.Tests` (fragment/exthdr packets handled per policy)
 - [ ] 2.3 IP->NodeId cache bounded + not poisonable: new tests in `ZTSharp.Tests`
 - [ ] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
 - [ ] 2.5 Root endpoint filtering policy: new tests in `ZTSharp.Tests`

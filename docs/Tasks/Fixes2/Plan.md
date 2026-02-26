@@ -112,10 +112,14 @@ Primary goals:
 - [x] Fix: enforce payload length bounds for TCP encoding (avoid `ushort` truncation in checksum length)
 
 ### 2.2 Fragmentation / extension headers (explicit policy)
-- [ ] Decide + document: (a) support IPv4 fragments, (b) drop fragments explicitly, or (c) accept only non-fragmented packets
-- [ ] If dropping: implement explicit "drop fragmented" check with trace hook (`ZTSharp/ZeroTier/Net/Ipv4Codec.cs`, `ZTSharp/ZeroTier/Protocol/ZeroTierPacketHeader.cs`)
-- [ ] Decide + document: IPv6 extension-header handling (support a minimal subset vs drop)
-- [ ] If dropping: implement explicit detection + drop with trace hook (`ZTSharp/ZeroTier/Net/Ipv6Codec.cs`)
+- [x] Decide + document: (a) support IPv4 fragments, (b) drop fragments explicitly, or (c) accept only non-fragmented packets
+  - Decision: drop IPv4 fragments explicitly (managed stack does not reassemble fragments).
+- [x] If dropping: implement explicit "drop fragmented" check with trace hook (`ZTSharp/ZeroTier/Net/Ipv4Codec.cs`, `ZTSharp/ZeroTier/Protocol/ZeroTierPacketHeader.cs`)
+  - Drop path: `Ipv4Codec.IsFragmented` + early drop in `ZeroTierDataplaneIpHandler` (with `ZeroTierTrace` log).
+- [x] Decide + document: IPv6 extension-header handling (support a minimal subset vs drop)
+  - Decision: drop IPv6 packets whose base `nextHeader` is an extension header (including Fragment header).
+- [x] If dropping: implement explicit detection + drop with trace hook (`ZTSharp/ZeroTier/Net/Ipv6Codec.cs`)
+  - Drop path: `Ipv6Codec.IsExtensionHeader` + early drop in `ZeroTierDataplaneIpHandler` (with `ZeroTierTrace` log).
 
 ### 2.3 IP->NodeId cache poisoning + unbounded growth
 - [ ] Repro + add test: spoof many src IPs -> cache growth is bounded (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)

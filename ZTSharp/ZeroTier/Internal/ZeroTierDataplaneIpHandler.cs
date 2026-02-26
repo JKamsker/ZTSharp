@@ -64,6 +64,16 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
+        if (Ipv6Codec.IsExtensionHeader(nextHeader) || nextHeader == 59)
+        {
+            if (ZeroTierTrace.Enabled)
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Drop: IPv6 extension header nextHeader={nextHeader} from {src} to {dst}.");
+            }
+
+            return;
+        }
+
         var isUnicastToUs = TryGetLocalManagedIpv6(dst, out _);
         var isMulticast = dst.IsIPv6Multicast;
 
@@ -173,6 +183,16 @@ internal sealed class ZeroTierDataplaneIpHandler
 
     public async ValueTask HandleIpv4PacketAsync(NodeId peerNodeId, ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken)
     {
+        if (Ipv4Codec.IsFragmented(ipv4Packet.Span))
+        {
+            if (ZeroTierTrace.Enabled)
+            {
+                ZeroTierTrace.WriteLine("[zerotier] Drop: IPv4 fragments are not supported.");
+            }
+
+            return;
+        }
+
         if (!Ipv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
         {
             return;
