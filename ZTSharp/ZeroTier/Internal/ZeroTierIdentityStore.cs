@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using ZTSharp.Internal;
 
 namespace ZTSharp.ZeroTier.Internal;
 
@@ -18,7 +19,20 @@ internal static class ZeroTierIdentityStore
             return false;
         }
 
-        var bytes = File.ReadAllBytes(path);
+        byte[] bytes;
+        try
+        {
+            bytes = File.ReadAllBytes(path);
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+
         if (bytes.Length != FileLength)
         {
             return false;
@@ -55,12 +69,6 @@ internal static class ZeroTierIdentityStore
             throw new ArgumentException("Identity must include a private key.", nameof(identity));
         }
 
-        var directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
         var bytes = new byte[FileLength];
         Magic.CopyTo(bytes.AsSpan(0, 4));
         bytes[4] = Version;
@@ -68,6 +76,6 @@ internal static class ZeroTierIdentityStore
         identity.PublicKey.CopyTo(bytes.AsSpan(5 + 8, ZeroTierIdentity.PublicKeyLength));
         identity.PrivateKey.CopyTo(bytes.AsSpan(5 + 8 + ZeroTierIdentity.PublicKeyLength, ZeroTierIdentity.PrivateKeyLength));
 
-        File.WriteAllBytes(path, bytes);
+        AtomicFile.WriteAllBytes(path, bytes);
     }
 }

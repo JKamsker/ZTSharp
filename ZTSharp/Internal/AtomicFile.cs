@@ -2,6 +2,51 @@ namespace ZTSharp.Internal;
 
 internal static class AtomicFile
 {
+    public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var tmpPath = $"{path}.tmp.{Guid.NewGuid():N}";
+        try
+        {
+            using (var stream = new FileStream(
+                tmpPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 16 * 1024,
+                options: FileOptions.None))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(tmpPath, path, overwrite: true);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tmpPath))
+                {
+                    File.Delete(tmpPath);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
     public static async Task WriteAllBytesAsync(
         string path,
         ReadOnlyMemory<byte> bytes,
