@@ -6,8 +6,8 @@ namespace ZTSharp.ZeroTier.Protocol;
 
 internal static class ZeroTierWorldCodec
 {
-    private const int MaxRoots = 4;
-    private const int MaxStableEndpointsPerRoot = 32;
+    private const int MaxRoots = 32;
+    private const int MaxStableEndpointsPerRoot = 64;
 
     public static ZeroTierWorld Decode(ReadOnlySpan<byte> data)
     {
@@ -33,31 +33,37 @@ internal static class ZeroTierWorldCodec
         var signature = ReadBytes(data, ref offset, ZeroTierWorld.C25519SignatureLength).ToArray();
 
         var numRoots = ReadByte(data, ref offset);
-        if (numRoots > MaxRoots)
+        if (numRoots > MaxRoots && ZeroTierTrace.Enabled)
         {
-            throw new FormatException($"World contains too many roots ({numRoots}).");
+            ZeroTierTrace.WriteLine($"[zerotier] World contains {numRoots} roots; truncating to {MaxRoots}.");
         }
 
-        var roots = new List<ZeroTierWorldRoot>(numRoots);
+        var roots = new List<ZeroTierWorldRoot>(Math.Min((int)numRoots, MaxRoots));
         for (var i = 0; i < numRoots; i++)
         {
             var identity = ReadIdentity(data, ref offset);
             var numStableEndpoints = ReadByte(data, ref offset);
-            if (numStableEndpoints > MaxStableEndpointsPerRoot)
+            if (numStableEndpoints > MaxStableEndpointsPerRoot && ZeroTierTrace.Enabled)
             {
-                throw new FormatException($"Root contains too many stable endpoints ({numStableEndpoints}).");
+                ZeroTierTrace.WriteLine($"[zerotier] Root {identity.NodeId} contains {numStableEndpoints} stable endpoints; truncating to {MaxStableEndpointsPerRoot}.");
             }
 
-            var stableEndpoints = new List<IPEndPoint>(numStableEndpoints);
+            var stableEndpoints = new List<IPEndPoint>(Math.Min((int)numStableEndpoints, MaxStableEndpointsPerRoot));
             for (var j = 0; j < numStableEndpoints; j++)
             {
                 if (TryReadInetEndpoint(data, ref offset, out var endpoint))
                 {
-                    stableEndpoints.Add(endpoint);
+                    if (stableEndpoints.Count < MaxStableEndpointsPerRoot)
+                    {
+                        stableEndpoints.Add(endpoint);
+                    }
                 }
             }
 
-            roots.Add(new ZeroTierWorldRoot(identity, stableEndpoints));
+            if (roots.Count < MaxRoots)
+            {
+                roots.Add(new ZeroTierWorldRoot(identity, stableEndpoints));
+            }
         }
 
         if (type == ZeroTierWorldType.Moon)

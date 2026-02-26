@@ -29,8 +29,8 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 2.8 Netconf chunk overlap/DoS resistance: new tests in `ZTSharp.Tests`
 - [x] 2.8 Netconf signature policy (legacy unsigned configs): new tests in `ZTSharp.Tests`
 - [x] 2.8 WHOIS OK robustness to malformed trailing identities: new tests in `ZTSharp.Tests`
-- [ ] 2.8 Planet/world forward-compat behavior: new tests in `ZTSharp.Tests`
-- [ ] 2.8 Inline COM strictness/truncation visibility: new tests in `ZTSharp.Tests`
+- [x] 2.8 Planet/world forward-compat behavior: new tests in `ZTSharp.Tests`
+- [x] 2.8 Inline COM strictness/truncation visibility: new tests in `ZTSharp.Tests`
 - [ ] 2.9 Crypto size caps + allocation hardening: new tests in `ZTSharp.Tests` (and/or `ZTSharp.Benchmarks`)
 - [x] 2.5 Direct-endpoint selection ordering/filtering: new tests in `ZTSharp.Tests`
 - [ ] 2.9 HELLO flood CPU/alloc bounded: new tests in `ZTSharp.Tests`

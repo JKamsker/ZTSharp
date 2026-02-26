@@ -165,10 +165,11 @@ Primary goals:
 - [x] Fix: enforce signature-required policy (or explicitly gate legacy mode behind an option)
 - [x] Add test: WHOIS OK parsing tolerates trailing malformed identity blobs without aborting join (`ZTSharp/ZeroTier/Internal/ZeroTierWhoisClient.cs`)
 - [x] Fix: bound/validate WHOIS OK parsing loop and isolate per-identity parse failures
-- [ ] Add test: embedded planet/world decoding fails gracefully with forward-compat signals rather than hard crash (`ZTSharp/ZeroTier/Protocol/ZeroTierWorldCodec.cs`)
-- [ ] Fix: revisit hard caps (roots/endpoints) and decide forward-compat story (bump caps vs "fail closed" with actionable error)
-- [ ] Add test: inline COM parsing rejects/flags unexpected trailing bytes (or explicitly documents truncation) (`ZTSharp/ZeroTier/Internal/ZeroTierInlineCom.cs`)
-- [ ] Fix: enforce strict length (or make truncation observable via trace/log)
+- [x] Add test: embedded planet/world decoding fails gracefully with forward-compat signals rather than hard crash (`ZTSharp/ZeroTier/Protocol/ZeroTierWorldCodec.cs`)
+- [x] Fix: revisit hard caps (roots/endpoints) and decide forward-compat story (bump caps vs "fail closed" with actionable error)
+  - Policy: treat roots/endpoints caps as truncation limits (do not throw); log truncation via `ZeroTierTrace` when enabled.
+- [x] Add test: inline COM parsing rejects/flags unexpected trailing bytes (or explicitly documents truncation) (`ZTSharp/ZeroTier/Internal/ZeroTierInlineCom.cs`)
+- [x] Fix: enforce strict length (or make truncation observable via trace/log)
 
 ### 2.9 Crypto/perf DoS hardening (packet sizes + allocations)
 - [ ] Add test: crypto rejects oversized packets early (before large allocations) (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCrypto.cs`, `ZTSharp/ZeroTier/Protocol/ZeroTierPacketCryptoAesGmacSiv.cs`)
