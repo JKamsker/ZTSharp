@@ -91,7 +91,7 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
             await _shutdown.CancelAsync().ConfigureAwait(false);
             await _listener.DisposeAsync().ConfigureAwait(false);
 
-            await _connectionTasks.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+            await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
