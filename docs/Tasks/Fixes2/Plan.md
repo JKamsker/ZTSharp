@@ -104,8 +104,9 @@ Primary goals:
 - [x] Add test: invalid-checksum TCP SYN is dropped / does not trigger listener dispatch (`ZTSharp/ZeroTier/Net/TcpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
   - Test: `ZeroTierDataplaneTcpChecksumTests.InvalidTcpChecksumSyn_DoesNotTriggerSynHandler`
 - [x] Fix: use `TcpCodec.TryParseWithChecksum` for TCP receive paths that influence routing/state
-- [ ] Add test: invalid-checksum ICMPv6 NS is dropped (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIcmpv6Handler.cs`)
-- [ ] Fix: validate ICMPv6 checksum for processed message types (Echo/NS/NA)
+- [x] Add test: invalid-checksum ICMPv6 NS is dropped (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIcmpv6Handler.cs`)
+  - Test: `ZeroTierIcmpv6ChecksumTests.NeighborSolicitation_InvalidChecksum_IsDroppedWithoutSending`
+- [x] Fix: validate ICMPv6 checksum for processed message types (Echo/NS/NA)
 - [ ] Add test: `TcpCodec.Encode` rejects/guards oversized payloads that would truncate checksum length (`ZTSharp/ZeroTier/Net/TcpCodec.cs`)
 - [ ] Fix: enforce payload length bounds for TCP encoding (avoid `ushort` truncation in checksum length)
 
