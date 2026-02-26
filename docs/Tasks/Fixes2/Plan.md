@@ -163,8 +163,8 @@ Primary goals:
 - [x] Decide + document: legacy "unsigned config" acceptance policy (allowed vs rejected) (`ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigParsing.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierNetworkConfigProtocol.cs`)
   - Decision: reject legacy unsigned configs by default; allow only via explicit `allowLegacyUnsignedConfig` opt-in.
 - [x] Fix: enforce signature-required policy (or explicitly gate legacy mode behind an option)
-- [ ] Add test: WHOIS OK parsing tolerates trailing malformed identity blobs without aborting join (`ZTSharp/ZeroTier/Internal/ZeroTierWhoisClient.cs`)
-- [ ] Fix: bound/validate WHOIS OK parsing loop and isolate per-identity parse failures
+- [x] Add test: WHOIS OK parsing tolerates trailing malformed identity blobs without aborting join (`ZTSharp/ZeroTier/Internal/ZeroTierWhoisClient.cs`)
+- [x] Fix: bound/validate WHOIS OK parsing loop and isolate per-identity parse failures
 - [ ] Add test: embedded planet/world decoding fails gracefully with forward-compat signals rather than hard crash (`ZTSharp/ZeroTier/Protocol/ZeroTierWorldCodec.cs`)
 - [ ] Fix: revisit hard caps (roots/endpoints) and decide forward-compat story (bump caps vs "fail closed" with actionable error)
 - [ ] Add test: inline COM parsing rejects/flags unexpected trailing bytes (or explicitly documents truncation) (`ZTSharp/ZeroTier/Internal/ZeroTierInlineCom.cs`)
