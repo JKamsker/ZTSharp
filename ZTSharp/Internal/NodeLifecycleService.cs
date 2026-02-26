@@ -153,6 +153,48 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
         }
     }
 
+    public async Task ExecuteWhileRunningAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureNotDisposed();
+            if (_runtime.State != NodeState.Running)
+            {
+                throw new InvalidOperationException("Node must be started.");
+            }
+
+            await operation(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+    }
+
+    public async Task<T> ExecuteWhileRunningAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureNotDisposed();
+            if (_runtime.State != NodeState.Running)
+            {
+                throw new InvalidOperationException("Node must be started.");
+            }
+
+            return await operation(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_runtime.Disposed)

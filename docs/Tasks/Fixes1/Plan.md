@@ -480,8 +480,8 @@ Files
 
 Changes
 
-- [ ] Add `ExecuteWhileRunningAsync(...)` on `NodeLifecycleService` that holds `_stateLock` for the duration of an operation.
-- [ ] Update `NodeCore.JoinNetworkAsync/LeaveNetworkAsync/SendFrameAsync/...` to use this wrapper so `StopAsync` cannot interleave and leave partial registrations.
+- [x] Add `ExecuteWhileRunningAsync(...)` on `NodeLifecycleService` that holds `_stateLock` for the duration of an operation.
+- [x] Update `NodeCore.JoinNetworkAsync/LeaveNetworkAsync/SendFrameAsync/...` to use this wrapper so `StopAsync` cannot interleave and leave partial registrations.
 
 ### 6.2 Isolate user callbacks so receive loop can't be killed
 

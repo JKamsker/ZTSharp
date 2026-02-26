@@ -76,53 +76,52 @@ internal sealed class NodeCore : IAsyncDisposable
 
     public Task StopAsync(CancellationToken cancellationToken = default) => _lifecycleService.StopAsync(cancellationToken);
 
-    public async Task JoinNetworkAsync(ulong networkId, CancellationToken cancellationToken = default)
-    {
-        await _lifecycleService.EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
-        var localEndpoint = _transportService.GetLocalTransportEndpoint();
-        await _networkService
-            .JoinNetworkAsync(networkId, _runtime.NodeId.Value, localEndpoint, _transportService.OnFrameReceivedAsync, cancellationToken)
-            .ConfigureAwait(false);
-    }
+    public Task JoinNetworkAsync(ulong networkId, CancellationToken cancellationToken = default)
+        => _lifecycleService.ExecuteWhileRunningAsync(
+            async token =>
+            {
+                var localEndpoint = _transportService.GetLocalTransportEndpoint();
+                await _networkService
+                    .JoinNetworkAsync(networkId, _runtime.NodeId.Value, localEndpoint, _transportService.OnFrameReceivedAsync, token)
+                    .ConfigureAwait(false);
+            },
+            cancellationToken);
 
-    public async Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken = default)
-    {
-        await _lifecycleService.EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
-        await _networkService.LeaveNetworkAsync(networkId, cancellationToken).ConfigureAwait(false);
-    }
+    public Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken = default)
+        => _lifecycleService.ExecuteWhileRunningAsync(
+            token => _networkService.LeaveNetworkAsync(networkId, token),
+            cancellationToken);
 
-    public async Task SendFrameAsync(ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
-    {
-        await _lifecycleService.EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
-        await _networkService.SendFrameAsync(networkId, _runtime.NodeId.Value, payload, cancellationToken).ConfigureAwait(false);
-    }
+    public Task SendFrameAsync(ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
+        => _lifecycleService.ExecuteWhileRunningAsync(
+            token => _networkService.SendFrameAsync(networkId, _runtime.NodeId.Value, payload, token),
+            cancellationToken);
 
     public Task<IReadOnlyCollection<ulong>> GetNetworksAsync(CancellationToken cancellationToken = default)
         => _networkService.GetNetworksAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<NetworkAddress>> GetNetworkAddressesAsync(ulong networkId, CancellationToken cancellationToken = default)
-    {
-        await _lifecycleService.EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
-        return await _networkService.GetNetworkAddressesAsync(networkId, cancellationToken).ConfigureAwait(false);
-    }
+    public Task<IReadOnlyList<NetworkAddress>> GetNetworkAddressesAsync(ulong networkId, CancellationToken cancellationToken = default)
+        => _lifecycleService.ExecuteWhileRunningAsync(
+            token => _networkService.GetNetworkAddressesAsync(networkId, token),
+            cancellationToken);
 
     public async Task SetNetworkAddressesAsync(
         ulong networkId,
         IReadOnlyList<NetworkAddress> addresses,
         CancellationToken cancellationToken = default)
     {
-        await _lifecycleService.EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
-        await _networkService.SetNetworkAddressesAsync(networkId, addresses, cancellationToken).ConfigureAwait(false);
+        await _lifecycleService.ExecuteWhileRunningAsync(
+            token => _networkService.SetNetworkAddressesAsync(networkId, addresses, token),
+            cancellationToken).ConfigureAwait(false);
     }
 
     public Task AddPeerAsync(ulong networkId, ulong peerNodeId, IPEndPoint endpoint, CancellationToken cancellationToken = default)
         => _peerService.AddPeerAsync(networkId, peerNodeId, endpoint, _transport, cancellationToken);
 
-    public async Task<Identity> GetIdentityAsync(CancellationToken cancellationToken = default)
-    {
-        await _lifecycleService.EnsureRunningAsync(cancellationToken).ConfigureAwait(false);
-        return await _identityService.EnsureIdentityAsync(cancellationToken).ConfigureAwait(false);
-    }
+    public Task<Identity> GetIdentityAsync(CancellationToken cancellationToken = default)
+        => _lifecycleService.ExecuteWhileRunningAsync(
+            token => _identityService.EnsureIdentityAsync(token),
+            cancellationToken);
 
     public IAsyncEnumerable<NodeEvent> GetEventStream(CancellationToken cancellationToken = default)
         => _events.GetEventStream(cancellationToken);
