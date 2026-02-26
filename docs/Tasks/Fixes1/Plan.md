@@ -597,9 +597,9 @@ Acceptance: legacy overlay stack no longer has the identified correctness holes;
 
 Final acceptance:
 
-- [ ] `dotnet format --verify-no-changes` passes.
-- [ ] `dotnet test -c Release` passes on all OS (CI matrix).
-- [ ] No new analyzer warnings (warnings-as-errors remains clean).
+- [x] `dotnet format --verify-no-changes` passes (Windows).
+- [x] `dotnet test -c Release` passes (Windows; CI matrix pending).
+- [x] No new analyzer warnings (warnings-as-errors remains clean).
 
 ---
 
