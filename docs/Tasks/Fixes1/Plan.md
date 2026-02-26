@@ -431,12 +431,12 @@ File
 
 Decisions
 
-- [ ] MaxNetworkConfigBytes = 1 * 1024 * 1024.
+- [x] MaxNetworkConfigBytes = 1 * 1024 * 1024.
 
 Changes
 
-- [ ] Before allocating `dictionary = new byte[configTotalLength]`, reject if `configTotalLength == 0` or `configTotalLength > MaxNetworkConfigBytes`.
-- [ ] Ensure `configTotalLength` fits `int`.
+- [x] Before allocating `dictionary = new byte[configTotalLength]`, reject if `configTotalLength == 0` or `configTotalLength > MaxNetworkConfigBytes`.
+- [x] Ensure `configTotalLength` fits `int`.
 
 ### 5.3 X25519 all-zero shared secret guard
 
@@ -462,7 +462,7 @@ Changes
 
 - [x] World signature helper: create synthetic ZeroTierWorld + sign key, verify SerializeForSign + VerifySignature succeeds; invalid byte flip fails.
 - [x] PlanetLoader hardened behavior: invalid/oversized state planet ignored in favor of embedded.
-- [ ] NetworkConfig cap: absurd totalLength rejected without allocation.
+- [x] NetworkConfig cap: absurd totalLength rejected without allocation.
 - [ ] All-zero shared secret: known small-order pubkey causes failure.
 
 Acceptance: planet loading is bounded and hardened; config fetch cannot OOM; crypto rejects invalid DH.

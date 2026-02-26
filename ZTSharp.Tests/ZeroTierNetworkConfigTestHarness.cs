@@ -8,6 +8,22 @@ namespace ZTSharp.Tests;
 
 internal static class ZeroTierNetworkConfigTestHarness
 {
+    public static Task RunControllerAsync(
+        ZeroTierUdpTransport controllerUdp,
+        ZeroTierIdentity controllerIdentity,
+        ZeroTierIdentity localIdentity,
+        CancellationToken cancellationToken)
+        => RunControllerAsync(
+            controllerUdp,
+            controllerIdentity,
+            localIdentity,
+            networkId =>
+            {
+                var dictBytes = ZeroTierNetworkConfigTestPayloads.BuildDictionaryWithStaticIp(IPAddress.Parse("10.121.15.99"), bits: 24);
+                return ZeroTierNetworkConfigTestPayloads.BuildSignedConfigChunkPayload(networkId, dictBytes, controllerIdentity.PrivateKey!);
+            },
+            cancellationToken);
+
     public static async Task RunRootAsync(
         ZeroTierUdpTransport rootUdp,
         ZeroTierIdentity rootIdentity,
@@ -112,8 +128,11 @@ internal static class ZeroTierNetworkConfigTestHarness
         ZeroTierUdpTransport controllerUdp,
         ZeroTierIdentity controllerIdentity,
         ZeroTierIdentity localIdentity,
+        Func<ulong, byte[]> chunkPayloadFactory,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(chunkPayloadFactory);
+
         var key = new byte[48];
         ZeroTierC25519.Agree(controllerIdentity.PrivateKey!, localIdentity.PublicKey, key);
 
@@ -169,9 +188,7 @@ internal static class ZeroTierNetworkConfigTestHarness
 
             var networkId = BinaryPrimitives.ReadUInt64BigEndian(authPacket.AsSpan(ZeroTierPacketHeader.Length, 8));
 
-            var dictBytes = ZeroTierNetworkConfigTestPayloads.BuildDictionaryWithStaticIp(IPAddress.Parse("10.121.15.99"), bits: 24);
-
-            var chunkPayload = ZeroTierNetworkConfigTestPayloads.BuildSignedConfigChunkPayload(networkId, dictBytes, controllerIdentity.PrivateKey!);
+            var chunkPayload = chunkPayloadFactory(networkId);
 
             var okPayload = new byte[1 + 8 + chunkPayload.Length];
             okPayload[0] = (byte)ZeroTierVerb.NetworkConfigRequest;

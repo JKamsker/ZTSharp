@@ -187,7 +187,23 @@ internal static class ZeroTierNetworkConfigProtocol
 
                 if (dictionary is null)
                 {
-                    dictionary = new byte[configTotalLength];
+                    if (configTotalLength == 0)
+                    {
+                        throw new InvalidOperationException("Network config total length must be non-zero.");
+                    }
+
+                    if (configTotalLength > ZeroTierProtocolLimits.MaxNetworkConfigBytes)
+                    {
+                        throw new InvalidOperationException(
+                            $"Network config total length {configTotalLength} exceeds max {ZeroTierProtocolLimits.MaxNetworkConfigBytes} bytes.");
+                    }
+
+                    if (configTotalLength > int.MaxValue)
+                    {
+                        throw new InvalidOperationException("Network config total length is too large.");
+                    }
+
+                    dictionary = new byte[(int)configTotalLength];
                     totalLength = configTotalLength;
                     updateId = configUpdateId;
                 }

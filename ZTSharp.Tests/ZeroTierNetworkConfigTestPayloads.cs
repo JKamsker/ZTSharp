@@ -41,13 +41,32 @@ internal static class ZeroTierNetworkConfigTestPayloads
     }
 
     public static byte[] BuildSignedConfigChunkPayload(ulong networkId, byte[] dictionaryBytes, byte[] controllerPrivateKey)
+        => BuildSignedConfigChunkPayload(
+            networkId,
+            dictionaryBytes,
+            controllerPrivateKey,
+            totalLength: (uint)dictionaryBytes.Length);
+
+    public static byte[] BuildSignedConfigChunkPayload(
+        ulong networkId,
+        byte[] chunkBytes,
+        byte[] controllerPrivateKey,
+        uint totalLength,
+        uint chunkIndex = 0,
+        ulong updateId = 7,
+        byte flags = 0)
     {
         var flagsLength = 1;
         var updateIdLength = 8;
         var totalLengthLength = 4;
         var chunkIndexLength = 4;
 
-        var chunkLen = (ushort)dictionaryBytes.Length;
+        if (chunkBytes.Length > ushort.MaxValue)
+        {
+            throw new ArgumentException("Chunk bytes must fit within a UInt16 length prefix.", nameof(chunkBytes));
+        }
+
+        var chunkLen = (ushort)chunkBytes.Length;
         var signatureMessageLength = 8 + 2 + chunkLen + flagsLength + updateIdLength + totalLengthLength + chunkIndexLength;
         var signatureMessage = new byte[signatureMessageLength];
 
@@ -56,15 +75,15 @@ internal static class ZeroTierNetworkConfigTestPayloads
         p += 8;
         BinaryPrimitives.WriteUInt16BigEndian(signatureMessage.AsSpan(p, 2), chunkLen);
         p += 2;
-        dictionaryBytes.CopyTo(signatureMessage.AsSpan(p));
-        p += dictionaryBytes.Length;
+        chunkBytes.CopyTo(signatureMessage.AsSpan(p));
+        p += chunkBytes.Length;
 
-        signatureMessage[p++] = 0; // flags
-        BinaryPrimitives.WriteUInt64BigEndian(signatureMessage.AsSpan(p, 8), 7);
+        signatureMessage[p++] = flags;
+        BinaryPrimitives.WriteUInt64BigEndian(signatureMessage.AsSpan(p, 8), updateId);
         p += 8;
-        BinaryPrimitives.WriteUInt32BigEndian(signatureMessage.AsSpan(p, 4), (uint)dictionaryBytes.Length);
+        BinaryPrimitives.WriteUInt32BigEndian(signatureMessage.AsSpan(p, 4), totalLength);
         p += 4;
-        BinaryPrimitives.WriteUInt32BigEndian(signatureMessage.AsSpan(p, 4), 0);
+        BinaryPrimitives.WriteUInt32BigEndian(signatureMessage.AsSpan(p, 4), chunkIndex);
         p += 4;
 
         if (p != signatureMessage.Length)

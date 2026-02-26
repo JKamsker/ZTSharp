@@ -51,4 +51,61 @@ public sealed class ZeroTierNetworkConfigClientTests
         cts.Cancel();
         await Task.WhenAll(rootTask, controllerTask);
     }
+
+    [Fact]
+    public async Task FetchAsync_Rejects_OversizedConfigTotalLength()
+    {
+        Assert.True(ZeroTierIdentity.TryParse(ZeroTierTestIdentities.KnownGoodIdentity, out var localIdentity));
+        Assert.NotNull(localIdentity.PrivateKey);
+
+        var rootIdentity = ZeroTierTestIdentities.CreateFastIdentity(0x0102030405);
+        var controllerIdentity = ZeroTierTestIdentities.CreateFastIdentity(0x0a0b0c0d0e);
+        Assert.NotNull(controllerIdentity.PrivateKey);
+        var controllerPrivateKey = controllerIdentity.PrivateKey!;
+
+        var networkId = (controllerIdentity.NodeId.Value << 24) | 0x000001UL;
+
+        await using var rootUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+        await using var controllerUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
+
+        var planet = new ZeroTierWorld(
+            ZeroTierWorldType.Planet,
+            id: 1,
+            timestamp: 1,
+            updatesMustBeSignedBy: new byte[ZeroTierWorld.C25519PublicKeyLength],
+            signature: new byte[ZeroTierWorld.C25519SignatureLength],
+            roots: new[]
+            {
+                new ZeroTierWorldRoot(rootIdentity, new[] { rootUdp.LocalEndpoint })
+            });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var rootTask = ZeroTierNetworkConfigTestHarness.RunRootAsync(rootUdp, rootIdentity, controllerIdentity, controllerUdp.LocalEndpoint, cts.Token);
+        var controllerTask = ZeroTierNetworkConfigTestHarness.RunControllerAsync(
+            controllerUdp,
+            controllerIdentity,
+            localIdentity,
+            requestedNetworkId =>
+            {
+                var oversizedTotalLength = (uint)ZeroTierProtocolLimits.MaxNetworkConfigBytes + 1;
+                return ZeroTierNetworkConfigTestPayloads.BuildSignedConfigChunkPayload(
+                    requestedNetworkId,
+                    chunkBytes: new byte[] { 0x00 },
+                    controllerPrivateKey,
+                    totalLength: oversizedTotalLength);
+            },
+            cts.Token);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ZeroTierNetworkConfigClient.FetchAsync(
+                localIdentity,
+                planet,
+                networkId,
+                timeout: TimeSpan.FromSeconds(2),
+                cancellationToken: CancellationToken.None));
+
+        cts.Cancel();
+        await Task.WhenAll(rootTask, controllerTask);
+    }
 }
