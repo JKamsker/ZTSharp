@@ -15,6 +15,9 @@ internal sealed class ZeroTierPeerQosManager
     // See: ZeroTierOne node/Constants.hpp
     private const int QosAckDivisor = 0x2;
 
+    // See: ZeroTierOne node/Bond.cpp (_qosSendInterval default = _failoverInterval * 2).
+    private const long DefaultQosSendIntervalMs = 10_000;
+
     // See: ZeroTierOne node/Bond.cpp (qosStatsOut timeout = _qosSendInterval * 3).
     private const long DefaultRecordTimeoutMs = 30_000;
 
@@ -24,6 +27,28 @@ internal sealed class ZeroTierPeerQosManager
     public ZeroTierPeerQosManager(Func<long>? nowMs = null)
     {
         _nowMs = nowMs ?? (() => Environment.TickCount64);
+    }
+
+    public void RecordIncomingPacket(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint, ulong packetId)
+    {
+        ArgumentNullException.ThrowIfNull(remoteEndPoint);
+
+        if (!ShouldTrack(packetId))
+        {
+            return;
+        }
+
+        var now = _nowMs();
+        var key = new ZeroTierPeerQosPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
+        var state = _paths.GetOrAdd(key, static _ => new PathState());
+
+        if (Volatile.Read(ref state.InboundCount) >= MaxPendingRecords)
+        {
+            return;
+        }
+
+        state.Inbound.Enqueue(new PendingInboundRecord(packetId, now));
+        Interlocked.Increment(ref state.InboundCount);
     }
 
     public void RecordOutgoingPacket(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint, ulong packetId)
@@ -47,6 +72,70 @@ internal sealed class ZeroTierPeerQosManager
         }
 
         state.OutboundSentMs.TryAdd(packetId, now);
+    }
+
+    public bool TryBuildOutboundPayload(
+        NodeId peerNodeId,
+        int localSocketId,
+        IPEndPoint remoteEndPoint,
+        out byte[] payload)
+    {
+        ArgumentNullException.ThrowIfNull(remoteEndPoint);
+
+        payload = Array.Empty<byte>();
+
+        var key = new ZeroTierPeerQosPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
+        if (!_paths.TryGetValue(key, out var state))
+        {
+            return false;
+        }
+
+        var now = _nowMs();
+        var pending = Volatile.Read(ref state.InboundCount);
+        if (pending <= 0)
+        {
+            return false;
+        }
+
+        var lastSent = Volatile.Read(ref state.LastSentMs);
+        if (pending < MaxRecordsPerPacket && lastSent != 0 && unchecked(now - lastSent) < DefaultQosSendIntervalMs)
+        {
+            return false;
+        }
+
+        var buffer = new byte[MaxPacketBytes];
+        var span = buffer.AsSpan();
+        var written = 0;
+        var records = 0;
+
+        while (records < MaxRecordsPerPacket && state.Inbound.TryDequeue(out var record))
+        {
+            Interlocked.Decrement(ref state.InboundCount);
+
+            BinaryPrimitives.WriteUInt64LittleEndian(span.Slice(written, 8), record.PacketId);
+            written += 8;
+
+            var holding = unchecked(now - record.ReceivedMs);
+            if (holding < 0)
+            {
+                holding = 0;
+            }
+
+            var holdingU16 = holding > ushort.MaxValue ? ushort.MaxValue : (ushort)holding;
+            BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(written, 2), holdingU16);
+            written += 2;
+
+            records++;
+        }
+
+        if (records <= 0)
+        {
+            return false;
+        }
+
+        Volatile.Write(ref state.LastSentMs, now);
+        payload = buffer.AsSpan(0, written).ToArray();
+        return true;
     }
 
     public void ForgetOutgoingPacket(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint, ulong packetId)
@@ -161,12 +250,17 @@ internal sealed class ZeroTierPeerQosManager
 
     private sealed class PathState
     {
+        public ConcurrentQueue<PendingInboundRecord> Inbound { get; } = new();
+        public int InboundCount;
+        public long LastSentMs;
+
         public ConcurrentDictionary<ulong, long> OutboundSentMs { get; } = new();
         public long LastOutboundCleanupMs;
         public int LastLatencyAvgMs;
         public long LastLatencyUpdatedMs;
     }
+
+    private readonly record struct PendingInboundRecord(ulong PacketId, long ReceivedMs);
 }
 
 internal readonly record struct ZeroTierPeerQosPathKey(NodeId PeerNodeId, ZeroTierPeerPhysicalPathKey Path);
-

@@ -42,6 +42,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _dispatcherLoop;
     private readonly Task _peerLoop;
+    private readonly Task? _multipathMaintenanceLoop;
 
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly ZeroTierDataplanePeerSecurity _peerSecurity;
@@ -198,6 +199,9 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
         _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);
+        _multipathMaintenanceLoop = multipath.Enabled
+            ? Task.Run(() => MultipathMaintenanceLoopAsync(_cts.Token), CancellationToken.None)
+            : null;
     }
 
     public NodeId NodeId => _localIdentity.NodeId;
@@ -429,6 +433,99 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         return false;
     }
 
+    private async Task MultipathMaintenanceLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunMultipathMaintenanceOnceAsync(cancellationToken).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // Maintenance loop must survive per-iteration faults.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Multipath maintenance fault: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task RunMultipathMaintenanceOnceAsync(CancellationToken cancellationToken)
+    {
+        var peers = _peerPaths.GetPeersSnapshot();
+        if (peers.Length == 0)
+        {
+            return;
+        }
+
+        for (var i = 0; i < peers.Length; i++)
+        {
+            var peerNodeId = peers[i];
+            if (!_peerSecurity.TryGetPeerKey(peerNodeId, out var key))
+            {
+                continue;
+            }
+
+            var peerProtocolVersion = _peerSecurity.GetPeerProtocolVersionOrDefault(peerNodeId);
+            var paths = _peerPaths.GetSnapshot(peerNodeId);
+            if (paths.Length == 0)
+            {
+                continue;
+            }
+
+            for (var p = 0; p < paths.Length; p++)
+            {
+                var path = paths[p];
+                if (!_peerQos.TryBuildOutboundPayload(peerNodeId, path.LocalSocketId, path.RemoteEndPoint, out var qosPayload))
+                {
+                    continue;
+                }
+
+                await SendPeerControlAsync(
+                        peerNodeId,
+                        path.LocalSocketId,
+                        path.RemoteEndPoint,
+                        ZeroTierVerb.QosMeasurement,
+                        qosPayload,
+                        key,
+                        peerProtocolVersion,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async ValueTask SendPeerControlAsync(
+        NodeId peerNodeId,
+        int localSocketId,
+        IPEndPoint remoteEndPoint,
+        ZeroTierVerb verb,
+        ReadOnlyMemory<byte> payload,
+        byte[] sharedKey,
+        byte remoteProtocolVersion,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var packetId = ZeroTierPacketIdGenerator.GeneratePacketId();
+        var header = new ZeroTierPacketHeader(
+            PacketId: packetId,
+            Destination: peerNodeId,
+            Source: _localIdentity.NodeId,
+            Flags: 0,
+            Mac: 0,
+            VerbRaw: (byte)verb);
+
+        var packet = ZeroTierPacketCodec.Encode(header, payload.Span);
+        ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(sharedKey, remoteProtocolVersion), encryptPayload: false);
+        await _udp.SendAsync(localSocketId, remoteEndPoint, packet, cancellationToken).ConfigureAwait(false);
+    }
+
     private static bool TryGetPacketIdAndVerb(ReadOnlyMemory<byte> packet, out (ulong PacketId, ZeroTierVerb Verb) parsed)
     {
         if (packet.Length < ZeroTierPacketHeader.Length)
@@ -454,6 +551,17 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _disposed = true;
         _peerQueue.Writer.TryComplete();
         await _cts.CancelAsync().ConfigureAwait(false);
+
+        if (_multipathMaintenanceLoop is not null)
+        {
+            try
+            {
+                await _multipathMaintenanceLoop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+            }
+        }
 
         await _udp.DisposeAsync().ConfigureAwait(false);
 

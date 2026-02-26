@@ -47,6 +47,13 @@ internal sealed class ZeroTierPeerPhysicalPathTracker
             .ToArray();
     }
 
+    public NodeId[] GetPeersSnapshot()
+    {
+        var now = _nowUnixMs();
+        CleanupIfNeeded(now);
+        return _peers.Keys.ToArray();
+    }
+
     private void CleanupIfNeeded(long nowUnixMs)
     {
         var last = Volatile.Read(ref _lastCleanupUnixMs);
