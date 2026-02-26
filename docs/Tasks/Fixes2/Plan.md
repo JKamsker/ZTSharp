@@ -222,9 +222,9 @@ Primary goals:
 - [x] Fix: distinguish "timeout cancellation" vs other `OperationCanceledException` sources; preserve original exception when appropriate
 
 ### 3.6 Crypto dearmor mutation footgun (AES-GMAC-SIV)
-- [ ] Add test: failed dearmor does not leave buffer mutated (or document it as a hard contract) (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCryptoAesGmacSiv.cs`)
-- [ ] Fix (preferred): authenticate first, then decrypt, or decrypt into a temporary buffer and copy on success
-- [ ] Audit call sites: ensure every `Dearmor(...) == false` path drops the packet and never parses "plaintext"
+- [x] Add test: failed dearmor does not leave buffer mutated (or document it as a hard contract) (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCryptoAesGmacSiv.cs`)
+- [x] Fix (preferred): authenticate first, then decrypt, or decrypt into a temporary buffer and copy on success
+- [x] Audit call sites: ensure every `Dearmor(...) == false` path drops the packet and never parses "plaintext"
 
 ### 3.7 Socket API parity gaps (intentional vs accidental)
 - [ ] Decide + document: `ManagedSocket.Shutdown(SocketShutdown)` semantics (currently closes regardless of `how`) (`ZTSharp/ZeroTier/Sockets/ManagedSocket.cs`)

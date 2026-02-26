@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 
@@ -95,29 +96,44 @@ internal static class ZeroTierPacketCryptoAesGmacSiv
         ctrIv[12] &= 0x7F;
 
         var payloadLength = packet.Length - ZeroTierPacketHeader.IndexVerb;
-        AesCtrXorInPlace(aes, ctrIv, packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength));
-
-        Span<byte> nonce = stackalloc byte[AesGmacSivNonceLength];
-        ivMac.Slice(0, 8).CopyTo(nonce);
-        nonce.Slice(8, 4).Clear();
-
-        var authData = new byte[AesGmacSivAadPaddedLength + payloadLength];
-        packet.Slice(8, 10).CopyTo(authData.AsSpan(0, 10));
-        authData[10] = (byte)(packet[ZeroTierPacketHeader.IndexFlags] & 0xF8);
-        packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength).CopyTo(authData.AsSpan(AesGmacSivAadPaddedLength));
-
-        Span<byte> gmacTag = stackalloc byte[AesGmacSivTagLength];
-        ComputeGmacTag(k0, nonce, authData, gmacTag);
-
-        Span<byte> reducedTag = stackalloc byte[8];
-        for (var i = 0; i < reducedTag.Length; i++)
+        var rented = ArrayPool<byte>.Shared.Rent(payloadLength);
+        try
         {
-            reducedTag[i] = (byte)(gmacTag[i] ^ gmacTag[i + 8]);
-        }
+            var plaintextPayload = rented.AsSpan(0, payloadLength);
+            packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength).CopyTo(plaintextPayload);
+            AesCtrXorInPlace(aes, ctrIv, plaintextPayload);
 
-        return CryptographicOperations.FixedTimeEquals(
-            reducedTag,
-            ivMac.Slice(8, 8));
+            Span<byte> nonce = stackalloc byte[AesGmacSivNonceLength];
+            ivMac.Slice(0, 8).CopyTo(nonce);
+            nonce.Slice(8, 4).Clear();
+
+            var authData = new byte[AesGmacSivAadPaddedLength + payloadLength];
+            packet.Slice(8, 10).CopyTo(authData.AsSpan(0, 10));
+            authData[10] = (byte)(packet[ZeroTierPacketHeader.IndexFlags] & 0xF8);
+            plaintextPayload.CopyTo(authData.AsSpan(AesGmacSivAadPaddedLength));
+
+            Span<byte> gmacTag = stackalloc byte[AesGmacSivTagLength];
+            ComputeGmacTag(k0, nonce, authData, gmacTag);
+
+            Span<byte> reducedTag = stackalloc byte[8];
+            for (var i = 0; i < reducedTag.Length; i++)
+            {
+                reducedTag[i] = (byte)(gmacTag[i] ^ gmacTag[i + 8]);
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(reducedTag, ivMac.Slice(8, 8)))
+            {
+                return false;
+            }
+
+            plaintextPayload.CopyTo(packet.Slice(ZeroTierPacketHeader.IndexVerb, payloadLength));
+            return true;
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(rented.AsSpan(0, payloadLength));
+            ArrayPool<byte>.Shared.Return(rented, clearArray: false);
+        }
     }
 
     private static void ComputeGmacTag(ReadOnlySpan<byte> key, ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> data, Span<byte> destination)

@@ -48,7 +48,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 3.3 `ZeroTierSocket.DisposeAsync` cannot wedge behind join/runtime: new tests in `ZTSharp.Tests`
 - [x] 3.4 `ZeroTierUdpSocket.DisposeAsync` idempotent: new tests in `ZTSharp.Tests`
 - [x] 3.5 Timeout helper preserves correct exceptions: new tests in `ZTSharp.Tests`
-- [ ] 3.6 AES dearmor failure doesn't mutate plaintext (or is documented): new tests in `ZTSharp.Tests`
+- [x] 3.6 AES dearmor failure doesn't mutate plaintext (or is documented): new tests in `ZTSharp.Tests`
 - [ ] 3.7 ManagedSocket `Shutdown` semantics documented/enforced: new tests in `ZTSharp.Tests`
 - [ ] 3.7 Backlog + port-0 listen policy enforced: new tests in `ZTSharp.Tests`
 - [ ] 3.8 Real-stack HTTP per-address connect behavior bounded: new tests in `ZTSharp.Tests`
