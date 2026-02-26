@@ -132,6 +132,91 @@ public sealed class UserSpaceTcpClientIoTests
     }
 
     [Fact]
+    public async Task WriteAsync_RespectsRemoteMssAdvertisedInSynAck()
+    {
+        await using var link = new InspectableIpv4Link();
+        var localIp = IPAddress.Parse("10.0.0.1");
+        var remoteIp = IPAddress.Parse("10.0.0.2");
+        const ushort remotePort = 80;
+        const ushort localPort = 50000;
+        const ushort remoteMss = 536;
+
+        await using var client = new UserSpaceTcpClient(link, localIp, remoteIp, remotePort, localPort: localPort, mss: 1200);
+
+        var connectTask = client.ConnectAsync();
+        var syn = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(Ipv4Codec.TryParse(syn.Span, out _, out _, out _, out var synPayload));
+        Assert.True(TcpCodec.TryParse(synPayload, out _, out _, out var synSeq, out _, out _, out _, out _));
+
+        var synAckTcp = TcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: 1000,
+            acknowledgmentNumber: unchecked(synSeq + 1),
+            flags: TcpCodec.Flags.Syn | TcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: TcpCodec.EncodeMssOption(remoteMss),
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, synAckTcp, identification: 1));
+
+        await connectTask.WaitAsync(TimeSpan.FromSeconds(2));
+        _ = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2)); // final ACK
+
+        var payload = new byte[600];
+        Array.Fill(payload, (byte)'a');
+
+        var writeTask = client.WriteAsync(payload, CancellationToken.None).AsTask();
+
+        var firstData = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(Ipv4Codec.TryParse(firstData.Span, out _, out _, out _, out var firstDataPayload));
+        Assert.True(TcpCodec.TryParse(firstDataPayload, out _, out _, out var firstSeq, out var firstAck, out var firstFlags, out _, out var firstTcpPayload));
+        Assert.Equal(TcpCodec.Flags.Ack | TcpCodec.Flags.Psh, firstFlags);
+        var firstPayloadLength = firstTcpPayload.Length;
+        Assert.Equal(remoteMss, firstPayloadLength);
+
+        var ack1Tcp = TcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: firstAck,
+            acknowledgmentNumber: unchecked(firstSeq + (uint)firstPayloadLength),
+            flags: TcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, ack1Tcp, identification: 2));
+
+        var secondData = await link.Outgoing.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(Ipv4Codec.TryParse(secondData.Span, out _, out _, out _, out var secondDataPayload));
+        Assert.True(TcpCodec.TryParse(secondDataPayload, out _, out _, out var secondSeq, out var secondAck, out var secondFlags, out _, out var secondTcpPayload));
+        Assert.Equal(TcpCodec.Flags.Ack | TcpCodec.Flags.Psh, secondFlags);
+        Assert.Equal(unchecked(firstSeq + (uint)firstPayloadLength), secondSeq);
+        var secondPayloadLength = secondTcpPayload.Length;
+        Assert.Equal(payload.Length - remoteMss, secondPayloadLength);
+
+        var ack2Tcp = TcpCodec.Encode(
+            sourceIp: remoteIp,
+            destinationIp: localIp,
+            sourcePort: remotePort,
+            destinationPort: localPort,
+            sequenceNumber: secondAck,
+            acknowledgmentNumber: unchecked(secondSeq + (uint)secondPayloadLength),
+            flags: TcpCodec.Flags.Ack,
+            windowSize: 65535,
+            options: ReadOnlySpan<byte>.Empty,
+            payload: ReadOnlySpan<byte>.Empty);
+
+        link.Incoming.Writer.TryWrite(Ipv4Codec.Encode(remoteIp, localIp, TcpCodec.ProtocolNumber, ack2Tcp, identification: 3));
+
+        await writeTask.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task ReadAsync_ReassemblesOutOfOrderSegments()
     {
         await using var link = new InspectableIpv4Link();

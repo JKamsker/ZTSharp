@@ -178,8 +178,8 @@ Files
 
 Changes
 
-- [ ] Extend TCP parse to expose options span; parse MSS option from SYN/SYN-ACK and set effective MSS to `min(localMss, remoteMss)` for chunking.
-- [ ] Add sender API `UpdateEffectiveMss(ushort remoteMss)`.
+- [x] Extend TCP parse to expose options span; parse MSS option from SYN/SYN-ACK and set effective MSS to `min(localMss, remoteMss)` for chunking.
+- [x] Add sender API `UpdateEffectiveMss(ushort remoteMss)`.
 
 ### Tests (Phase 2)
 
@@ -191,7 +191,7 @@ Add/extend:
   - [x] Out-of-order overlap trimming: scenario 1100.. then 1050.. then 1000.. must not leak window.
   - [x] Error propagation: RST causes `ReadAsync` to throw after drain, not return 0.
   - [x] Checksum validation: flip one bit in segment -> dropped.
-  - [ ] MSS negotiation: peer advertises MSS 536 -> outbound chunks never exceed 536.
+  - [x] MSS negotiation: peer advertises MSS 536 -> outbound chunks never exceed 536.
 
 Acceptance: all TCP tests stable under stress; no deadlocks; window recovers; no spurious timeouts.
 

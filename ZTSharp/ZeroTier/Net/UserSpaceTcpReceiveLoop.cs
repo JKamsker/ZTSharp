@@ -64,7 +64,7 @@ internal sealed class UserSpaceTcpReceiveLoop
                 return;
             }
 
-            if (!TryParseAndFilterTcpPacket(ipPacket, out var seq, out var ack, out var flags, out var windowSize, out var tcpPayload))
+            if (!TryParseAndFilterTcpPacket(ipPacket, out var seq, out var ack, out var flags, out var windowSize, out var tcpOptions, out var tcpPayload))
             {
                 continue;
             }
@@ -87,6 +87,11 @@ internal sealed class UserSpaceTcpReceiveLoop
                 if (ack != _sender.SendNext)
                 {
                     continue;
+                }
+
+                if (TcpCodec.TryGetMssOption(tcpOptions, out var remoteMss))
+                {
+                    _sender.UpdateEffectiveMss(remoteMss);
                 }
 
                 _receiver.Initialize(unchecked(seq + 1));
@@ -131,12 +136,14 @@ internal sealed class UserSpaceTcpReceiveLoop
         out uint ack,
         out TcpCodec.Flags flags,
         out ushort windowSize,
+        out ReadOnlySpan<byte> tcpOptions,
         out ReadOnlySpan<byte> tcpPayload)
     {
         seq = 0;
         ack = 0;
         flags = 0;
         windowSize = 0;
+        tcpOptions = ReadOnlySpan<byte>.Empty;
         tcpPayload = ReadOnlySpan<byte>.Empty;
 
         IPAddress src;
@@ -167,7 +174,7 @@ internal sealed class UserSpaceTcpReceiveLoop
             }
         }
 
-        if (!TcpCodec.TryParseWithChecksum(_remoteAddress, _localAddress, ipPayload, out var srcPort, out var dstPort, out seq, out ack, out flags, out windowSize, out tcpPayload))
+        if (!TcpCodec.TryParseWithChecksum(_remoteAddress, _localAddress, ipPayload, out var srcPort, out var dstPort, out seq, out ack, out flags, out windowSize, out tcpOptions, out tcpPayload))
         {
             return false;
         }

@@ -92,12 +92,36 @@ internal static class TcpCodec
         out ushort windowSize,
         out ReadOnlySpan<byte> payload)
     {
+        return TryParse(
+            segment,
+            out sourcePort,
+            out destinationPort,
+            out sequenceNumber,
+            out acknowledgmentNumber,
+            out flags,
+            out windowSize,
+            out _,
+            out payload);
+    }
+
+    public static bool TryParse(
+        ReadOnlySpan<byte> segment,
+        out ushort sourcePort,
+        out ushort destinationPort,
+        out uint sequenceNumber,
+        out uint acknowledgmentNumber,
+        out Flags flags,
+        out ushort windowSize,
+        out ReadOnlySpan<byte> options,
+        out ReadOnlySpan<byte> payload)
+    {
         sourcePort = 0;
         destinationPort = 0;
         sequenceNumber = 0;
         acknowledgmentNumber = 0;
         flags = 0;
         windowSize = 0;
+        options = default;
         payload = default;
 
         if (segment.Length < MinimumHeaderLength)
@@ -117,6 +141,7 @@ internal static class TcpCodec
         acknowledgmentNumber = BinaryPrimitives.ReadUInt32BigEndian(segment.Slice(8, 4));
         flags = (Flags)segment[13];
         windowSize = BinaryPrimitives.ReadUInt16BigEndian(segment.Slice(14, 2));
+        options = segment.Slice(MinimumHeaderLength, dataOffset - MinimumHeaderLength);
         payload = segment.Slice(dataOffset);
         return true;
     }
@@ -133,7 +158,34 @@ internal static class TcpCodec
         out ushort windowSize,
         out ReadOnlySpan<byte> payload)
     {
-        if (!TryParse(segment, out sourcePort, out destinationPort, out sequenceNumber, out acknowledgmentNumber, out flags, out windowSize, out payload))
+        return TryParseWithChecksum(
+            sourceIp,
+            destinationIp,
+            segment,
+            out sourcePort,
+            out destinationPort,
+            out sequenceNumber,
+            out acknowledgmentNumber,
+            out flags,
+            out windowSize,
+            out _,
+            out payload);
+    }
+
+    public static bool TryParseWithChecksum(
+        IPAddress sourceIp,
+        IPAddress destinationIp,
+        ReadOnlySpan<byte> segment,
+        out ushort sourcePort,
+        out ushort destinationPort,
+        out uint sequenceNumber,
+        out uint acknowledgmentNumber,
+        out Flags flags,
+        out ushort windowSize,
+        out ReadOnlySpan<byte> options,
+        out ReadOnlySpan<byte> payload)
+    {
+        if (!TryParse(segment, out sourcePort, out destinationPort, out sequenceNumber, out acknowledgmentNumber, out flags, out windowSize, out options, out payload))
         {
             return false;
         }
@@ -155,6 +207,53 @@ internal static class TcpCodec
         option[1] = 4; // length
         BinaryPrimitives.WriteUInt16BigEndian(option.AsSpan(2, 2), mss);
         return option;
+    }
+
+    public static bool TryGetMssOption(ReadOnlySpan<byte> options, out ushort mss)
+    {
+        mss = 0;
+        var offset = 0;
+        while (offset < options.Length)
+        {
+            var kind = options[offset];
+            switch (kind)
+            {
+                case 0: // End of option list
+                    return false;
+                case 1: // NOP
+                    offset++;
+                    continue;
+                case 2:
+                    if (offset + 4 > options.Length || options[offset + 1] != 4)
+                    {
+                        return false;
+                    }
+
+                    mss = BinaryPrimitives.ReadUInt16BigEndian(options.Slice(offset + 2, 2));
+                    return mss != 0;
+            }
+
+            if (offset + 1 >= options.Length)
+            {
+                return false;
+            }
+
+            var length = options[offset + 1];
+            if (length < 2)
+            {
+                return false;
+            }
+
+            var nextOffset = offset + length;
+            if (nextOffset > options.Length)
+            {
+                return false;
+            }
+
+            offset = nextOffset;
+        }
+
+        return false;
     }
 
     private static ushort ComputeChecksum(IPAddress sourceIp, IPAddress destinationIp, ReadOnlySpan<byte> tcpSegment)

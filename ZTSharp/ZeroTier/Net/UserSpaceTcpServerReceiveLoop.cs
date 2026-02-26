@@ -85,7 +85,7 @@ internal sealed class UserSpaceTcpServerReceiveLoop
 
             var parsed = false;
             {
-                if (!TryParseAndFilterTcpPacket(ipPacket, out seq, out ack, out flags, out windowSize, out var tcpPayload))
+                if (!TryParseAndFilterTcpPacket(ipPacket, out seq, out ack, out flags, out windowSize, out var tcpOptions, out var tcpPayload))
                 {
                     parsed = false;
                 }
@@ -113,6 +113,11 @@ internal sealed class UserSpaceTcpServerReceiveLoop
                                 var iss = GenerateInitialSequenceNumber();
                                 _sender.InitializeSendState(iss);
                                 _synAckSeq = _sender.AllocateNextSequence(bytes: 1);
+                            }
+
+                            if (TcpCodec.TryGetMssOption(tcpOptions, out var remoteMss))
+                            {
+                                _sender.UpdateEffectiveMss(remoteMss);
                             }
 
                             _receiver.Initialize(unchecked(seq + 1));
@@ -191,12 +196,14 @@ internal sealed class UserSpaceTcpServerReceiveLoop
         out uint ack,
         out TcpCodec.Flags flags,
         out ushort windowSize,
+        out ReadOnlySpan<byte> tcpOptions,
         out ReadOnlySpan<byte> tcpPayload)
     {
         seq = 0;
         ack = 0;
         flags = 0;
         windowSize = 0;
+        tcpOptions = ReadOnlySpan<byte>.Empty;
         tcpPayload = ReadOnlySpan<byte>.Empty;
 
         IPAddress src;
@@ -227,7 +234,7 @@ internal sealed class UserSpaceTcpServerReceiveLoop
             }
         }
 
-        if (!TcpCodec.TryParseWithChecksum(_remoteAddress, _localAddress, ipPayload, out var srcPort, out var dstPort, out seq, out ack, out flags, out windowSize, out tcpPayload))
+        if (!TcpCodec.TryParseWithChecksum(_remoteAddress, _localAddress, ipPayload, out var srcPort, out var dstPort, out seq, out ack, out flags, out windowSize, out tcpOptions, out tcpPayload))
         {
             return false;
         }

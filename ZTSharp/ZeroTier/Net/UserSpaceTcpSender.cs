@@ -6,7 +6,7 @@ namespace ZTSharp.ZeroTier.Net;
 
 internal sealed class UserSpaceTcpSender : IAsyncDisposable
 {
-    private readonly ushort _mss;
+    private readonly ushort _localMss;
     private readonly UserSpaceTcpReceiver _receiver;
     private readonly UserSpaceTcpSegmentTransmitter _transmitter;
     private readonly UserSpaceTcpRemoteSendWindow _remoteSendWindow = new();
@@ -14,6 +14,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
+    private int _effectiveMss;
     private volatile TaskCompletionSource<bool>? _ackTcs;
     private volatile uint _ackTarget;
     private volatile uint _sendUna;
@@ -38,7 +39,8 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(remoteAddress);
         ArgumentNullException.ThrowIfNull(receiver);
 
-        _mss = mss;
+        _localMss = mss;
+        _effectiveMss = mss;
         _receiver = receiver;
         _transmitter = new UserSpaceTcpSegmentTransmitter(link, localAddress, remoteAddress, localPort, remotePort);
         _windowUpdateTrigger = new UserSpaceTcpWindowUpdateTrigger(
@@ -61,6 +63,17 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         var current = _sendNext;
         _sendNext = unchecked(_sendNext + bytes);
         return current;
+    }
+
+    public void UpdateEffectiveMss(ushort remoteMss)
+    {
+        if (remoteMss == 0)
+        {
+            return;
+        }
+
+        var effectiveMss = Math.Min((int)_localMss, remoteMss);
+        Volatile.Write(ref _effectiveMss, effectiveMss);
     }
 
     public void UpdateRemoteSendWindow(ushort windowSize)
@@ -108,7 +121,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
                 await WaitForRemoteSendWindowAsync(cancellationToken).ConfigureAwait(false);
 
                 var remoteWindow = _remoteSendWindow.Window;
-                var maxChunkSize = Math.Min((int)_mss, (int)remoteWindow);
+                var maxChunkSize = Math.Min(Volatile.Read(ref _effectiveMss), (int)remoteWindow);
                 if (maxChunkSize == 0)
                 {
                     continue;
