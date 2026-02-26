@@ -14,9 +14,10 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
-    private TaskCompletionSource<bool>? _ackTcs;
-    private uint _sendUna;
-    private uint _sendNext;
+    private volatile TaskCompletionSource<bool>? _ackTcs;
+    private volatile uint _ackTarget;
+    private volatile uint _sendUna;
+    private volatile uint _sendNext;
 
     private ushort _lastAdvertisedWindow = ushort.MaxValue;
     private readonly UserSpaceTcpWindowUpdateTrigger _windowUpdateTrigger;
@@ -73,16 +74,16 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
     public void OnAckReceived(uint ack)
     {
-        if (ack == 0)
-        {
-            return;
-        }
-
         if (UserSpaceTcpSequenceNumbers.GreaterThan(ack, _sendUna) &&
             UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendNext, ack))
         {
             _sendUna = ack;
-            _ackTcs?.TrySetResult(true);
+
+            var ackTcs = _ackTcs;
+            if (ackTcs is not null && UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(ack, _ackTarget))
+            {
+                ackTcs.TrySetResult(true);
+            }
         }
     }
 
@@ -203,17 +204,24 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         var delay = _rtoEstimator.Rto;
         var maxDelay = TimeSpan.FromSeconds(30);
 
-        for (var attempt = 0; attempt < retries; attempt++)
+        var ackTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _ackTarget = expectedAck;
+        _ackTcs = ackTcs;
+
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            _ackTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var sentAt = Stopwatch.GetTimestamp();
-            await SendTcpAsync(seq, ack, flags, options, payload, cancellationToken).ConfigureAwait(false);
-
-            try
+            for (var attempt = 0; attempt < retries; attempt++)
             {
-                await _ackTcs.Task.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
+                if (UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendUna, expectedAck))
+                {
+                    return;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var sentAt = Stopwatch.GetTimestamp();
+                await SendTcpAsync(seq, ack, flags, options, payload, cancellationToken).ConfigureAwait(false);
+
                 if (UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendUna, expectedAck))
                 {
                     if (attempt == 0)
@@ -223,15 +231,36 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
                     return;
                 }
+
+                try
+                {
+                    await ackTcs.Task.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
+                    if (UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendUna, expectedAck))
+                    {
+                        if (attempt == 0)
+                        {
+                            _rtoEstimator.Update(Stopwatch.GetElapsedTime(sentAt));
+                        }
+
+                        return;
+                    }
+                }
+                catch (TimeoutException)
+                {
+                    delay = delay < maxDelay ? delay + delay : maxDelay;
+                    _rtoEstimator.Rto = delay;
+                }
             }
-            catch (TimeoutException)
+
+            throw new IOException($"TCP send timed out waiting for ACK after {retries} attempts.");
+        }
+        finally
+        {
+            if (ReferenceEquals(_ackTcs, ackTcs))
             {
-                delay = delay < maxDelay ? delay + delay : maxDelay;
-                _rtoEstimator.Rto = delay;
+                _ackTcs = null;
             }
         }
-
-        throw new IOException($"TCP send timed out waiting for ACK after {retries} attempts.");
     }
 
     private async Task SendTcpAsync(

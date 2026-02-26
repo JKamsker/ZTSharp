@@ -131,11 +131,11 @@ File
 
 Changes
 
-- [ ] Remove `ack == 0` early-return.
-- [ ] Make ACK waiting stable across retries:
-  - [ ] Track `_ackTarget` (expected cumulative ACK) and a single `_ackTcs` per send operation (not per retry).
-  - [ ] Always short-circuit if `_sendUna >= expectedAck` before waiting/retransmitting.
-- [ ] Ensure thread-safe access between receive loop and sender (use `Volatile.Read/Write` or `Interlocked` where appropriate).
+- [x] Remove `ack == 0` early-return.
+- [x] Make ACK waiting stable across retries:
+  - [x] Track `_ackTarget` (expected cumulative ACK) and a single `_ackTcs` per send operation (not per retry).
+  - [x] Always short-circuit if `_sendUna >= expectedAck` before waiting/retransmitting.
+- [x] Ensure thread-safe access between receive loop and sender (use `Volatile.Read/Write` or `Interlocked` where appropriate).
 
 ### 2.2 Replace receiver channel with Pipe + proper out-of-order trimming
 
@@ -187,7 +187,7 @@ Add/extend:
 
 - [ ] Add/extend `ZTSharp.Tests/UserSpaceTcp*` with:
   - [ ] ACK race reproduction: delayed ACK arriving after timeout must still complete send.
-  - [ ] Wrap-around ACK==0 case: `iss=0xFFFF_FFFF -> expectedAck=0`; ACK(0) completes.
+  - [x] Wrap-around ACK==0 case: `iss=0xFFFF_FFFF -> expectedAck=0`; ACK(0) completes.
   - [ ] Out-of-order overlap trimming: scenario 1100.. then 1050.. then 1000.. must not leak window.
   - [ ] Error propagation: RST causes `ReadAsync` to throw after drain, not return 0.
   - [ ] Checksum validation: flip one bit in segment -> dropped.
