@@ -101,7 +101,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (nextHeader == TcpCodec.ProtocolNumber && isUnicastToUs)
         {
-            if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
+            if (!TcpCodec.TryParseWithChecksum(src, dst, ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
             {
                 return;
             }
@@ -205,7 +205,7 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
+        if (!TcpCodec.TryParseWithChecksum(src, dst, ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
         {
             return;
         }

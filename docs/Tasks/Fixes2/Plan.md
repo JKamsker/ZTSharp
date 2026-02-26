@@ -101,8 +101,9 @@ Primary goals:
 - [x] Add test: invalid-checksum UDP to registered port is dropped (`ZTSharp/ZeroTier/Net/UdpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
   - Test: `ZeroTierDataplaneUdpChecksumTests.InvalidUdpChecksum_IsDropped_BeforeUdpHandlerDispatch`
 - [x] Fix: verify UDP checksum on receive (IPv4 + IPv6) before delivering to UDP handlers
-- [ ] Add test: invalid-checksum TCP SYN is dropped / does not trigger listener dispatch (`ZTSharp/ZeroTier/Net/TcpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
-- [ ] Fix: use `TcpCodec.TryParseWithChecksum` for TCP receive paths that influence routing/state
+- [x] Add test: invalid-checksum TCP SYN is dropped / does not trigger listener dispatch (`ZTSharp/ZeroTier/Net/TcpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
+  - Test: `ZeroTierDataplaneTcpChecksumTests.InvalidTcpChecksumSyn_DoesNotTriggerSynHandler`
+- [x] Fix: use `TcpCodec.TryParseWithChecksum` for TCP receive paths that influence routing/state
 - [ ] Add test: invalid-checksum ICMPv6 NS is dropped (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIcmpv6Handler.cs`)
 - [ ] Fix: validate ICMPv6 checksum for processed message types (Echo/NS/NA)
 - [ ] Add test: `TcpCodec.Encode` rejects/guards oversized payloads that would truncate checksum length (`ZTSharp/ZeroTier/Net/TcpCodec.cs`)
