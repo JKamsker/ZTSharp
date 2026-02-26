@@ -9,18 +9,22 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
     private readonly NodeId _localNodeId;
     private readonly ZeroTierDataplanePeerSecurity _peerSecurity;
     private readonly ZeroTierDataplanePeerPacketHandler _peerPackets;
+    private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
 
     public ZeroTierDataplanePeerDatagramProcessor(
         NodeId localNodeId,
         ZeroTierDataplanePeerSecurity peerSecurity,
-        ZeroTierDataplanePeerPacketHandler peerPackets)
+        ZeroTierDataplanePeerPacketHandler peerPackets,
+        ZeroTierPeerPhysicalPathTracker peerPaths)
     {
         ArgumentNullException.ThrowIfNull(peerSecurity);
         ArgumentNullException.ThrowIfNull(peerPackets);
+        ArgumentNullException.ThrowIfNull(peerPaths);
 
         _localNodeId = localNodeId;
         _peerSecurity = peerSecurity;
         _peerPackets = peerPackets;
+        _peerPaths = peerPaths;
     }
 
     public async Task ProcessAsync(ZeroTierUdpDatagram datagram, CancellationToken cancellationToken)
@@ -67,6 +71,11 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
             }
 
             packetBytes = uncompressed;
+        }
+
+        if (decoded.Header.HopCount == 0)
+        {
+            _peerPaths.ObserveHop0(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint);
         }
 
         await _peerPackets.HandleAsync(peerNodeId, packetBytes, cancellationToken).ConfigureAwait(false);

@@ -16,7 +16,7 @@ Status legend:
 - [x] Bootstrap UDP socket(s) from `ZeroTierSocketOptions.Multipath` (single-socket default).
 
 ## P1 — Direct path learning + keepalives
-- [ ] Track per-peer physical paths `(LocalSocketId, RemoteEndPoint)` for **hops==0** traffic only (learn/refresh/expire).
+- [x] Track per-peer physical paths `(LocalSocketId, RemoteEndPoint)` for **hops==0** traffic only (learn/refresh/expire).
 - [ ] Implement `ECHO` + `OK(ECHO)` for keepalives and latency measurement (rate-limited).
 - [ ] Parse `OK(HELLO)` for peer protocol version + latency update and store external surface addresses (self-awareness seed).
 
