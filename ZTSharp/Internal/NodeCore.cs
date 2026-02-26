@@ -38,7 +38,7 @@ internal sealed class NodeCore : IAsyncDisposable
             ? new OsUdpNodeTransport(options.UdpListenPort ?? 0, options.EnableIpv6, options.EnablePeerDiscovery)
             : SharedTransport;
 
-        _events = new NodeEventStream(onEventRaised);
+        _events = new NodeEventStream(onEventRaised, _logger);
         _transportService = new NodeTransportService(_events, _logger, onFrameReceived, onRawFrameReceived, _transport, _options);
         _identityService = new NodeIdentityService(_store, _events);
         _peerService = new NodePeerService(_store);

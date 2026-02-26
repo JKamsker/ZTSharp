@@ -1,15 +1,26 @@
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 
 namespace ZTSharp.Internal;
 
 internal sealed class NodeEventStream
 {
     private readonly Action<NodeEvent> _onEventRaised;
+    private readonly ILogger _logger;
+    private readonly Channel<NodeEvent> _dispatchQueue;
+    private readonly Task _dispatchLoop;
     private Channel<NodeEvent>? _channel;
 
-    public NodeEventStream(Action<NodeEvent> onEventRaised)
+    public NodeEventStream(Action<NodeEvent> onEventRaised, ILogger logger)
     {
         _onEventRaised = onEventRaised ?? throw new ArgumentNullException(nameof(onEventRaised));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dispatchQueue = Channel.CreateUnbounded<NodeEvent>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+        _dispatchLoop = Task.Run(DispatchAsync);
     }
 
     public IAsyncEnumerable<NodeEvent> GetEventStream(CancellationToken cancellationToken)
@@ -32,10 +43,35 @@ internal sealed class NodeEventStream
         Exception? error = null)
     {
         var e = new NodeEvent(code, timestampUtc, networkId, message, error);
-        _onEventRaised(e);
+        _dispatchQueue.Writer.TryWrite(e);
         _channel?.Writer.TryWrite(e);
     }
 
-    public void Complete() => _channel?.Writer.TryComplete();
-}
+    public void Complete()
+    {
+        _dispatchQueue.Writer.TryComplete();
+        _channel?.Writer.TryComplete();
+    }
 
+    private async Task DispatchAsync()
+    {
+        await foreach (var e in _dispatchQueue.Reader.ReadAllAsync().ConfigureAwait(false))
+        {
+            try
+            {
+                _onEventRaised(e);
+            }
+#pragma warning disable CA1031 // User callbacks must not fault node operations.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                if (_logger.IsEnabled(LogLevel.Error))
+                {
+#pragma warning disable CA1848
+                    _logger.LogError(ex, "Node event handler threw for event {EventCode}", e.Code);
+#pragma warning restore CA1848
+                }
+            }
+        }
+    }
+}

@@ -1,5 +1,6 @@
 using ZTSharp.Internal;
 using ZTSharp.Transport;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ZTSharp.Tests;
 
@@ -10,7 +11,7 @@ public sealed class NodeNetworkLeaveOrderingTests
     {
         var store = new MemoryStateStore();
         var transport = new FlakyLeaveTransport();
-        var events = new NodeEventStream(_ => { });
+        var events = new NodeEventStream(_ => { }, NullLogger.Instance);
         var peers = new NodePeerService(store);
         var service = new NodeNetworkService(store, transport, events, peers);
 

@@ -203,9 +203,9 @@ internal sealed class NodeNetworkService
         }
     }
 
-    public async Task LeaveAllNetworksAsync()
+    public async Task LeaveAllNetworksAsync(CancellationToken cancellationToken = default)
     {
-        await UnregisterAllNetworksAsync(CancellationToken.None).ConfigureAwait(false);
+        await UnregisterAllNetworksAsync(cancellationToken).ConfigureAwait(false);
         _joinedNetworks.Clear();
     }
 

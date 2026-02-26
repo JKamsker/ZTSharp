@@ -81,9 +81,9 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 6.3 Overlay connect failures wrapped as `HttpRequestException`: new tests in `ZTSharp.Tests`
 - [x] 6.3 Overlay local-port collisions handled: new tests in `ZTSharp.Tests`
 - [x] 6.4 Peer discovery framing collision: new tests in `ZTSharp.Tests`
-- [ ] 6.5 Node lifecycle event re-entrancy deadlock prevented: new tests in `ZTSharp.Tests`
-- [ ] 6.5 Node dispose cannot wedge indefinitely: new tests in `ZTSharp.Tests`
-- [ ] 6.5 User event handler exceptions isolated: new tests in `ZTSharp.Tests`
+- [x] 6.5 Node lifecycle event re-entrancy deadlock prevented: new tests in `ZTSharp.Tests`
+- [x] 6.5 Node dispose cannot wedge indefinitely: new tests in `ZTSharp.Tests`
+- [x] 6.5 User event handler exceptions isolated: new tests in `ZTSharp.Tests`
 - [x] 6.6 EventLoop not poisoned by callback throw: new tests in `ZTSharp.Tests`
 - [x] 6.7 LeaveNetwork ordering avoids transport subscription leak: new tests in `ZTSharp.Tests`
 - [x] 6.8 InMemory transport cancellation token doesn’t break fanout: new tests in `ZTSharp.Tests`

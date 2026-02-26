@@ -284,11 +284,14 @@ Primary goals:
 - [x] Fix: make discovery/control frames unambiguous (e.g., reserved frame type range + versioned header) or scope control frames to a dedicated channel/port
 
 ### 6.5 Legacy node lifecycle deadlocks + event isolation
-- [ ] Add test: event handler re-entrancy cannot deadlock `StartAsync`/`StopAsync`/`JoinNetworkAsync` (`ZTSharp/Internal/NodeLifecycleService.cs`, `ZTSharp/Internal/NodeEventStream.cs`)
-- [ ] Fix: don’t invoke user callbacks while holding lifecycle locks (queue + invoke outside lock, or async event dispatch)
-- [ ] Add test: `Node.DisposeAsync` does not wedge indefinitely if stop paths are blocked (`ZTSharp/Internal/NodeLifecycleService.cs`)
-- [ ] Add test: exceptions thrown by user `EventRaised` handlers do not fault node lifecycle operations (`ZTSharp/Internal/NodeEventStream.cs`)
-- [ ] Fix: isolate/guard user callback exceptions and surface them via events/logging without faulting node (`ZTSharp/Internal/NodeEventStream.cs`)
+- [x] Add test: event handler re-entrancy cannot deadlock `StartAsync`/`StopAsync`/`JoinNetworkAsync` (`ZTSharp/Internal/NodeLifecycleService.cs`, `ZTSharp/Internal/NodeEventStream.cs`)
+  - Test: `NodeEventHandlerIsolationTests.EventHandlerReentrancy_DoesNotDeadlock_JoinNetwork`
+- [x] Fix: don’t invoke user callbacks while holding lifecycle locks (queue + invoke outside lock, or async event dispatch)
+- [x] Add test: `Node.DisposeAsync` does not wedge indefinitely if stop paths are blocked (`ZTSharp/Internal/NodeLifecycleService.cs`)
+  - Test: `NodeEventHandlerIsolationTests.DisposeAsync_DoesNotWedge_WhenStopPathsBlock`
+- [x] Add test: exceptions thrown by user `EventRaised` handlers do not fault node lifecycle operations (`ZTSharp/Internal/NodeEventStream.cs`)
+  - Test: `NodeEventHandlerIsolationTests.EventHandlerExceptions_DoNotFaultNodeOperations`
+- [x] Fix: isolate/guard user callback exceptions and surface them via events/logging without faulting node (`ZTSharp/Internal/NodeEventStream.cs`)
 
 ### 6.6 EventLoop “poisoned” state
 - [x] Add test: one callback throwing does not permanently stop subsequent work without surfacing failure (`ZTSharp/EventLoop.cs`)
