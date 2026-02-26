@@ -107,8 +107,9 @@ Primary goals:
 - [x] Add test: invalid-checksum ICMPv6 NS is dropped (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIcmpv6Handler.cs`)
   - Test: `ZeroTierIcmpv6ChecksumTests.NeighborSolicitation_InvalidChecksum_IsDroppedWithoutSending`
 - [x] Fix: validate ICMPv6 checksum for processed message types (Echo/NS/NA)
-- [ ] Add test: `TcpCodec.Encode` rejects/guards oversized payloads that would truncate checksum length (`ZTSharp/ZeroTier/Net/TcpCodec.cs`)
-- [ ] Fix: enforce payload length bounds for TCP encoding (avoid `ushort` truncation in checksum length)
+- [x] Add test: `TcpCodec.Encode` rejects/guards oversized payloads that would truncate checksum length (`ZTSharp/ZeroTier/Net/TcpCodec.cs`)
+  - Test: `TcpCodecEncodeBoundsTests.Encode_RejectsOversizedPayload`
+- [x] Fix: enforce payload length bounds for TCP encoding (avoid `ushort` truncation in checksum length)
 
 ### 2.2 Fragmentation / extension headers (explicit policy)
 - [ ] Decide + document: (a) support IPv4 fragments, (b) drop fragments explicitly, or (c) accept only non-fragmented packets
