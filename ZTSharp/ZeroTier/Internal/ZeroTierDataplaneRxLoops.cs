@@ -121,7 +121,20 @@ internal sealed class ZeroTierDataplaneRxLoops
                 return;
             }
 
-            await _peerDatagrams.ProcessAsync(datagram, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _peerDatagrams.ProcessAsync(datagram, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // Peer loop must survive per-packet faults.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Peer loop processor fault: {ex.GetType().Name}: {ex.Message}");
+            }
         }
     }
 }

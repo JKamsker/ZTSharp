@@ -240,7 +240,7 @@ File
 
 Changes
 
-- [ ] Wrap `_peerDatagrams.ProcessAsync(...)` in try/catch; swallow/log non-cancellation exceptions and continue.
+- [x] Wrap `_peerDatagrams.ProcessAsync(...)` in try/catch; swallow/log non-cancellation exceptions and continue.
 
 ### 3.4 Avoid ingress HOL blocking on WHOIS
 
