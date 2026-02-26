@@ -54,7 +54,8 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         ArgumentNullException.ThrowIfNull(context);
 
         var endpoint = context.DnsEndPoint;
-        var remoteNodeId = ResolveNodeId(endpoint.Host);
+        var host = GetOriginalHostOrFallback(context, endpoint.Host);
+        var remoteNodeId = ResolveNodeId(host);
         var localPort = AllocateLocalPort();
 
         var client = new OverlayTcpClient(_node, _networkId, localPort);
@@ -112,5 +113,94 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         }
 
         throw new HttpRequestException($"Could not resolve host '{host}' to a managed node id.");
+    }
+
+    private static string GetOriginalHostOrFallback(SocketsHttpConnectionContext context, string fallbackHost)
+    {
+        if (context.InitialRequestMessage?.RequestUri is not { } requestUri)
+        {
+            return fallbackHost;
+        }
+
+        var original = requestUri.OriginalString;
+        if (string.IsNullOrWhiteSpace(original))
+        {
+            return fallbackHost;
+        }
+
+        return TryGetHostFromUriString(original, out var host) ? host : fallbackHost;
+    }
+
+    private static bool TryGetHostFromUriString(string uri, out string host)
+    {
+        host = string.Empty;
+
+        var schemeTerminator = uri.IndexOf("://", StringComparison.Ordinal);
+        if (schemeTerminator < 0)
+        {
+            return false;
+        }
+
+        var authorityStart = schemeTerminator + 3;
+        if (authorityStart >= uri.Length)
+        {
+            return false;
+        }
+
+        var authorityEnd = uri.Length;
+        for (var i = authorityStart; i < uri.Length; i++)
+        {
+            var c = uri[i];
+            if (c is '/' or '?' or '#')
+            {
+                authorityEnd = i;
+                break;
+            }
+        }
+
+        var hostStart = authorityStart;
+        for (var i = authorityStart; i < authorityEnd; i++)
+        {
+            if (uri[i] == '@')
+            {
+                hostStart = i + 1;
+                break;
+            }
+        }
+
+        if (hostStart >= authorityEnd)
+        {
+            return false;
+        }
+
+        if (uri[hostStart] == '[')
+        {
+            var closingBracket = uri.IndexOf(']', hostStart + 1);
+            if (closingBracket < 0 || closingBracket >= authorityEnd)
+            {
+                return false;
+            }
+
+            host = uri.Substring(hostStart + 1, closingBracket - hostStart - 1);
+            return host.Length != 0;
+        }
+
+        var hostEnd = authorityEnd;
+        for (var i = hostStart; i < authorityEnd; i++)
+        {
+            if (uri[i] == ':')
+            {
+                hostEnd = i;
+                break;
+            }
+        }
+
+        if (hostEnd <= hostStart)
+        {
+            return false;
+        }
+
+        host = uri.Substring(hostStart, hostEnd - hostStart);
+        return host.Length != 0;
     }
 }
