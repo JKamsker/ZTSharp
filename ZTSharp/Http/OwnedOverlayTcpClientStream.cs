@@ -10,14 +10,17 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
 {
     private readonly OverlayTcpClient _client;
     private readonly Stream _inner;
+    private readonly Action? _onDispose;
     private int _disposed;
+    private int _onDisposeInvoked;
     private Task? _backgroundDispose;
 
-    public OwnedOverlayTcpClientStream(OverlayTcpClient client)
+    public OwnedOverlayTcpClientStream(OverlayTcpClient client, Action? onDispose = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         _client = client;
         _inner = client.GetStream();
+        _onDispose = onDispose;
     }
 
     public override bool CanRead => _inner.CanRead;
@@ -72,7 +75,11 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
             }
 
             var disposeTask = _client.DisposeAsync();
-            if (!disposeTask.IsCompletedSuccessfully)
+            if (disposeTask.IsCompletedSuccessfully)
+            {
+                InvokeOnDispose();
+            }
+            else
             {
                 _backgroundDispose = ObserveDisposeAsync(disposeTask);
             }
@@ -110,6 +117,8 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
 
         await base.DisposeAsync().ConfigureAwait(false);
 
+        InvokeOnDispose();
+
         if (_backgroundDispose is not null)
         {
             try
@@ -120,17 +129,42 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
             {
             }
         }
+
     }
 
     [SuppressMessage(
         "Reliability",
         "CA1031:Do not catch general exception types",
         Justification = "Disposal must observe and ignore failures to prevent unobserved task exceptions.")]
-    private static async Task ObserveDisposeAsync(ValueTask disposeTask)
+    private async Task ObserveDisposeAsync(ValueTask disposeTask)
     {
         try
         {
             await disposeTask.ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            InvokeOnDispose();
+        }
+    }
+
+    [SuppressMessage(
+        "Reliability",
+        "CA1031:Do not catch general exception types",
+        Justification = "Dispose callbacks are best-effort and must not throw.")]
+    private void InvokeOnDispose()
+    {
+        if (_onDispose is null || Interlocked.Exchange(ref _onDisposeInvoked, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            _onDispose();
         }
         catch
         {

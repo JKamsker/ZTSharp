@@ -285,6 +285,135 @@ public sealed class TunnelAndHttpTests
     }
 
     [Fact]
+    public async Task InMemoryOverlayHttpHandler_LocalPortAllocator_RetriesUnderConcurrency()
+    {
+        var networkId = 0xCAFE1006UL;
+
+        await using var serverNode = CreateInMemoryNode();
+        await using var clientNode = CreateInMemoryNode();
+
+        await serverNode.StartAsync();
+        await clientNode.StartAsync();
+
+        await serverNode.JoinNetworkAsync(networkId);
+        await clientNode.JoinNetworkAsync(networkId);
+
+        var httpListener = new SystemTcpListener(IPAddress.Loopback, 0);
+        httpListener.Start();
+        try
+        {
+            var localHttpPort = ((IPEndPoint)httpListener.LocalEndpoint).Port;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            var releaseTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var connectionTasks = new List<Task>(capacity: 3);
+
+            static async Task HandleConnectionAsync(
+                TcpClient tcp,
+                Task release,
+                CancellationToken cancellationToken)
+            {
+                using (tcp)
+                {
+                    tcp.NoDelay = true;
+                    await using var stream = tcp.GetStream();
+
+                    var buffer = new byte[4096];
+                    var total = 0;
+                    while (total < buffer.Length)
+                    {
+                        var read = await stream.ReadAsync(buffer.AsMemory(total), cancellationToken).ConfigureAwait(false);
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        total += read;
+                        if (buffer.AsSpan(0, total).IndexOf("\r\n\r\n"u8) >= 0)
+                        {
+                            break;
+                        }
+                    }
+
+                    var bodyLength = 1024;
+                    var response = $"HTTP/1.1 200 OK\r\nContent-Length: {bodyLength}\r\nConnection: keep-alive\r\n\r\n";
+                    var responseBytes = Encoding.ASCII.GetBytes(response);
+                    await stream.WriteAsync(responseBytes, cancellationToken).ConfigureAwait(false);
+
+                    await release.WaitAsync(cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            var acceptTask = Task.Run(async () =>
+            {
+                for (var i = 0; i < 3; i++)
+                {
+                    var tcp = await httpListener.AcceptTcpClientAsync(cts.Token).ConfigureAwait(false);
+                    connectionTasks.Add(HandleConnectionAsync(tcp, releaseTcs.Task, cts.Token));
+                }
+            }, cts.Token);
+
+            await using var forwarder = new OverlayTcpPortForwarder(
+                serverNode,
+                networkId,
+                overlayListenPort: 28083,
+                targetHost: "127.0.0.1",
+                targetPort: localHttpPort);
+
+            var forwarderTask = Task.Run(() => forwarder.RunAsync(cts.Token), cts.Token);
+
+            var handler = new OverlayHttpMessageHandler(
+                clientNode,
+                networkId,
+                new OverlayHttpMessageHandlerOptions
+                {
+                    LocalPortStart = 60000,
+                    LocalPortEnd = 60001
+                });
+
+            using var httpClient = new HttpClient(handler);
+            var uri = new Uri($"http://{serverNode.NodeId.ToHexString()}:28083/ports");
+
+            using var response1 = await httpClient.SendAsync(
+                new HttpRequestMessage(HttpMethod.Get, uri),
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            using var response2 = await httpClient.SendAsync(
+                new HttpRequestMessage(HttpMethod.Get, uri),
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            var response3Task = httpClient.SendAsync(
+                new HttpRequestMessage(HttpMethod.Get, uri),
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            await Task.Delay(50, cts.Token);
+            Assert.False(response3Task.IsCompleted, "Expected the third request to wait for a local port to become available.");
+
+            response1.Dispose();
+
+            using var response3 = await response3Task.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+
+            releaseTcs.TrySetResult();
+            cts.Cancel();
+
+            try
+            {
+                await Task.WhenAll(connectionTasks.Concat(new[] { acceptTask, forwarderTask })).WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+            }
+        }
+        finally
+        {
+            httpListener.Stop();
+        }
+    }
+
+    [Fact]
     public async Task InMemoryOverlayHttpHandler_CanResolveIpViaAddressBook()
     {
         var networkId = 0xCAFE1003UL;

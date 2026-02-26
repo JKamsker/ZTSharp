@@ -272,8 +272,9 @@ Primary goals:
 - [x] Add test: overlay HTTP connect failures always surface as `HttpRequestException` (not raw `TimeoutException`) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
   - Test: `TunnelAndHttpTests.InMemoryOverlayHttpHandler_ConnectTimeout_IsHttpRequestException`
 - [x] Fix: wrap overlay connect exceptions consistently (timeout/cancel/socket) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
-- [ ] Add test: overlay local-port allocator collisions are handled (retry/backoff) under concurrency (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
-- [ ] Fix: add retry-on-collision (or increase range / document constraints) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+- [x] Add test: overlay local-port allocator collisions are handled (retry/backoff) under concurrency (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+  - Test: `TunnelAndHttpTests.InMemoryOverlayHttpHandler_LocalPortAllocator_RetriesUnderConcurrency`
+- [x] Fix: add retry-on-collision (or increase range / document constraints) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
 
 ### 6.4 Peer discovery framing collision risk
 - [ ] Add test: payload that matches discovery magic does not get dropped as “control” when it’s actually application data (`ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
