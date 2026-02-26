@@ -123,10 +123,8 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         ObjectDisposedException.ThrowIf(Disposed, this);
 
         var listener = _listener ?? throw new InvalidOperationException("Socket is not listening.");
-        var stream = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
-
-        var local = listener.LocalEndpoint;
-        return new ManagedTcpSocketBackend(Zt, local, remoteEndPoint: null, connectedStream: stream);
+        var (stream, local, remote) = await listener.AcceptWithEndpointsAsync(cancellationToken).ConfigureAwait(false);
+        return new ManagedTcpSocketBackend(Zt, local, remote, connectedStream: stream);
     }
 
     public override async ValueTask ConnectAsync(EndPoint remoteEndPoint, CancellationToken cancellationToken)

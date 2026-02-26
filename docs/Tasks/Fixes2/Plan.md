@@ -204,8 +204,8 @@ Primary goals:
 - [x] Fix: canonicalize IPv6 addresses for managed-IP comparisons (define policy for `ScopeId`) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
 
 ### 3.2 Accepted `RemoteEndPoint` availability
-- [ ] Add test: accepted `ManagedSocket.RemoteEndPoint` is populated (or explicitly documented as unsupported) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
-- [ ] Fix: plumb remote endpoint metadata from accept path (likely via SYN segment / route registry) and store it on the accepted backend
+- [x] Add test: accepted `ManagedSocket.RemoteEndPoint` is populated (or explicitly documented as unsupported) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
+- [x] Fix: plumb remote endpoint metadata from accept path (likely via SYN segment / route registry) and store it on the accepted backend
 
 ### 3.3 Connect/dispose wedge avoidance
 - [ ] Add test: disposing a `ManagedSocket` while `ConnectAsync` is in-flight does not hang indefinitely (respects cancellation/timeouts) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`, `ZTSharp/ZeroTier/Sockets/ManagedSocketBackend.cs`)

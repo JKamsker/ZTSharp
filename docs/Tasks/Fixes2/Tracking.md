@@ -43,7 +43,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [x] 3.1 Any/IPv6Any binds behave as documented: new tests in `ZTSharp.Tests`
 - [x] 3.1 Connect with local Any/IPv6Any chooses managed IP: new tests in `ZTSharp.Tests`
 - [x] 3.1 IPv6 ScopeId normalization policy enforced: new tests in `ZTSharp.Tests`
-- [ ] 3.2 Accepted `RemoteEndPoint` populated (or documented): new tests in `ZTSharp.Tests`
+- [x] 3.2 Accepted `RemoteEndPoint` populated (or documented): new tests in `ZTSharp.Tests`
 - [ ] 3.3 Connect/dispose cannot wedge: new tests in `ZTSharp.Tests`
 - [ ] 3.3 `ZeroTierSocket.DisposeAsync` cannot wedge behind join/runtime: new tests in `ZTSharp.Tests`
 - [ ] 3.4 `ZeroTierUdpSocket.DisposeAsync` idempotent: new tests in `ZTSharp.Tests`

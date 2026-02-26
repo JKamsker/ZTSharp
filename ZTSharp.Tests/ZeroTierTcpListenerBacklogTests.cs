@@ -36,7 +36,12 @@ public sealed class ZeroTierTcpListenerBacklogTests
             var client = new UserSpaceTcpClient(clientLink, clientIp, serverIp, remotePort: serverPort, localPort: clientPort);
             clients.Add(client);
 
-            var handleTask = InvokeHandleAcceptedConnectionAsync(listener, server, CancellationToken.None);
+            var handleTask = InvokeHandleAcceptedConnectionAsync(
+                listener,
+                connection: server,
+                localEndpoint: new IPEndPoint(serverIp, serverPort),
+                remoteEndpoint: new IPEndPoint(clientIp, clientPort),
+                CancellationToken.None);
             var connectTask = client.ConnectAsync(cts.Token);
 
             await Task.WhenAll(handleTask, connectTask);
@@ -61,11 +66,16 @@ public sealed class ZeroTierTcpListenerBacklogTests
         }
     }
 
-    private static Task InvokeHandleAcceptedConnectionAsync(ZeroTierTcpListener listener, UserSpaceTcpServerConnection connection, CancellationToken cancellationToken)
+    private static Task InvokeHandleAcceptedConnectionAsync(
+        ZeroTierTcpListener listener,
+        UserSpaceTcpServerConnection connection,
+        IPEndPoint localEndpoint,
+        IPEndPoint remoteEndpoint,
+        CancellationToken cancellationToken)
     {
         var method = typeof(ZeroTierTcpListener).GetMethod("HandleAcceptedConnectionAsync", BindingFlags.NonPublic | BindingFlags.Instance);
         Assert.NotNull(method);
-        return (Task)method!.Invoke(listener, new object[] { connection, cancellationToken })!;
+        return (Task)method!.Invoke(listener, new object[] { connection, localEndpoint, remoteEndpoint, cancellationToken })!;
     }
 
     [global::System.Diagnostics.CodeAnalysis.SuppressMessage(

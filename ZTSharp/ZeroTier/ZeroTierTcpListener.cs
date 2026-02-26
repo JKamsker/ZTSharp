@@ -11,10 +11,12 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 {
     private const int DefaultAcceptQueueCapacity = 64;
 
+    private readonly record struct AcceptedTcpConnection(Stream Stream, IPEndPoint LocalEndpoint, IPEndPoint RemoteEndpoint);
+
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActiveTaskSet _connectionTasks = new();
-    private readonly Channel<Stream> _acceptQueue;
+    private readonly Channel<AcceptedTcpConnection> _acceptQueue;
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly IPAddress _localAddressMatch;
@@ -46,7 +48,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         _localPort = localPort;
         _acceptQueueCapacity = acceptQueueCapacity;
         _isWildcardBind = localAddress.Equals(IPAddress.Any) || localAddress.Equals(IPAddress.IPv6Any);
-        _acceptQueue = Channel.CreateBounded<Stream>(new BoundedChannelOptions(_acceptQueueCapacity)
+        _acceptQueue = Channel.CreateBounded<AcceptedTcpConnection>(new BoundedChannelOptions(_acceptQueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
@@ -70,21 +72,10 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
     public ValueTask<Stream> AcceptAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
-        return ReadFromQueueAsync(cancellationToken);
+        return AcceptStreamAsync(cancellationToken);
 
-        async ValueTask<Stream> ReadFromQueueAsync(CancellationToken token)
-        {
-            try
-            {
-                var stream = await _acceptQueue.Reader.ReadAsync(token).ConfigureAwait(false);
-                Interlocked.Decrement(ref _pendingAcceptCount);
-                return stream;
-            }
-            catch (ChannelClosedException)
-            {
-                throw new ObjectDisposedException(typeof(ZeroTierTcpListener).FullName);
-            }
-        }
+        async ValueTask<Stream> AcceptStreamAsync(CancellationToken token)
+            => (await AcceptConnectionAsync(token).ConfigureAwait(false)).Stream;
     }
 
     public async ValueTask<Stream> AcceptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -112,7 +103,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             while (_acceptQueue.Reader.TryRead(out var accepted))
             {
                 Interlocked.Decrement(ref _pendingAcceptCount);
-                await accepted.DisposeAsync().ConfigureAwait(false);
+                await accepted.Stream.DisposeAsync().ConfigureAwait(false);
             }
 
             using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -194,7 +185,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
         link.IncomingWriter.TryWrite(ipPacket);
 
-        _connectionTasks.Track(HandleAcceptedConnectionAsync(connection, cancellationToken));
+        _connectionTasks.Track(HandleAcceptedConnectionAsync(connection, localEndpoint, remoteEndpoint, cancellationToken));
         return Task.CompletedTask;
     }
 
@@ -202,7 +193,11 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Ownership of accepted connections transfers to the accept queue consumer (via the returned Stream).")]
-    private async Task HandleAcceptedConnectionAsync(UserSpaceTcpServerConnection connection, CancellationToken cancellationToken)
+    private async Task HandleAcceptedConnectionAsync(
+        UserSpaceTcpServerConnection connection,
+        IPEndPoint localEndpoint,
+        IPEndPoint remoteEndpoint,
+        CancellationToken cancellationToken)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, cancellationToken);
         var token = linkedCts.Token;
@@ -216,7 +211,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await connection.AcceptAsync(token).ConfigureAwait(false);
             stream = connection.GetStream();
 
-            if (!_acceptQueue.Writer.TryWrite(stream))
+            if (!_acceptQueue.Writer.TryWrite(new AcceptedTcpConnection(stream, localEndpoint, remoteEndpoint)))
             {
                 Interlocked.Increment(ref _droppedAcceptCount);
                 if (ZeroTierTrace.Enabled)
@@ -253,6 +248,27 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                     await connection.DisposeAsync().ConfigureAwait(false);
                 }
             }
+        }
+    }
+
+    internal async ValueTask<(Stream Stream, IPEndPoint LocalEndpoint, IPEndPoint RemoteEndpoint)> AcceptWithEndpointsAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+        var accepted = await AcceptConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return (accepted.Stream, accepted.LocalEndpoint, accepted.RemoteEndpoint);
+    }
+
+    private async ValueTask<AcceptedTcpConnection> AcceptConnectionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var accepted = await _acceptQueue.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            Interlocked.Decrement(ref _pendingAcceptCount);
+            return accepted;
+        }
+        catch (ChannelClosedException)
+        {
+            throw new ObjectDisposedException(typeof(ZeroTierTcpListener).FullName);
         }
     }
 
