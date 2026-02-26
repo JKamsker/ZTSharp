@@ -164,6 +164,91 @@ public sealed class TunnelAndHttpTests
     }
 
     [Fact]
+    public async Task InMemoryOverlayHttpHandler_DisposingResponse_DoesNotThrowOrHang()
+    {
+        var networkId = 0xCAFE1004UL;
+
+        await using var serverNode = CreateInMemoryNode();
+        await using var clientNode = CreateInMemoryNode();
+
+        await serverNode.StartAsync();
+        await clientNode.StartAsync();
+
+        await serverNode.JoinNetworkAsync(networkId);
+        await clientNode.JoinNetworkAsync(networkId);
+
+        var httpListener = new SystemTcpListener(IPAddress.Loopback, 0);
+        httpListener.Start();
+        try
+        {
+            var localHttpPort = ((IPEndPoint)httpListener.LocalEndpoint).Port;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            var httpTask = Task.Run(async () =>
+            {
+                using var tcp = await httpListener.AcceptTcpClientAsync(cts.Token).ConfigureAwait(false);
+                tcp.NoDelay = true;
+                using var stream = tcp.GetStream();
+
+                var buffer = new byte[4096];
+                var total = 0;
+                while (total < buffer.Length)
+                {
+                    var read = await stream.ReadAsync(buffer.AsMemory(total), cts.Token).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    total += read;
+                    if (buffer.AsSpan(0, total).IndexOf("\r\n\r\n"u8) >= 0)
+                    {
+                        break;
+                    }
+                }
+
+                var body = "zt-dispose-ok";
+                var response = $"HTTP/1.1 200 OK\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}";
+                var responseBytes = Encoding.ASCII.GetBytes(response);
+                await stream.WriteAsync(responseBytes, cts.Token).ConfigureAwait(false);
+            }, cts.Token);
+
+            await using var forwarder = new OverlayTcpPortForwarder(
+                serverNode,
+                networkId,
+                overlayListenPort: 28082,
+                targetHost: "127.0.0.1",
+                targetPort: localHttpPort);
+
+            var forwarderTask = Task.Run(() => forwarder.RunAsync(cts.Token), cts.Token);
+
+            using var httpClient = new HttpClient(new OverlayHttpMessageHandler(clientNode, networkId));
+            var uri = new Uri($"http://{serverNode.NodeId.ToHexString()}:28082/hello");
+
+            using var responseMessage = await httpClient.SendAsync(
+                new HttpRequestMessage(HttpMethod.Get, uri),
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            await Task.Run(() => responseMessage.Dispose(), cts.Token).WaitAsync(TimeSpan.FromSeconds(2), cts.Token);
+
+            cts.Cancel();
+
+            try
+            {
+                await Task.WhenAll(httpTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+            }
+        }
+        finally
+        {
+            httpListener.Stop();
+        }
+    }
+
+    [Fact]
     public async Task InMemoryOverlayHttpHandler_CanResolveIpViaAddressBook()
     {
         var networkId = 0xCAFE1003UL;
