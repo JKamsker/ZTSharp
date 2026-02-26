@@ -64,10 +64,17 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
             await client.ConnectAsync(remoteNodeId, endpoint.Port, cancellationToken).ConfigureAwait(false);
             return new OwnedOverlayTcpClientStream(client);
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await client.DisposeAsync().ConfigureAwait(false);
             throw;
+        }
+        catch (Exception ex) when (ex is not HttpRequestException)
+        {
+            await client.DisposeAsync().ConfigureAwait(false);
+            throw new HttpRequestException(
+                $"Overlay connect to '{host}:{endpoint.Port}' failed.",
+                ex);
         }
     }
 

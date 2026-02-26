@@ -249,6 +249,42 @@ public sealed class TunnelAndHttpTests
     }
 
     [Fact]
+    public async Task InMemoryOverlayHttpHandler_ConnectTimeout_IsHttpRequestException()
+    {
+        var networkId = 0xCAFE1005UL;
+
+        await using var serverNode = CreateInMemoryNode();
+        await using var clientNode = CreateInMemoryNode();
+
+        await serverNode.StartAsync();
+        await clientNode.StartAsync();
+
+        await serverNode.JoinNetworkAsync(networkId);
+        await clientNode.JoinNetworkAsync(networkId);
+
+        using var httpClient = new HttpClient(new OverlayHttpMessageHandler(clientNode, networkId));
+        var uri = new Uri($"http://{serverNode.NodeId.ToHexString()}:29999/timeout");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() => httpClient.GetAsync(uri, cts.Token));
+
+        static bool ContainsTimeout(Exception exception)
+        {
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                if (current is TimeoutException)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        Assert.True(ContainsTimeout(ex), "Expected a TimeoutException somewhere in the HttpClient exception chain.");
+    }
+
+    [Fact]
     public async Task InMemoryOverlayHttpHandler_CanResolveIpViaAddressBook()
     {
         var networkId = 0xCAFE1003UL;

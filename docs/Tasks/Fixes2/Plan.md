@@ -268,8 +268,9 @@ Primary goals:
 - [x] Add test: disposing `HttpResponseMessage` never throws due to stream disposal (`ZTSharp/Http/OwnedOverlayTcpClientStream.cs`)
   - Test: `TunnelAndHttpTests.InMemoryOverlayHttpHandler_DisposingResponse_DoesNotThrowOrHang`
 - [x] Fix: avoid blocking/synchronously waiting on async dispose in `Dispose(bool)`; ensure disposal is exception-safe
-- [ ] Add test: overlay HTTP connect failures always surface as `HttpRequestException` (not raw `TimeoutException`) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
-- [ ] Fix: wrap overlay connect exceptions consistently (timeout/cancel/socket) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+- [x] Add test: overlay HTTP connect failures always surface as `HttpRequestException` (not raw `TimeoutException`) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+  - Test: `TunnelAndHttpTests.InMemoryOverlayHttpHandler_ConnectTimeout_IsHttpRequestException`
+- [x] Fix: wrap overlay connect exceptions consistently (timeout/cancel/socket) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
 - [ ] Add test: overlay local-port allocator collisions are handled (retry/backoff) under concurrency (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
 - [ ] Fix: add retry-on-collision (or increase range / document constraints) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
 
