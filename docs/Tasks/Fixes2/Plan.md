@@ -240,12 +240,12 @@ Primary goals:
 ## Phase 4 - Persistence + filesystem hardening (`ZTSharp/**`, `ZTSharp/ZeroTier/Internal/**`)
 
 ### 4.1 State root confinement vs symlinks/junctions (critical)
-- [ ] Add test: junction/symlink inside state root cannot escape root confinement (`ZTSharp/FileStateStore.cs`)
-- [ ] Fix: enforce "no reparse points" (Windows) / "no symlinks" (Unix) on path traversal for read/write/list; document limits
+- [x] Add test: junction/symlink inside state root cannot escape root confinement (`ZTSharp/FileStateStore.cs`)
+- [x] Fix: enforce "no reparse points" (Windows) / "no symlinks" (Unix) on path traversal for read/write/list; document limits
 
 ### 4.2 `planet`/`roots` alias delete semantics ("resurrection")
-- [ ] Add test: deleting `planet`/`roots` removes both physical representations and cannot resurrect on next read (`ZTSharp/FileStateStore.cs`)
-- [ ] Fix: when deleting an alias key, delete both physical files if present
+- [x] Add test: deleting `planet`/`roots` removes both physical representations and cannot resurrect on next read (`ZTSharp/FileStateStore.cs`)
+- [x] Fix: when deleting an alias key, delete both physical files if present
 
 ### 4.3 Unbounded reads / TOCTOU hardening
 - [ ] Add size caps + streaming reads: eliminate unbounded `File.ReadAllText`/`File.ReadAllLines`/`File.ReadAllBytes` on attacker-controlled state files (`identity.secret`, `.ips.txt`, persisted netconf dict) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketIdentityMigration.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
