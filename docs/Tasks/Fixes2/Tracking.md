@@ -14,9 +14,11 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 
 ## Phase 2 - Dataplane + IP layer
 
+- [ ] 2.1 IPv4 header checksum policy enforced: new tests in `ZTSharp.Tests`
 - [ ] 2.1 UDP checksum validation: new tests in `ZTSharp.Tests` (invalid checksum dropped)
 - [ ] 2.1 TCP checksum validation: new tests in `ZTSharp.Tests` (invalid checksum SYN dropped)
 - [ ] 2.1 ICMPv6 checksum validation: new tests in `ZTSharp.Tests` (invalid NS dropped)
+- [ ] 2.1 TCP encode oversized payload guarded: new tests in `ZTSharp.Tests`
 - [ ] 2.2 Fragmentation/exthdr policy: new tests in `ZTSharp.Tests` (fragment/exthdr packets handled per policy)
 - [ ] 2.3 IP→NodeId cache bounded + not poisonable: new tests in `ZTSharp.Tests`
 - [ ] 2.4 ResolveNodeId TTL/validation: new tests in `ZTSharp.Tests`
@@ -30,10 +32,17 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 2.8 Planet/world forward-compat behavior: new tests in `ZTSharp.Tests`
 - [ ] 2.8 Inline COM strictness/truncation visibility: new tests in `ZTSharp.Tests`
 - [ ] 2.9 Crypto size caps + allocation hardening: new tests in `ZTSharp.Tests` (and/or `ZTSharp.Benchmarks`)
+- [ ] 2.5 Direct-endpoint selection ordering/filtering: new tests in `ZTSharp.Tests`
+- [ ] 2.9 HELLO flood CPU/alloc bounded: new tests in `ZTSharp.Tests`
+- [ ] 2.9 Compression invalid payload allocation bounded: new tests in `ZTSharp.Tests`
+- [ ] 2.10 Control-plane packets not silently dropped: new tests in `ZTSharp.Tests`
+- [ ] 2.10 Drop telemetry surfaced: tests/validation in `ZTSharp.Tests`
 
 ## Phase 3 - Socket surface + lifecycle
 
 - [ ] 3.1 Any/IPv6Any binds behave as documented: new tests in `ZTSharp.Tests`
+- [ ] 3.1 Connect with local Any/IPv6Any chooses managed IP: new tests in `ZTSharp.Tests`
+- [ ] 3.1 IPv6 ScopeId normalization policy enforced: new tests in `ZTSharp.Tests`
 - [ ] 3.2 Accepted `RemoteEndPoint` populated (or documented): new tests in `ZTSharp.Tests`
 - [ ] 3.3 Connect/dispose cannot wedge: new tests in `ZTSharp.Tests`
 - [ ] 3.3 `ZeroTierSocket.DisposeAsync` cannot wedge behind join/runtime: new tests in `ZTSharp.Tests`
@@ -42,6 +51,7 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 3.6 AES dearmor failure doesn’t mutate plaintext (or is documented): new tests in `ZTSharp.Tests`
 - [ ] 3.7 ManagedSocket `Shutdown` semantics documented/enforced: new tests in `ZTSharp.Tests`
 - [ ] 3.7 Backlog + port-0 listen policy enforced: new tests in `ZTSharp.Tests`
+- [ ] 3.8 Real-stack HTTP per-address connect behavior bounded: new tests in `ZTSharp.Tests`
 
 ## Phase 4 - Persistence + filesystem
 
@@ -49,6 +59,9 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 4.2 planet/roots delete removes both: new tests in `ZTSharp.Tests`
 - [ ] 4.3 State-file size caps + streaming reads: new tests in `ZTSharp.Tests`
 - [ ] 4.4 AtomicFile failures surface: new tests in `ZTSharp.Tests` (Windows-focused)
+- [ ] 4.5 StateRootPath normalization policy enforced: new tests in `ZTSharp.Tests`
+- [ ] 4.5 Secret identity file permission/ACL policy documented/enforced: tests/notes as feasible
+- [ ] 4.6 Key normalization edge cases (invalid chars/reserved names): new tests in `ZTSharp.Tests`
 
 ## Phase 5 - Transport + platform
 
@@ -57,18 +70,27 @@ Tick an item once the corresponding test exists and passes in `dotnet test -c Re
 - [ ] 5.3 OS UDP receive loop survives socket exceptions: new tests in `ZTSharp.Tests`
 - [ ] 5.4 Windows IOCTL behavior verified: Windows-only tests or diagnostics
 - [ ] 5.5 Dual-mode bind fallback resilience (IPv6-only before IPv4): new tests in `ZTSharp.Tests`
+- [ ] 5.3 Discovery replies don’t block receive loop: new tests in `ZTSharp.Tests`
+- [ ] 5.6 OS-UDP peer registry bounded (TTL/eviction): new tests in `ZTSharp.Tests`
 
 ## Phase 6 - Overlay stack
 
 - [ ] 6.1 Channel writer concurrency correctness: new tests in `ZTSharp.Tests`
 - [ ] 6.2 No silent-drop hangs for overlay HTTP: new tests in `ZTSharp.Tests`
 - [ ] 6.3 `HttpResponseMessage.Dispose()` never throws/hangs due to overlay stream: new tests in `ZTSharp.Tests`
+- [ ] 6.3 Overlay connect failures wrapped as `HttpRequestException`: new tests in `ZTSharp.Tests`
+- [ ] 6.3 Overlay local-port collisions handled: new tests in `ZTSharp.Tests`
 - [ ] 6.4 Peer discovery framing collision: new tests in `ZTSharp.Tests`
 - [ ] 6.5 Node lifecycle event re-entrancy deadlock prevented: new tests in `ZTSharp.Tests`
 - [ ] 6.5 Node dispose cannot wedge indefinitely: new tests in `ZTSharp.Tests`
+- [ ] 6.5 User event handler exceptions isolated: new tests in `ZTSharp.Tests`
 - [ ] 6.6 EventLoop not poisoned by callback throw: new tests in `ZTSharp.Tests`
 - [ ] 6.7 LeaveNetwork ordering avoids transport subscription leak: new tests in `ZTSharp.Tests`
 - [ ] 6.8 InMemory transport cancellation token doesn’t break fanout: new tests in `ZTSharp.Tests`
+- [ ] 6.9 ActiveTaskSet shutdown semantics: new tests in `ZTSharp.Tests`
+- [ ] 6.10 Overlay background tasks observed (no unobserved exceptions): new tests in `ZTSharp.Tests`
+- [ ] 6.10 Overlay dispose bounded (no hang): new tests in `ZTSharp.Tests`
+- [ ] 6.11 Overlay spoofing rejected (if secured): new tests in `ZTSharp.Tests`
 
 ## Phase 7 - Docs + test stability
 

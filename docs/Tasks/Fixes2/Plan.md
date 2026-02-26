@@ -70,12 +70,16 @@ Primary goals:
 ## Phase 2 - Real stack: dataplane + IP layer correctness (`ZTSharp/ZeroTier/Internal/**`, `ZTSharp/ZeroTier/Net/**`)
 
 ### 2.1 Checksum validation on receive (security/correctness)
+- [ ] Add test: invalid IPv4 header checksum is dropped (or explicitly ignored/documented) (`ZTSharp/ZeroTier/Net/Ipv4Codec.cs`)
+- [ ] Fix: decide and implement IPv4 header checksum policy (validate or explicitly ignore with rationale)
 - [ ] Add test: invalid-checksum UDP to registered port is dropped (`ZTSharp/ZeroTier/Net/UdpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
 - [ ] Fix: verify UDP checksum on receive (IPv4 + IPv6) before delivering to UDP handlers
 - [ ] Add test: invalid-checksum TCP SYN is dropped / does not trigger listener dispatch (`ZTSharp/ZeroTier/Net/TcpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
 - [ ] Fix: use `TcpCodec.TryParseWithChecksum` for TCP receive paths that influence routing/state
 - [ ] Add test: invalid-checksum ICMPv6 NS is dropped (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIcmpv6Handler.cs`)
 - [ ] Fix: validate ICMPv6 checksum for processed message types (Echo/NS/NA)
+- [ ] Add test: `TcpCodec.Encode` rejects/guards oversized payloads that would truncate checksum length (`ZTSharp/ZeroTier/Net/TcpCodec.cs`)
+- [ ] Fix: enforce payload length bounds for TCP encoding (avoid `ushort` truncation in checksum length)
 
 ### 2.2 Fragmentation / extension headers (explicit policy)
 - [ ] Decide + document: (a) support IPv4 fragments, (b) drop fragments explicitly, or (c) accept only non-fragmented packets
@@ -98,6 +102,9 @@ Primary goals:
 - [ ] Fix: replace strict `RemoteEndPoint == _rootEndpoint` with normalized/allowed endpoint matching (and document policy)
 - [ ] Reconcile direct-path behavior vs docs: decide whether direct endpoints are supported, partially supported, or disabled
 - [ ] Add tests: direct endpoints are either (a) used for sending/routing as designed, or (b) ignored by design with docs updated (`ZTSharp/ZeroTier/Internal/ZeroTierIpv4LinkSender.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
+- [ ] Add unit tests: `ZeroTierDirectEndpointSelection.Normalize` ordering/filtering/dedupe is correct (and excludes relay endpoint) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
+- [ ] Fix: ensure `ZeroTierDirectEndpointSelection.IsPublicAddress` rejects `::`/`IPv6Any` and handles IPv4-mapped IPv6 consistently (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointSelection.cs`)
+- [ ] Fix: move hole-punch sends off RX hot path (throttle/dedupe; don’t block dispatcher/peer loops) (`ZTSharp/ZeroTier/Internal/ZeroTierDirectEndpointManager.cs`)
 
 ### 2.6 Peer key negative-cache race
 - [ ] Add test: HELLO caches positive key; concurrent failing WHOIS must not overwrite with negative cache (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
@@ -126,6 +133,15 @@ Primary goals:
 - [ ] Fix: enforce max packet length and avoid per-packet large allocations on invalid traffic (especially in `Dearmor` paths)
 - [ ] Add test/bench: Poly1305 path does not allocate proportional to packet size on invalid packets (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCrypto.cs`)
 - [ ] Fix: reduce ToArray churn and avoid copying spans where possible (or limit it behind strict size checks)
+- [ ] Add test: unauthenticated HELLO floods do not trigger unbounded CPU/alloc work (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
+- [ ] Fix: add fast-path bounds/rate limiting for HELLO processing (and/or early reject by size/version) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplanePeerSecurity.cs`)
+- [ ] Add test: compressed flag with invalid payload does not allocate repeatedly without bound (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
+- [ ] Fix: cap compression input length / reuse buffers / avoid per-packet fixed-size allocations where possible (`ZTSharp/ZeroTier/Protocol/ZeroTierPacketCompression.cs`)
+
+### 2.10 Queue backpressure + drop policy visibility
+- [ ] Add test: control-plane packets (HELLO/OK/WHOIS/MulticastGather/SYN) are not silently dropped under moderate load (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)
+- [ ] Fix: split control vs data queues and/or switch critical paths away from `DropOldest` (or make drops observable and trigger reconnect) (`ZTSharp/ZeroTier/Transport/ZeroTierUdpTransport.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRuntime.cs`)
+- [ ] Add tracing/metrics: record drop counts per queue and surface via `ZeroTierTrace` or injectable logger
 
 ---
 
@@ -135,6 +151,10 @@ Primary goals:
 - [ ] Add test: `ListenTcpAsync(IPAddress.Any, port)` accepts connections to any managed IP (not only the first) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`)
 - [ ] Fix: treat Any/IPv6Any as “bind all managed IPs of that family” (or document alternative) and adjust route registry accordingly
 - [ ] Add test: binding same port on two different managed IPs of same family is supported (or explicitly rejected with a clear message) (`ZTSharp/ZeroTier/Internal/ZeroTierDataplaneRouteRegistry.cs`)
+- [ ] Add test: `ConnectTcpAsync(local: IPAddress.Any/IPv6Any, remote)` chooses a valid managed local IP rather than rejecting (`ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [ ] Fix: normalize `local` endpoints with `IPAddress.Any`/`IPv6Any` to a concrete managed IP (consistent with bind semantics) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [ ] Add test: IPv6 `ScopeId` mismatches do not break bind/listen/connect matching when the address is not link-local (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
+- [ ] Fix: canonicalize IPv6 addresses for managed-IP comparisons (define policy for `ScopeId`) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketBindings.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketTcpConnector.cs`)
 
 ### 3.2 Accepted `RemoteEndPoint` availability
 - [ ] Add test: accepted `ManagedSocket.RemoteEndPoint` is populated (or explicitly documented as unsupported) (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
@@ -164,6 +184,10 @@ Primary goals:
 - [ ] If supporting half-close: implement proper `Shutdown` behavior for `Send`/`Receive`
 - [ ] Add tests: backlog handling and port-0 listen behavior are documented and enforced (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
 
+### 3.8 Real-stack HTTP connect behavior
+- [ ] Add test: DNS with AAAA+A where first address blackholes does not stall unbounded (bounded connect attempt per address) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)
+- [ ] Fix: implement per-address connect timeout and/or Happy-Eyeballs-style parallel attempts (document behavior) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)
+
 ---
 
 ## Phase 4 - Persistence + filesystem hardening (`ZTSharp/**`, `ZTSharp/ZeroTier/Internal/**`)
@@ -177,7 +201,7 @@ Primary goals:
 - [ ] Fix: when deleting an alias key, delete both physical files if present
 
 ### 4.3 Unbounded reads / TOCTOU hardening
-- [ ] Add size caps + streaming reads: `identity.secret`, `.ips.txt`, persisted netconf dict (`ZTSharp/ZeroTier/Internal/ZeroTierSocketIdentityMigration.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
+- [ ] Add size caps + streaming reads: eliminate unbounded `File.ReadAllText`/`File.ReadAllLines`/`File.ReadAllBytes` on attacker-controlled state files (`identity.secret`, `.ips.txt`, persisted netconf dict) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketIdentityMigration.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierSocketStatePersistence.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
 - [ ] Add tests: large state files fail fast without allocating full contents
 - [ ] Reduce TOCTOU: open-and-read with a single handle and enforce max length while reading
 
@@ -185,6 +209,16 @@ Primary goals:
 - [ ] Add test: simulate repeated `File.Move` failure → write fails clearly (not silent success) (`ZTSharp/Internal/AtomicFile.cs`)
 - [ ] Fix: after max retries, throw a meaningful exception (include last failure)
 - [ ] Evaluate file sharing on Windows: ensure readers/writers use `FileShare.Delete` where appropriate
+
+### 4.5 State root path policy + secret material permissions
+- [ ] Add test: relative `StateRootPath` is normalized to a stable full path (or explicitly documented) (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
+- [ ] Fix: normalize state-root to full path early; avoid CWD-dependent persistence surprises (`ZTSharp/ZeroTier/Internal/ZeroTierSocketFactory.cs`)
+- [ ] Decide + document: file permission/ACL policy for secret identity files (best-effort hardening where feasible) (`ZTSharp/Internal/NodeIdentityService.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierIdentityStore.cs`)
+- [ ] Add tests/notes: ensure atomic replace does not accidentally weaken permissions (platform-dependent)
+
+### 4.6 Key normalization edge cases (cross-platform)
+- [ ] Add tests: invalid filename chars / reserved device names don’t cause traversal or confusing collisions (Windows/macOS/Linux) (`ZTSharp/StateStoreKeyNormalization.cs`, `ZTSharp/StateStorePrefixNormalization.cs`)
+- [ ] Fix: decide policy (reject vs encode) for platform-invalid key segments and document it (`docs/PERSISTENCE.md`)
 
 ---
 
@@ -202,6 +236,8 @@ Primary goals:
 - [ ] Add test: non-`ConnectionReset` `SocketException` does not kill OS UDP receive loop (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
 - [ ] Fix: catch/log other `SocketException` values and continue (similar to `ZeroTierUdpTransport`)
 - [ ] Fix: ensure `OsUdpNodeTransport.SendFrameAsync` can’t be derailed by one bad peer endpoint (catch send exceptions per peer)
+- [ ] Add test: discovery replies do not block the receive loop under backpressure (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
+- [ ] Fix: don’t await discovery reply sends inline on the receive loop (enqueue/async with exception capture) (`ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
 
 ### 5.4 Windows `SIO_UDP_CONNRESET` IOCTL correctness
 - [ ] Validate expected IOCTL input size on Windows and update to a compatible buffer (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)
@@ -210,6 +246,10 @@ Primary goals:
 ### 5.5 Socket creation resilience (IPv6-only vs dual-mode vs IPv4 fallback)
 - [ ] Add test: when dual-mode bind fails, IPv6-only bind is attempted before falling back to IPv4 (or document the behavior) (`ZTSharp/Transport/Internal/OsUdpSocketFactory.cs`)
 - [ ] Fix: improve fallback strategy and ensure endpoint families remain consistent across registry/sends
+
+### 5.6 OS-UDP peer registry bounds
+- [ ] Add test: peer registry does not grow without bound across node lifetimes and networks (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
+- [ ] Fix: add TTL/eviction/bounds for `OsUdpPeerRegistry` (and remove `static` global directory if it causes leaks) (`ZTSharp/Transport/Internal/OsUdpPeerRegistry.cs`)
 
 ---
 
@@ -226,6 +266,10 @@ Primary goals:
 ### 6.3 HTTP stream disposal safety
 - [ ] Add test: disposing `HttpResponseMessage` never throws due to stream disposal (`ZTSharp/Http/OwnedOverlayTcpClientStream.cs`)
 - [ ] Fix: avoid blocking/synchronously waiting on async dispose in `Dispose(bool)`; ensure disposal is exception-safe
+- [ ] Add test: overlay HTTP connect failures always surface as `HttpRequestException` (not raw `TimeoutException`) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+- [ ] Fix: wrap overlay connect exceptions consistently (timeout/cancel/socket) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+- [ ] Add test: overlay local-port allocator collisions are handled (retry/backoff) under concurrency (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+- [ ] Fix: add retry-on-collision (or increase range / document constraints) (`ZTSharp/Http/OverlayHttpMessageHandler.cs`)
 
 ### 6.4 Peer discovery framing collision risk
 - [ ] Add test: payload that matches discovery magic does not get dropped as “control” when it’s actually application data (`ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`)
@@ -235,10 +279,27 @@ Primary goals:
 - [ ] Add test: event handler re-entrancy cannot deadlock `StartAsync`/`StopAsync`/`JoinNetworkAsync` (`ZTSharp/Internal/NodeLifecycleService.cs`, `ZTSharp/Internal/NodeEventStream.cs`)
 - [ ] Fix: don’t invoke user callbacks while holding lifecycle locks (queue + invoke outside lock, or async event dispatch)
 - [ ] Add test: `Node.DisposeAsync` does not wedge indefinitely if stop paths are blocked (`ZTSharp/Internal/NodeLifecycleService.cs`)
+- [ ] Add test: exceptions thrown by user `EventRaised` handlers do not fault node lifecycle operations (`ZTSharp/Internal/NodeEventStream.cs`)
+- [ ] Fix: isolate/guard user callback exceptions and surface them via events/logging without faulting node (`ZTSharp/Internal/NodeEventStream.cs`)
 
 ### 6.6 EventLoop “poisoned” state
 - [ ] Add test: one callback throwing does not permanently stop subsequent work without surfacing failure (`ZTSharp/EventLoop.cs`)
 - [ ] Fix: either mark loop as faulted and reject further work, or keep running and isolate callback failures deterministically
+
+### 6.9 ActiveTaskSet shutdown semantics
+- [ ] Add test: one tracked task fault does not crash shutdown paths unexpectedly (`ZTSharp/Internal/ActiveTaskSet.cs`)
+- [ ] Fix: decide whether `WaitAsync` should aggregate/ignore faults during shutdown; ensure all call sites use a cancellation token and don’t wedge (`ZTSharp/Internal/ActiveTaskSet.cs`, call sites in listeners/forwarders)
+
+### 6.10 Overlay TCP background task safety
+- [ ] Add test: overlay SYN-ACK send failures don’t produce unobserved task exceptions (`ZTSharp/Sockets/OverlayTcpListener.cs`)
+- [ ] Fix: observe/handle fire-and-forget tasks (send/dispose) and ensure shutdown doesn’t hang (`ZTSharp/Sockets/OverlayTcpListener.cs`, `ZTSharp/Sockets/OverlayTcpClient.cs`)
+- [ ] Add test: overlay `OverlayTcpClient.DisposeAsync` is bounded and does not hang even if FIN send fails (`ZTSharp/Sockets/OverlayTcpClient.cs`)
+- [ ] Fix: ensure dispose uses a bounded timeout/cancellation and does not block indefinitely on transport send (`ZTSharp/Sockets/OverlayTcpClient.cs`)
+
+### 6.11 Overlay protocol spoofing / authentication (security policy)
+- [ ] Decide + document threat model: overlay stack is insecure by design vs should provide basic authenticity (`docs/USAGE.md`, `docs/COMPATIBILITY.md`)
+- [ ] If securing: add message authentication and bind `SourceNodeId` to endpoint/identity; reject spoofed frames (`ZTSharp/Transport/NodeFrameCodec.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`, `ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`)
+- [ ] Add tests: spoofed `SourceNodeId` frames do not reach overlay TCP/UDP handlers (`ZTSharp.Tests`)
 
 ### 6.7 Network leave ordering (transport subscription leak)
 - [ ] Add test: `LeaveNetworkAsync` failure does not lose registration and does not leak transport subscription (`ZTSharp/Internal/NodeNetworkService.cs`)
