@@ -23,7 +23,7 @@ Status legend:
 
 ## P2 — Direct path sending policy (direct + root fallback)
 - [x] Implement flow-id derivation (stable hash) from IPv4/IPv6 TCP/UDP 5-tuple.
-- [ ] Implement per-peer send selection: prefer best direct path(s) with **root fallback** + configurable warm-up duplication.
+- [x] Implement per-peer send selection: prefer best direct path(s) with **root fallback** + configurable warm-up duplication.
 - [ ] Update `PUSH_DIRECT_PATHS` handling to manage add/forget/redirect hints and trigger probing.
 
 ## P3 — QoS measurement + PATH_NEGOTIATION_REQUEST

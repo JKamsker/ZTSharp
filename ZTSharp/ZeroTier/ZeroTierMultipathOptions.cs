@@ -23,6 +23,11 @@ public sealed class ZeroTierMultipathOptions
     /// When set, the list length must match <see cref="UdpSocketCount"/>.
     /// </summary>
     public IReadOnlyList<int>? LocalUdpPorts { get; init; }
+
+    /// <summary>
+    /// When true, unconfirmed direct paths are "warmed up" by duplicating outbound packets to the root relay as a fallback.
+    /// </summary>
+    public bool WarmupDuplicateToRoot { get; init; } = true;
 }
 
 public enum ZeroTierBondPolicy
@@ -34,4 +39,3 @@ public enum ZeroTierBondPolicy
     BalanceXor = 4,
     BalanceAware = 5
 }
-

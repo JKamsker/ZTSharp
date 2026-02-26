@@ -15,7 +15,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
         IPAddress[] localManagedIpsV4,
         IPAddress[] localManagedIpsV6,
         byte[] inlineCom,
-        bool multipathEnabled,
+        ZeroTierMultipathOptions multipath,
         ZeroTierHelloOk? cachedRoot,
         byte[]? cachedRootKey,
         CancellationToken cancellationToken)
@@ -26,6 +26,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
         ArgumentNullException.ThrowIfNull(localManagedIpsV4);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
         ArgumentNullException.ThrowIfNull(inlineCom);
+        ArgumentNullException.ThrowIfNull(multipath);
 
         ZeroTierHelloOk helloOk;
         byte[] rootKey;
@@ -54,7 +55,7 @@ internal static class ZeroTierDataplaneRuntimeFactory
             localManagedIpsV4: localManagedIpsV4,
             localManagedIpsV6: localManagedIpsV6,
             inlineCom: inlineCom,
-            multipathEnabled: multipathEnabled);
+            multipath: multipath);
 
         await TrySubscribeForAddressResolutionAsync(
                 udp,

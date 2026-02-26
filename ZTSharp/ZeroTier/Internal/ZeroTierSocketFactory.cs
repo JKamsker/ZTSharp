@@ -59,7 +59,8 @@ internal static class ZeroTierSocketFactory
             Enabled = options.Multipath.Enabled,
             BondPolicy = options.Multipath.BondPolicy,
             UdpSocketCount = options.Multipath.UdpSocketCount,
-            LocalUdpPorts = options.Multipath.LocalUdpPorts is { } localPorts ? localPorts.ToArray() : null
+            LocalUdpPorts = options.Multipath.LocalUdpPorts is { } localPorts ? localPorts.ToArray() : null,
+            WarmupDuplicateToRoot = options.Multipath.WarmupDuplicateToRoot
         };
 
         var normalizedOptions = new ZeroTierSocketOptions
