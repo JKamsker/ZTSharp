@@ -94,8 +94,10 @@ Primary goals:
 ## Phase 2 - Real stack: dataplane + IP layer correctness (`ZTSharp/ZeroTier/Internal/**`, `ZTSharp/ZeroTier/Net/**`)
 
 ### 2.1 Checksum validation on receive (security/correctness)
-- [ ] Add test: invalid IPv4 header checksum is dropped (or explicitly ignored/documented) (`ZTSharp/ZeroTier/Net/Ipv4Codec.cs`)
-- [ ] Fix: decide and implement IPv4 header checksum policy (validate or explicitly ignore with rationale)
+- [x] Add test: invalid IPv4 header checksum is dropped (or explicitly ignored/documented) (`ZTSharp/ZeroTier/Net/Ipv4Codec.cs`)
+  - Test: `Ipv4CodecChecksumTests.TryParse_RejectsInvalidHeaderChecksum`
+- [x] Fix: decide and implement IPv4 header checksum policy (validate or explicitly ignore with rationale)
+  - Policy: validate header checksum in `Ipv4Codec.TryParse` and drop invalid packets.
 - [ ] Add test: invalid-checksum UDP to registered port is dropped (`ZTSharp/ZeroTier/Net/UdpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)
 - [ ] Fix: verify UDP checksum on receive (IPv4 + IPv6) before delivering to UDP handlers
 - [ ] Add test: invalid-checksum TCP SYN is dropped / does not trigger listener dispatch (`ZTSharp/ZeroTier/Net/TcpCodec.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierDataplaneIpHandler.cs`)

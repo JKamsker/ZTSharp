@@ -88,6 +88,11 @@ internal static class Ipv4Codec
             return false;
         }
 
+        if (ComputeHeaderChecksum(packet.Slice(0, headerLength)) != 0)
+        {
+            return false;
+        }
+
         protocol = packet[9];
         source = new IPAddress(packet.Slice(12, 4));
         destination = new IPAddress(packet.Slice(16, 4));
@@ -114,4 +119,3 @@ internal static class Ipv4Codec
         return (ushort)~sum;
     }
 }
-
