@@ -262,7 +262,8 @@ Primary goals:
 - [x] Fix: remove `SingleWriter=true` where multiple producers can write concurrently (or serialize producers explicitly)
 
 ### 6.2 Silent drop policy for TCP-like overlay streams
-- [ ] Add test: large/slow HTTP response over overlay does not corrupt/hang due to silent drops (`ZTSharp/Sockets/OverlayTcpIncomingBuffer.cs`, `ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+- [x] Add test: large/slow HTTP response over overlay does not corrupt/hang due to silent drops (`ZTSharp/Sockets/OverlayTcpIncomingBuffer.cs`, `ZTSharp/Http/OverlayHttpMessageHandler.cs`)
+  - Test: `TunnelAndHttpTests.InMemoryOverlayHttpHandler_LargeResponse_DoesNotHang_WhenClientIsSlow`
 - [x] Fix: replace `DropWrite` with backpressure or explicit connection failure (surface to caller), at least for TCP/HTTP paths
   - `OverlayTcpIncomingBuffer` now fails fast on buffer overflow instead of silently dropping segments
 

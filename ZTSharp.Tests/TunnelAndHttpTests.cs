@@ -414,6 +414,129 @@ public sealed class TunnelAndHttpTests
     }
 
     [Fact]
+    public async Task InMemoryOverlayHttpHandler_LargeResponse_DoesNotHang_WhenClientIsSlow()
+    {
+        var networkId = 0xCAFE1007UL;
+
+        await using var serverNode = CreateInMemoryNode();
+        await using var clientNode = CreateInMemoryNode();
+
+        await serverNode.StartAsync();
+        await clientNode.StartAsync();
+
+        await serverNode.JoinNetworkAsync(networkId);
+        await clientNode.JoinNetworkAsync(networkId);
+
+        var httpListener = new SystemTcpListener(IPAddress.Loopback, 0);
+        httpListener.Start();
+        try
+        {
+            var localHttpPort = ((IPEndPoint)httpListener.LocalEndpoint).Port;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            const int bodyLength = 1_300_000;
+            var httpTask = Task.Run(async () =>
+            {
+                using var tcp = await httpListener.AcceptTcpClientAsync(cts.Token);
+                tcp.NoDelay = true;
+                using var stream = tcp.GetStream();
+
+                var buffer = new byte[4096];
+                var total = 0;
+                while (total < buffer.Length)
+                {
+                    var read = await stream.ReadAsync(buffer.AsMemory(total), cts.Token);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    total += read;
+                    if (buffer.AsSpan(0, total).IndexOf("\r\n\r\n"u8) >= 0)
+                    {
+                        break;
+                    }
+                }
+
+                var response = $"HTTP/1.1 200 OK\r\nContent-Length: {bodyLength}\r\nConnection: close\r\n\r\n";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(response), cts.Token);
+
+                var chunk = new byte[1024];
+                for (var i = 0; i < chunk.Length; i++)
+                {
+                    chunk[i] = (byte)('a' + (i % 26));
+                }
+
+                var remaining = bodyLength;
+                while (remaining > 0)
+                {
+                    var toWrite = Math.Min(chunk.Length, remaining);
+                    await stream.WriteAsync(chunk.AsMemory(0, toWrite), cts.Token);
+                    remaining -= toWrite;
+                }
+            }, cts.Token);
+
+            await using var forwarder = new OverlayTcpPortForwarder(
+                serverNode,
+                networkId,
+                overlayListenPort: 28084,
+                targetHost: "127.0.0.1",
+                targetPort: localHttpPort);
+
+            var forwarderTask = Task.Run(() => forwarder.RunAsync(cts.Token), cts.Token);
+
+            using var httpClient = new HttpClient(new OverlayHttpMessageHandler(clientNode, networkId));
+            var uri = new Uri($"http://{serverNode.NodeId.ToHexString()}:28084/large");
+
+            using var responseMessage = await httpClient.SendAsync(
+                new HttpRequestMessage(HttpMethod.Get, uri),
+                HttpCompletionOption.ResponseHeadersRead,
+                cts.Token);
+
+            await Task.Delay(200, cts.Token);
+
+            var readTask = Task.Run(async () =>
+            {
+                await using var responseStream = await responseMessage.Content.ReadAsStreamAsync(cts.Token);
+                var readBuffer = new byte[16 * 1024];
+                var readTotal = 0;
+                while (true)
+                {
+                    var read = await responseStream.ReadAsync(readBuffer, cts.Token);
+                    if (read == 0)
+                    {
+                        return readTotal;
+                    }
+
+                    readTotal += read;
+                }
+            }, cts.Token);
+
+            try
+            {
+                await readTask.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+            }
+            catch (Exception ex) when (ex is IOException or HttpRequestException)
+            {
+            }
+
+            cts.Cancel();
+
+            try
+            {
+                await Task.WhenAll(httpTask, forwarderTask).WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+            }
+        }
+        finally
+        {
+            httpListener.Stop();
+        }
+    }
+
+    [Fact]
     public async Task InMemoryOverlayHttpHandler_CanResolveIpViaAddressBook()
     {
         var networkId = 0xCAFE1003UL;
