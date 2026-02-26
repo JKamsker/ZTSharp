@@ -312,9 +312,11 @@ Primary goals:
 - [x] Fix: ensure dispose uses a bounded timeout/cancellation and does not block indefinitely on transport send (`ZTSharp/Sockets/OverlayTcpClient.cs`)
 
 ### 6.11 Overlay protocol spoofing / authentication (security policy)
-- [ ] Decide + document threat model: overlay stack is insecure by design vs should provide basic authenticity (`docs/USAGE.md`, `docs/COMPATIBILITY.md`)
-- [ ] If securing: add message authentication and bind `SourceNodeId` to endpoint/identity; reject spoofed frames (`ZTSharp/Transport/NodeFrameCodec.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`, `ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`)
-- [ ] Add tests: spoofed `SourceNodeId` frames do not reach overlay TCP/UDP handlers (`ZTSharp.Tests`)
+- [x] Decide + document threat model: overlay stack is insecure by design vs should provide basic authenticity (`docs/USAGE.md`, `docs/COMPATIBILITY.md`)
+- [x] If securing: add message authentication and bind `SourceNodeId` to endpoint/identity; reject spoofed frames (`ZTSharp/Transport/NodeFrameCodec.cs`, `ZTSharp/Transport/Internal/OsUdpReceiveLoop.cs`, `ZTSharp/Transport/Internal/OsUdpPeerDiscoveryProtocol.cs`)
+  - Implemented a best-effort endpoint binding for `OsUdp` (no crypto): non-discovery frames are only dispatched if the remote endpoint matches the registered peer endpoint for `SourceNodeId`.
+- [x] Add tests: spoofed `SourceNodeId` frames do not reach overlay TCP/UDP handlers (`ZTSharp.Tests`)
+  - Tests: `OsUdpSpoofingTests.*`
 
 ### 6.7 Network leave ordering (transport subscription leak)
 - [x] Add test: `LeaveNetworkAsync` failure does not lose registration and does not leak transport subscription (`ZTSharp/Internal/NodeNetworkService.cs`)

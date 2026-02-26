@@ -121,6 +121,10 @@ var result = await udp.ReceiveFromAsync(buffer);
 The `ZTSharp` namespace provides a custom managed overlay transport.
 This stack is **not** protocol-compatible with the real ZeroTier network.
 
+> **Security note:** the legacy overlay transport does not provide encryption or strong authentication.
+> For `OsUdp` transport mode, frames are accepted based on a best-effort endpoint-to-node-id mapping and may be vulnerable in untrusted networks.
+> Use `ZTSharp.ZeroTier` for real ZeroTier security properties.
+
 ### Create a Node
 
 ```csharp

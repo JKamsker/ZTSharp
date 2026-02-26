@@ -57,11 +57,12 @@ internal sealed class OsUdpReceiveLoop
                 continue;
             }
 
+            var normalizedRemoteEndpoint = UdpEndpointNormalization.Normalize(result.RemoteEndPoint);
             if (_enablePeerDiscovery && OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, networkId, out var controlFrameType, out var discoveredNodeId))
             {
                 if (discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
                 {
-                    _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
+                    _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, normalizedRemoteEndpoint);
                     if (_peers.TryGetLocalNodeId(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
                     {
                         if (controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello)
@@ -69,7 +70,7 @@ internal sealed class OsUdpReceiveLoop
                             await _sendDiscoveryFrameAsync(
                                     networkId,
                                     localNodeId,
-                                    result.RemoteEndPoint,
+                                    normalizedRemoteEndpoint,
                                     OsUdpPeerDiscoveryProtocol.FrameType.PeerHelloResponse,
                                     cancellationToken)
                                 .ConfigureAwait(false);
@@ -80,12 +81,16 @@ internal sealed class OsUdpReceiveLoop
                 continue;
             }
 
-            if (_enablePeerDiscovery &&
-                sourceNodeId != 0 &&
-                _peers.TryGetLocalNodeId(networkId, out var localNodeIdForDiscovery) &&
-                localNodeIdForDiscovery != sourceNodeId)
+            if (sourceNodeId != 0 &&
+                _peers.TryGetPeers(networkId, out var peers) &&
+                peers.TryGetValue(sourceNodeId, out var expectedEndpoint) &&
+                expectedEndpoint.Equals(normalizedRemoteEndpoint))
             {
-                _peers.RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
+                // Valid authenticated-by-endpoint peer.
+            }
+            else
+            {
+                continue;
             }
 
             try

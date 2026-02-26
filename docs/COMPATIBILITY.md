@@ -27,6 +27,7 @@ It uses a custom wire format and transport layer.
 **Not implemented:**
 
 - Real ZeroTier wire format, crypto, verbs, paths, NAT traversal
+- Cryptographic authentication/encryption for legacy overlay frames
 - Planet/roots processing or controller interaction
 - OS virtual network interface (TUN/TAP)
 
