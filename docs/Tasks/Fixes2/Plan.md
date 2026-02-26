@@ -76,9 +76,12 @@ Primary goals:
 - [x] Fix: ensure close/fail signals are observable to future waiters (not only existing waiters)
 
 ### 1.6 Listener accept-queue backpressure
-- [ ] Repro + add test: connection flood while app never accepts -> memory doesn't grow unbounded (`ZTSharp/ZeroTier/ZeroTierTcpListener.cs`)
-- [ ] Fix: bound accepted-stream queue (bounded channel) and decide policy (drop/close oldest, refuse new, or backpressure handshake)
-- [ ] Add tracing/metrics: accepted queue saturation is visible to callers/tests
+- [x] Repro + add test: connection flood while app never accepts -> memory doesn't grow unbounded (`ZTSharp/ZeroTier/ZeroTierTcpListener.cs`)
+  - Test: `ZeroTierTcpListenerBacklogTests.ConnectionFlood_DoesNotGrowUnbounded_WhenNotAccepting`
+- [x] Fix: bound accepted-stream queue (bounded channel) and decide policy (drop/close oldest, refuse new, or backpressure handshake)
+  - Policy: drop newly accepted connections when backlog is full (dispose the stream/connection).
+- [x] Add tracing/metrics: accepted queue saturation is visible to callers/tests
+  - `ZeroTierTcpListener.AcceptQueueCapacity`, `PendingAcceptCount`, `DroppedAcceptCount`
 
 ### 1.7 Routed link drop policy for TCP-like traffic
 - [ ] Repro + add test: overload routed link channel; ensure TCP can still make progress or fails predictably (`ZTSharp/ZeroTier/Internal/ZeroTierRoutedIpv4Link.cs`, `ZTSharp/ZeroTier/Internal/ZeroTierRoutedIpv6Link.cs`)

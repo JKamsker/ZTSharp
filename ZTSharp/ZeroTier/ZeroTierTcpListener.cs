@@ -9,16 +9,21 @@ namespace ZTSharp.ZeroTier;
 
 public sealed class ZeroTierTcpListener : IAsyncDisposable
 {
+    private const int DefaultAcceptQueueCapacity = 64;
+
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActiveTaskSet _connectionTasks = new();
-    private readonly Channel<Stream> _acceptQueue = Channel.CreateUnbounded<Stream>();
+    private readonly Channel<Stream> _acceptQueue;
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
+    private readonly int _acceptQueueCapacity;
+    private int _pendingAcceptCount;
+    private long _droppedAcceptCount;
     private int _disposeState;
 
-    internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort)
+    internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort, int acceptQueueCapacity = DefaultAcceptQueueCapacity)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(localAddress);
@@ -28,9 +33,21 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             throw new NotSupportedException("Only IPv4 and IPv6 are supported.");
         }
 
+        if (acceptQueueCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(acceptQueueCapacity), acceptQueueCapacity, "Accept queue capacity must be greater than zero.");
+        }
+
         _runtime = runtime;
         _localAddress = localAddress;
         _localPort = localPort;
+        _acceptQueueCapacity = acceptQueueCapacity;
+        _acceptQueue = Channel.CreateBounded<Stream>(new BoundedChannelOptions(_acceptQueueCapacity)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = false
+        });
 
         if (!_runtime.TryRegisterTcpListener(localAddress.AddressFamily, localPort, OnSynAsync))
         {
@@ -39,6 +56,12 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
     }
 
     public IPEndPoint LocalEndpoint => new(_localAddress, _localPort);
+
+    public int AcceptQueueCapacity => _acceptQueueCapacity;
+
+    public int PendingAcceptCount => Volatile.Read(ref _pendingAcceptCount);
+
+    public long DroppedAcceptCount => Interlocked.Read(ref _droppedAcceptCount);
 
     public ValueTask<Stream> AcceptAsync(CancellationToken cancellationToken = default)
     {
@@ -49,7 +72,9 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         {
             try
             {
-                return await _acceptQueue.Reader.ReadAsync(token).ConfigureAwait(false);
+                var stream = await _acceptQueue.Reader.ReadAsync(token).ConfigureAwait(false);
+                Interlocked.Decrement(ref _pendingAcceptCount);
+                return stream;
             }
             catch (ChannelClosedException)
             {
@@ -79,6 +104,12 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             _runtime.UnregisterTcpListener(_localAddress.AddressFamily, _localPort);
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
+
+            while (_acceptQueue.Reader.TryRead(out var accepted))
+            {
+                Interlocked.Decrement(ref _pendingAcceptCount);
+                await accepted.DisposeAsync().ConfigureAwait(false);
+            }
 
             using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             try
@@ -183,12 +214,19 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
             if (!_acceptQueue.Writer.TryWrite(stream))
             {
+                Interlocked.Increment(ref _droppedAcceptCount);
+                if (ZeroTierTrace.Enabled)
+                {
+                    ZeroTierTrace.WriteLine($"[zerotier] Drop accept: backlog full ({_acceptQueueCapacity}).");
+                }
+
                 await stream.DisposeAsync().ConfigureAwait(false);
                 disposed = true;
                 stream = null;
                 return;
             }
 
+            Interlocked.Increment(ref _pendingAcceptCount);
             handedOff = true;
             stream = null;
         }
