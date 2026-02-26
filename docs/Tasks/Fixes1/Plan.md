@@ -559,6 +559,11 @@ Files
 - ZTSharp/NetworkAddressCodec.cs (prefix range checks on decode)
 - ZTSharp/PeerEndpointCodec.cs (reject port 0 on decode)
 
+Changes
+
+- [x] Reject decoded IPv4 prefixes > 32 and IPv6 prefixes > 128.
+- [x] Reject decoded peer endpoints with port 0.
+
 ### 6.8 Event loop cancellation set growth
 
 File
