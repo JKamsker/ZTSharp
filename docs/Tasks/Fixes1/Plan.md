@@ -589,11 +589,11 @@ Acceptance: legacy overlay stack no longer has the identified correctness holes;
 
 ## Phase 7 - Docs + final validation
 
-- [ ] Update `docs/PERSISTENCE.md` to reflect:
-  - [ ] Stricter key rules (no rooted paths/colon).
-  - [ ] Alias behavior (planet/roots) and migration behavior.
-  - [ ] Atomic write guarantees (best-effort).
-- [ ] If overlay UDP frame v2 is introduced, document it briefly in `docs/USAGE.md` (or a legacy section).
+- [x] Update `docs/PERSISTENCE.md` to reflect:
+  - [x] Stricter key rules (no rooted paths/colon).
+  - [x] Alias behavior (planet/roots) and migration behavior.
+  - [x] Atomic write guarantees (best-effort).
+- [x] If overlay UDP frame v2 is introduced, document it briefly in `docs/USAGE.md` (or a legacy section).
 
 Final acceptance:
 
