@@ -19,6 +19,12 @@ internal static class ListenCommand
         var stack = "managed";
         long bodyBytes = 0;
 
+        var mpEnabled = false;
+        var mpBondPolicy = ZeroTierBondPolicy.Off;
+        int? mpUdpSockets = null;
+        IReadOnlyList<int>? mpUdpPorts = null;
+        var mpWarmupRoot = true;
+
         for (var i = 1; i < commandArgs.Length; i++)
         {
             var arg = commandArgs[i];
@@ -40,6 +46,41 @@ internal static class ListenCommand
 
                         break;
                     }
+                case "--multipath":
+                    mpEnabled = true;
+                    break;
+                case "--mp-bond":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-bond");
+                        mpBondPolicy = CliParsing.ParseBondPolicy(value);
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-sockets":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-sockets");
+                        mpUdpSockets = CliParsing.ParsePositiveInt(value, "--mp-udp-sockets value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-ports":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-ports");
+                        mpUdpPorts = CliParsing.ParsePortList(value, "--mp-udp-ports value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-warmup-root":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-warmup-root");
+                        if (!bool.TryParse(value, out mpWarmupRoot))
+                        {
+                            throw new InvalidOperationException("Invalid --mp-warmup-root value (expected true|false).");
+                        }
+
+                        mpEnabled = true;
+                        break;
+                    }
                 default:
                     throw new InvalidOperationException($"Unknown option '{arg}'.");
             }
@@ -58,7 +99,16 @@ internal static class ListenCommand
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunListenZeroTierAsync(statePath, networkId, localPort, bodyBytes, cancellation.Token).ConfigureAwait(false);
+            var multipath = new ZeroTierMultipathOptions
+            {
+                Enabled = mpEnabled,
+                BondPolicy = mpBondPolicy,
+                UdpSocketCount = mpUdpSockets ?? 1,
+                LocalUdpPorts = mpUdpPorts,
+                WarmupDuplicateToRoot = mpWarmupRoot
+            };
+
+            await RunListenZeroTierAsync(statePath, networkId, multipath, localPort, bodyBytes, cancellation.Token).ConfigureAwait(false);
             return;
         }
 
@@ -68,6 +118,7 @@ internal static class ListenCommand
     private static async Task RunListenZeroTierAsync(
         string statePath,
         ulong networkId,
+        ZeroTierMultipathOptions multipath,
         int listenPort,
         long bodyBytes,
         CancellationToken cancellationToken)
@@ -80,7 +131,8 @@ internal static class ListenCommand
         var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
         {
             StateRootPath = statePath,
-            NetworkId = networkId
+            NetworkId = networkId,
+            Multipath = multipath
         }, cancellationToken).ConfigureAwait(false);
 
         ZeroTierTcpListener? listener4 = null;

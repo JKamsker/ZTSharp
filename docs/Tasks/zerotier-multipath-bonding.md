@@ -36,7 +36,7 @@ Status legend:
 - [x] Implement background maintenance loop (tick) for: heartbeats, QoS sends, flow expiration/rebalance, negotiation checks.
 
 ## P5 — CLI/docs/tests
-- [ ] Add CLI flags to enable/configure multipath and bond policy (enough for manual verification).
+- [x] Add CLI flags to enable/configure multipath and bond policy (enough for manual verification).
 - [ ] Add/extend unit tests for: multi-transport socket id propagation, echo, qos parsing, bond policy selection.
 - [x] Stabilize flaky `ZeroTierTcpListenerBacklogTests` timeout under full-suite load.
 - [ ] Update docs: `docs/ZEROTIER_STACK.md` and `docs/COMPATIBILITY.md` to reflect new behavior and defaults.
