@@ -218,9 +218,21 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 
         foreach (var callback in subscribers.Values)
         {
-            await callback
-                .OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                await callback
+                    .OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+#pragma warning disable CA1031 // Subscriber errors must not kill the receive loop.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
         }
     }
 

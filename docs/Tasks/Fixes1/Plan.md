@@ -493,9 +493,9 @@ Files
 
 Changes
 
-- [ ] Wrap `_onRawFrameReceived` and `_onFrameReceived` in try/catch; publish a fault event/log and continue.
-- [ ] In `OsUdpNodeTransport.DispatchFrameAsync`, catch per-subscriber exception and continue.
-- [ ] In `OsUdpReceiveLoop.RunAsync`, wrap `_dispatchFrameAsync` call to prevent loop death.
+- [x] Wrap `_onRawFrameReceived` and `_onFrameReceived` in try/catch; publish a fault event/log and continue.
+- [x] In `OsUdpNodeTransport.DispatchFrameAsync`, catch per-subscriber exception and continue.
+- [x] In `OsUdpReceiveLoop.RunAsync`, wrap `_dispatchFrameAsync` call to prevent loop death.
 
 ### 6.3 Peer discovery protocol: avoid false positives + spoof mismatch
 
@@ -575,7 +575,7 @@ Changes
 - [ ] Overlay TCP handshake data loss: server write immediately after accept must be received by client.
 - [ ] ZtUdpClient: A->SendTo(B) must not be delivered to C when using v2 frames.
 - [ ] OsUdp discovery: app payload starting with ZTC1 must still be delivered unless exact discovery frame length.
-- [ ] Subscriber exception: throwing callback must not kill OS-UDP receive loop.
+- [x] Subscriber exception: throwing callback must not kill OS-UDP receive loop.
 - [ ] ActiveTaskSet wait correctness under concurrency.
 
 Acceptance: legacy overlay stack no longer has the identified correctness holes; receive loops stay alive under callback faults; queues are bounded.

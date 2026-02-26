@@ -88,8 +88,19 @@ internal sealed class OsUdpReceiveLoop
                 _peers.RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
             }
 
-            await _dispatchFrameAsync(sourceNodeId, networkId, payload, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _dispatchFrameAsync(sourceNodeId, networkId, payload, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+#pragma warning disable CA1031 // Receive loop must survive dispatch failures.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
         }
     }
 }
-

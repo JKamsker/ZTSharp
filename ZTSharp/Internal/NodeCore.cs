@@ -39,7 +39,7 @@ internal sealed class NodeCore : IAsyncDisposable
             : SharedTransport;
 
         _events = new NodeEventStream(onEventRaised);
-        _transportService = new NodeTransportService(_events, onFrameReceived, onRawFrameReceived, _transport, _options);
+        _transportService = new NodeTransportService(_events, _logger, onFrameReceived, onRawFrameReceived, _transport, _options);
         _identityService = new NodeIdentityService(_store, _events);
         _peerService = new NodePeerService(_store);
         _networkService = new NodeNetworkService(_store, _transport, _events, _peerService);
