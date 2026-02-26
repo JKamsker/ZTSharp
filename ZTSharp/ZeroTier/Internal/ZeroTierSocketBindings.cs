@@ -15,7 +15,8 @@ internal static class ZeroTierSocketBindings
         Func<byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
         IPAddress localAddress,
         int port,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int acceptQueueCapacity = 64)
     {
         ArgumentNullException.ThrowIfNull(ensureJoinedAsync);
         ArgumentNullException.ThrowIfNull(getManagedIps);
@@ -58,9 +59,14 @@ internal static class ZeroTierSocketBindings
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
+        if (acceptQueueCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(acceptQueueCapacity), acceptQueueCapacity, "Accept queue capacity must be greater than zero.");
+        }
+
         var comBytes = getInlineCom();
         var runtime = await getOrCreateRuntimeAsync(comBytes, cancellationToken).ConfigureAwait(false);
-        return new ZeroTierTcpListener(runtime, localAddress, (ushort)port);
+        return new ZeroTierTcpListener(runtime, localAddress, (ushort)port, acceptQueueCapacity: acceptQueueCapacity);
     }
 
     public static async ValueTask<ZeroTierUdpSocket> BindUdpAsync(

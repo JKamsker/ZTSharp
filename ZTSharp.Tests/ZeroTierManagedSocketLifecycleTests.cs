@@ -8,6 +8,7 @@ using ZTSharp.ZeroTier;
 using ZTSharp.ZeroTier.Internal;
 using ZTSharp.ZeroTier.Net;
 using ZTSharp.ZeroTier.Protocol;
+using ZTSharp.ZeroTier.Sockets;
 using ZTSharp.ZeroTier.Transport;
 
 namespace ZTSharp.Tests;
@@ -101,6 +102,59 @@ public sealed class ZeroTierManagedSocketLifecycleTests
         _ = await Assert.ThrowsAsync<ObjectDisposedException>(async () => await connectTask);
 
         joinLock.Release();
+    }
+
+    [Fact]
+    public async Task ManagedSocket_ListenAsync_UsesBacklogAsAcceptQueueCapacity()
+    {
+        var networkId = 0x9ad07d01093a69e3UL;
+        var localIp = IPAddress.Parse("10.0.0.2");
+        var dict = BuildDictionaryWithMinimalComAndStaticIp(localIp, bits: 24);
+
+        await using var runtime = CreateRuntime(localManagedIpsV4: new[] { localIp });
+        await using var socket = CreateJoinedSocket(runtime, networkId, managedIps: new[] { localIp }, dict);
+
+        await using var server = socket.CreateSocket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        await server.BindAsync(new IPEndPoint(localIp, 23471), CancellationToken.None);
+        await server.ListenAsync(backlog: 3, CancellationToken.None);
+
+        var backend = GetPrivateField<ManagedSocketBackend>(server, "_backend");
+        var tcpBackend = Assert.IsType<ManagedTcpSocketBackend>(backend);
+        var listener = GetPrivateField<ZeroTierTcpListener>(tcpBackend, "_listener");
+
+        Assert.Equal(3, listener.AcceptQueueCapacity);
+    }
+
+    [Fact]
+    public async Task ManagedSocket_ListenAsync_PortZero_ThrowsNotSupportedException()
+    {
+        var networkId = 0x9ad07d01093a69e3UL;
+        var localIp = IPAddress.Parse("10.0.0.2");
+        var dict = BuildDictionaryWithMinimalComAndStaticIp(localIp, bits: 24);
+
+        await using var runtime = CreateRuntime(localManagedIpsV4: new[] { localIp });
+        await using var socket = CreateJoinedSocket(runtime, networkId, managedIps: new[] { localIp }, dict);
+
+        await using var server = socket.CreateSocket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        await server.BindAsync(new IPEndPoint(localIp, 0), CancellationToken.None);
+
+        _ = await Assert.ThrowsAsync<NotSupportedException>(async () => await server.ListenAsync(backlog: 1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ManagedSocket_Shutdown_Send_ThrowsNotSupportedException()
+    {
+        var stateRoot = TestTempPaths.CreateGuidSuffixed("zt-managed-shutdown-");
+        var statePath = Path.Combine(stateRoot, "zerotier");
+        Directory.CreateDirectory(statePath);
+
+        var options = new ZeroTierSocketOptions { StateRootPath = stateRoot, NetworkId = 1 };
+        var planet = ZeroTierWorldCodec.Decode(ZeroTierDefaultPlanet.World);
+        var identity = ZeroTierTestIdentities.CreateFastIdentity(0x2222222222);
+        await using var socket = new ZeroTierSocket(options, statePath, identity, planet);
+        await using var managed = socket.CreateSocket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        Assert.Throws<NotSupportedException>(() => managed.Shutdown(SocketShutdown.Send));
     }
 
     [Fact]

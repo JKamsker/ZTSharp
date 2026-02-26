@@ -77,7 +77,6 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
 
     public override async ValueTask ListenAsync(int backlog, CancellationToken cancellationToken)
     {
-        _ = backlog;
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(Disposed, this);
 
@@ -106,8 +105,9 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                 throw new NotSupportedException("Listening on port 0 is not supported. Bind to a concrete port first.");
             }
 
+            var acceptQueueCapacity = backlog <= 0 ? 128 : backlog;
             _listener = await Zt
-                .ListenTcpAsync(_localEndPoint.Address, _localEndPoint.Port, cancellationToken)
+                .ListenTcpAsync(_localEndPoint.Address, _localEndPoint.Port, acceptQueueCapacity, cancellationToken)
                 .ConfigureAwait(false);
 
             _localEndPoint = _listener.LocalEndpoint;

@@ -183,6 +183,26 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
+    internal ValueTask<ZeroTierTcpListener> ListenTcpAsync(
+        IPAddress localAddress,
+        int port,
+        int acceptQueueCapacity,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+
+        return ZeroTierSocketBindings.ListenTcpAsync(
+            ensureJoinedAsync: JoinAsync,
+            getManagedIps: () => ManagedIps,
+            getInlineCom: GetInlineComOrThrow,
+            getOrCreateRuntimeAsync: GetOrCreateRuntimeAsync,
+            localAddress,
+            port,
+            cancellationToken,
+            acceptQueueCapacity: acceptQueueCapacity);
+    }
+
     public async ValueTask<ZeroTierUdpSocket> BindUdpAsync(int port, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

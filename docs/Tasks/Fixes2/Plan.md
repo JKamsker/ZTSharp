@@ -227,9 +227,9 @@ Primary goals:
 - [x] Audit call sites: ensure every `Dearmor(...) == false` path drops the packet and never parses "plaintext"
 
 ### 3.7 Socket API parity gaps (intentional vs accidental)
-- [ ] Decide + document: `ManagedSocket.Shutdown(SocketShutdown)` semantics (currently closes regardless of `how`) (`ZTSharp/ZeroTier/Sockets/ManagedSocket.cs`)
-- [ ] If supporting half-close: implement proper `Shutdown` behavior for `Send`/`Receive`
-- [ ] Add tests: backlog handling and port-0 listen behavior are documented and enforced (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
+- [x] Decide + document: `ManagedSocket.Shutdown(SocketShutdown)` semantics (currently closes regardless of `how`) (`ZTSharp/ZeroTier/Sockets/ManagedSocket.cs`)
+- [x] If supporting half-close: implement proper `Shutdown` behavior for `Send`/`Receive`
+- [x] Add tests: backlog handling and port-0 listen behavior are documented and enforced (`ZTSharp/ZeroTier/Sockets/ManagedTcpSocketBackend.cs`)
 
 ### 3.8 Real-stack HTTP connect behavior
 - [ ] Add test: DNS with AAAA+A where first address blackholes does not stall unbounded (bounded connect attempt per address) (`ZTSharp/ZeroTier/Http/ZeroTierHttpMessageHandler.cs`)

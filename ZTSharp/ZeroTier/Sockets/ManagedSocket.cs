@@ -151,7 +151,12 @@ public sealed class ManagedSocket : IAsyncDisposable, IDisposable
 
     public void Shutdown(SocketShutdown how)
     {
-        _ = how;
+        ThrowIfDisposed();
+        if (how != SocketShutdown.Both)
+        {
+            throw new NotSupportedException("ManagedSocket does not support half-close (Shutdown(Send/Receive)). Use Close/Dispose instead.");
+        }
+
         Close();
     }
 
