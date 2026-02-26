@@ -13,6 +13,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
+    private readonly ZeroTierPeerQosManager _peerQos;
     private readonly bool _multipathEnabled;
 
     public ZeroTierDataplanePeerDatagramProcessor(
@@ -22,6 +23,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         ZeroTierPeerPhysicalPathTracker peerPaths,
         ZeroTierPeerEchoManager peerEcho,
         ZeroTierExternalSurfaceAddressTracker surfaceAddresses,
+        ZeroTierPeerQosManager peerQos,
         bool multipathEnabled)
     {
         ArgumentNullException.ThrowIfNull(peerSecurity);
@@ -29,6 +31,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         ArgumentNullException.ThrowIfNull(peerPaths);
         ArgumentNullException.ThrowIfNull(peerEcho);
         ArgumentNullException.ThrowIfNull(surfaceAddresses);
+        ArgumentNullException.ThrowIfNull(peerQos);
 
         _localNodeId = localNodeId;
         _peerSecurity = peerSecurity;
@@ -36,6 +39,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
         _peerPaths = peerPaths;
         _peerEcho = peerEcho;
         _surfaceAddresses = surfaceAddresses;
+        _peerQos = peerQos;
         _multipathEnabled = multipathEnabled;
     }
 
@@ -97,6 +101,17 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
 
             var verb = (ZeroTierVerb)(packetBytes[ZeroTierPacketHeader.IndexVerb] & 0x1F);
             var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
+            var payloadSpan = payload.Span;
+
+            if (verb == ZeroTierVerb.QosMeasurement)
+            {
+                if (decoded.Header.HopCount == 0)
+                {
+                    _peerQos.HandleInboundMeasurement(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, payloadSpan);
+                }
+
+                return;
+            }
 
             if (verb == ZeroTierVerb.Echo)
             {
@@ -113,7 +128,6 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
                 return;
             }
 
-            var payloadSpan = payload.Span;
             if (verb == ZeroTierVerb.Ok && payloadSpan.Length >= 1 + 8)
             {
                 var inReVerb = (ZeroTierVerb)(payloadSpan[0] & 0x1F);

@@ -27,7 +27,7 @@ Status legend:
 - [x] Update `PUSH_DIRECT_PATHS` handling to manage add/forget/redirect hints and trigger probing.
 
 ## P3 — QoS measurement + PATH_NEGOTIATION_REQUEST
-- [ ] Implement `QOS_MEASUREMENT` RX parsing (little-endian id/holdingTime pairs) and per-path QoS state.
+- [x] Implement `QOS_MEASUREMENT` RX parsing (little-endian id/holdingTime pairs) and per-path QoS state.
 - [ ] Implement `QOS_MEASUREMENT` TX generation and periodic sending cadence.
 - [ ] Implement `PATH_NEGOTIATION_REQUEST` RX/TX and utility-based tie-break logic.
 

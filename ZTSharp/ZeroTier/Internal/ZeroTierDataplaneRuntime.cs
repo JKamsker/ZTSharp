@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
@@ -28,6 +29,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
+    private readonly ZeroTierPeerQosManager _peerQos;
     private readonly ZeroTierMultipathOptions _multipath;
 
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
@@ -153,6 +155,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         _peerPaths = new ZeroTierPeerPhysicalPathTracker(ttl: TimeSpan.FromSeconds(30));
         _peerEcho = new ZeroTierPeerEchoManager(udp, localIdentity.NodeId, _peerSecurity.GetPeerProtocolVersionOrDefault);
         _surfaceAddresses = new ZeroTierExternalSurfaceAddressTracker(ttl: TimeSpan.FromMinutes(30));
+        _peerQos = new ZeroTierPeerQosManager();
 
         var icmpv6 = new ZeroTierDataplaneIcmpv6Handler(this, _localMac, _localManagedIpsV6, _managedIpToNodeId);
         var ip = new ZeroTierDataplaneIpHandler(
@@ -173,6 +176,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             _peerPaths,
             _peerEcho,
             _surfaceAddresses,
+            _peerQos,
             multipath.Enabled);
         _rxLoops = new ZeroTierDataplaneRxLoops(
             _udp,
@@ -319,20 +323,42 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         var confirmed = _peerEcho.TryGetLastRttMs(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, out _);
         if (_multipath.WarmupDuplicateToRoot && !confirmed)
         {
-            await Task
-                .WhenAll(
-                    _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken),
-                    _udp.SendAsync(_rootEndpoint, packet, cancellationToken))
-                .ConfigureAwait(false);
+            var (packetId, verb) = TryGetPacketIdAndVerb(packet, out var parsed) ? parsed : default;
+            if (verb != ZeroTierVerb.QosMeasurement)
+            {
+                _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId);
+            }
+
+            try
+            {
+                await Task
+                    .WhenAll(
+                        _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken),
+                        _udp.SendAsync(_rootEndpoint, packet, cancellationToken))
+                    .ConfigureAwait(false);
+            }
+            catch (SocketException)
+            {
+                _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId);
+                await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+            }
+
             return;
+        }
+
+        var (packetId2, verb2) = TryGetPacketIdAndVerb(packet, out var parsed2) ? parsed2 : default;
+        if (verb2 != ZeroTierVerb.QosMeasurement)
+        {
+            _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId2);
         }
 
         try
         {
             await _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken).ConfigureAwait(false);
         }
-        catch (System.Net.Sockets.SocketException)
+        catch (SocketException)
         {
+            _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId2);
             await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -355,7 +381,12 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
                 if (hasRtt)
                 {
-                    if (!bestHasRtt || rttMs < bestRtt || (rttMs == bestRtt && candidate.LastSeenUnixMs > bestLastSeen))
+                    var better =
+                        (!bestHasRtt) ||
+                        (rttMs < bestRtt) ||
+                        (rttMs == bestRtt && candidate.LastSeenUnixMs > bestLastSeen);
+
+                    if (better)
                     {
                         best = new ZeroTierSelectedPeerPath(candidate.LocalSocketId, candidate.RemoteEndPoint);
                         hasBest = true;
@@ -364,11 +395,18 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                         bestLastSeen = candidate.LastSeenUnixMs;
                     }
                 }
-                else if (!bestHasRtt && candidate.LastSeenUnixMs > bestLastSeen)
+                else if (!bestHasRtt)
                 {
-                    best = new ZeroTierSelectedPeerPath(candidate.LocalSocketId, candidate.RemoteEndPoint);
-                    hasBest = true;
-                    bestLastSeen = candidate.LastSeenUnixMs;
+                    var better =
+                        (!hasBest) ||
+                        (candidate.LastSeenUnixMs > bestLastSeen);
+
+                    if (better)
+                    {
+                        best = new ZeroTierSelectedPeerPath(candidate.LocalSocketId, candidate.RemoteEndPoint);
+                        hasBest = true;
+                        bestLastSeen = candidate.LastSeenUnixMs;
+                    }
                 }
             }
 
@@ -389,6 +427,21 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
         selected = default;
         return false;
+    }
+
+    private static bool TryGetPacketIdAndVerb(ReadOnlyMemory<byte> packet, out (ulong PacketId, ZeroTierVerb Verb) parsed)
+    {
+        if (packet.Length < ZeroTierPacketHeader.Length)
+        {
+            parsed = default;
+            return false;
+        }
+
+        var span = packet.Span;
+        var packetId = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(ZeroTierPacketHeader.IndexPacketId, 8));
+        var verb = (ZeroTierVerb)(span[ZeroTierPacketHeader.IndexVerb] & 0x1F);
+        parsed = (packetId, verb);
+        return true;
     }
 
     public async ValueTask DisposeAsync()
