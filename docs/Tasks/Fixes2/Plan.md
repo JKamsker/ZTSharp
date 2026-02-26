@@ -301,10 +301,12 @@ Primary goals:
 - [x] Fix: decide whether `WaitAsync` should aggregate/ignore faults during shutdown; ensure all call sites use a cancellation token and don’t wedge (`ZTSharp/Internal/ActiveTaskSet.cs`, call sites in listeners/forwarders)
 
 ### 6.10 Overlay TCP background task safety
-- [ ] Add test: overlay SYN-ACK send failures don’t produce unobserved task exceptions (`ZTSharp/Sockets/OverlayTcpListener.cs`)
-- [ ] Fix: observe/handle fire-and-forget tasks (send/dispose) and ensure shutdown doesn’t hang (`ZTSharp/Sockets/OverlayTcpListener.cs`, `ZTSharp/Sockets/OverlayTcpClient.cs`)
-- [ ] Add test: overlay `OverlayTcpClient.DisposeAsync` is bounded and does not hang even if FIN send fails (`ZTSharp/Sockets/OverlayTcpClient.cs`)
-- [ ] Fix: ensure dispose uses a bounded timeout/cancellation and does not block indefinitely on transport send (`ZTSharp/Sockets/OverlayTcpClient.cs`)
+- [x] Add test: overlay SYN-ACK send failures don’t produce unobserved task exceptions (`ZTSharp/Sockets/OverlayTcpListener.cs`)
+  - Test: `OverlayTcpBackgroundTaskSafetyTests.OverlayTcpListener_SendSynAckFailure_DoesNotFaultTask`
+- [x] Fix: observe/handle fire-and-forget tasks (send/dispose) and ensure shutdown doesn’t hang (`ZTSharp/Sockets/OverlayTcpListener.cs`, `ZTSharp/Sockets/OverlayTcpClient.cs`)
+- [x] Add test: overlay `OverlayTcpClient.DisposeAsync` is bounded and does not hang even if FIN send fails (`ZTSharp/Sockets/OverlayTcpClient.cs`)
+  - Test: `OverlayTcpBackgroundTaskSafetyTests.OverlayTcpClient_DisposeAsync_IsBounded_WhenFinSendFails`
+- [x] Fix: ensure dispose uses a bounded timeout/cancellation and does not block indefinitely on transport send (`ZTSharp/Sockets/OverlayTcpClient.cs`)
 
 ### 6.11 Overlay protocol spoofing / authentication (security policy)
 - [ ] Decide + document threat model: overlay stack is insecure by design vs should provide basic authenticity (`docs/USAGE.md`, `docs/COMPATIBILITY.md`)

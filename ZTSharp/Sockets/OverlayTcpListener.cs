@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Net.Sockets;
 using System.Threading.Channels;
 
 namespace ZTSharp.Sockets;
@@ -110,29 +111,56 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         {
             if (accepted is not null)
             {
-                _ = accepted.DisposeAsync().AsTask();
+                ObserveBestEffortAsync(accepted.DisposeAsync().AsTask());
             }
         }
 
-        _ = SendSynAckAsync(remoteNodeId, remotePort, connectionId);
+        ObserveBestEffortAsync(SendSynAckAsync(remoteNodeId, remotePort, connectionId));
     }
 
     private async Task SendSynAckAsync(ulong remoteNodeId, int remotePort, ulong connectionId)
     {
-        var usesPool = _node.LocalTransportEndpoint is not null;
-        var frameLength = HeaderLength;
-        var frame = usesPool ? ArrayPool<byte>.Shared.Rent(frameLength) : new byte[frameLength];
         try
         {
-            OverlayTcpFrameCodec.BuildHeader(OverlayTcpFrameCodec.FrameType.SynAck, _localPort, remotePort, remoteNodeId, connectionId, frame.AsSpan(0, frameLength));
-            await _node.SendFrameAsync(_networkId, frame.AsMemory(0, frameLength)).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (usesPool)
+            var usesPool = _node.LocalTransportEndpoint is not null;
+            var frameLength = HeaderLength;
+            var frame = usesPool ? ArrayPool<byte>.Shared.Rent(frameLength) : new byte[frameLength];
+            try
             {
-                ArrayPool<byte>.Shared.Return(frame);
+                OverlayTcpFrameCodec.BuildHeader(OverlayTcpFrameCodec.FrameType.SynAck, _localPort, remotePort, remoteNodeId, connectionId, frame.AsSpan(0, frameLength));
+                await _node.SendFrameAsync(_networkId, frame.AsMemory(0, frameLength)).ConfigureAwait(false);
             }
+            finally
+            {
+                if (usesPool)
+                {
+                    ArrayPool<byte>.Shared.Return(frame);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or OperationCanceledException or SocketException)
+        {
+        }
+    }
+
+    private static void ObserveBestEffortAsync(Task task)
+    {
+        if (task.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        _ = ObserveSlowAsync(task);
+    }
+
+    private static async Task ObserveSlowAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or OperationCanceledException or SocketException)
+        {
         }
     }
 }
