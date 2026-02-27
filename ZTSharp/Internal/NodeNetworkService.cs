@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
@@ -7,6 +8,10 @@ using ZTSharp.Transport;
 
 namespace ZTSharp.Internal;
 
+[SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "This service is owned by NodeCore/NodeLifecycleService; the async gate is intentionally not disposed to keep shutdown idempotent and avoid races with in-flight leave operations.")]
 internal sealed class NodeNetworkService
 {
     private readonly IStateStore _store;
