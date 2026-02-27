@@ -277,17 +277,8 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
         await _shutdown.CancelAsync().ConfigureAwait(false);
 
-        ZeroTierDataplaneRuntime? runtime;
-        await _runtimeLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            _runtimeTask = null;
-            runtime = Interlocked.Exchange(ref _runtime, null);
-        }
-        finally
-        {
-            _runtimeLock.Release();
-        }
+        _runtimeTask = null;
+        var runtime = Interlocked.Exchange(ref _runtime, null);
 
         if (runtime is not null)
         {
@@ -429,6 +420,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
             ZeroTierDataplaneRuntime? toDispose = null;
             ZeroTierDataplaneRuntime runtime;
+            var published = false;
             await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -445,6 +437,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                     _runtime = created;
                     runtime = created;
                     createdNeedsDispose = false;
+                    published = true;
                 }
             }
             finally
@@ -456,6 +449,16 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             {
                 await toDispose.DisposeAsync().ConfigureAwait(false);
                 createdNeedsDispose = false;
+            }
+
+            if (published && Volatile.Read(ref _disposeState) != 0)
+            {
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _runtime, null, created), created))
+                {
+                    await created.DisposeAsync().ConfigureAwait(false);
+                }
+
+                throw new ObjectDisposedException(nameof(ZeroTierSocket));
             }
 
             return runtime;
