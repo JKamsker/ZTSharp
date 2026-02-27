@@ -32,7 +32,7 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         _localPort = localPort;
         _acceptQueue = Channel.CreateBounded<OverlayTcpClient>(new BoundedChannelOptions(capacity: 128)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleWriter = false,
             SingleReader = true
         });
