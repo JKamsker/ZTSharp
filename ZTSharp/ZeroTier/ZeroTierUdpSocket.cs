@@ -158,6 +158,11 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                 }
             }
 
+            if (!dst.Equals(_localAddress))
+            {
+                continue;
+            }
+
             if (!UdpCodec.TryParse(ipPayload, out srcPort, out dstPort, out udpPayload))
             {
                 continue;
