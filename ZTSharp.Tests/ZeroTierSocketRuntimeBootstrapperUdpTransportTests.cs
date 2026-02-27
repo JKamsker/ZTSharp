@@ -11,7 +11,7 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
     [Fact]
     public async Task CreateUdpTransport_Default_ReturnsSingleSocket()
     {
-        var transport = ZeroTierSocketRuntimeBootstrapper.CreateUdpTransport(new ZeroTierMultipathOptions(), enableIpv6: false);
+        var transport = await ZeroTierSocketRuntimeBootstrapper.CreateUdpTransportAsync(new ZeroTierMultipathOptions(), enableIpv6: false);
         try
         {
             Assert.Single(transport.LocalSockets);
@@ -25,7 +25,7 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
     [Fact]
     public async Task CreateUdpTransport_MultipathEnabled_UsesMultipleSockets()
     {
-        var transport = ZeroTierSocketRuntimeBootstrapper.CreateUdpTransport(
+        var transport = await ZeroTierSocketRuntimeBootstrapper.CreateUdpTransportAsync(
             new ZeroTierMultipathOptions { Enabled = true, UdpSocketCount = 3 },
             enableIpv6: false);
 
@@ -41,11 +41,12 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
     }
 
     [Fact]
-    public void CreateUdpTransport_MultipathEnabled_RequiresAtLeastOneSocket()
+    public async Task CreateUdpTransport_MultipathEnabled_RequiresAtLeastOneSocket()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => ZeroTierSocketRuntimeBootstrapper.CreateUdpTransport(
-            new ZeroTierMultipathOptions { Enabled = true, UdpSocketCount = 0 },
-            enableIpv6: false));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await ZeroTierSocketRuntimeBootstrapper.CreateUdpTransportAsync(
+                new ZeroTierMultipathOptions { Enabled = true, UdpSocketCount = 0 },
+                enableIpv6: false));
     }
 
     [Fact]
@@ -58,7 +59,7 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
             var transport = default(IZeroTierUdpTransport);
             try
             {
-                transport = ZeroTierSocketRuntimeBootstrapper.CreateUdpTransport(
+                transport = await ZeroTierSocketRuntimeBootstrapper.CreateUdpTransportAsync(
                     new ZeroTierMultipathOptions { Enabled = true, UdpSocketCount = 1, LocalUdpPorts = new[] { port } },
                     enableIpv6: false);
 

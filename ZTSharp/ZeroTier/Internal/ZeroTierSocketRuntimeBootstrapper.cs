@@ -9,7 +9,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketRuntimeBootstrapper
 {
-    private static async ValueTask<IZeroTierUdpTransport> CreateUdpTransportAsync(ZeroTierMultipathOptions multipath, bool enableIpv6)
+    internal static async ValueTask<IZeroTierUdpTransport> CreateUdpTransportAsync(ZeroTierMultipathOptions multipath, bool enableIpv6)
     {
         ArgumentNullException.ThrowIfNull(multipath);
 
