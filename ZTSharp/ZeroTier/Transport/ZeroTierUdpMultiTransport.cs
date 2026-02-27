@@ -71,23 +71,30 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
 
         _disposed = true;
         _incoming.Writer.TryComplete();
-        await _cts.CancelAsync().ConfigureAwait(false);
-
         try
         {
+            await _cts.CancelAsync().ConfigureAwait(false);
             await Task.WhenAll(_forwarders).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is OperationCanceledException or ChannelClosedException)
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ChannelClosedException)
+        {
+        }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+        catch
+#pragma warning restore CA1031
         {
         }
         finally
         {
             _cts.Dispose();
-        }
 
-        foreach (var socket in _sockets)
-        {
-            await socket.DisposeAsync().ConfigureAwait(false);
+            foreach (var socket in _sockets)
+            {
+                await socket.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
