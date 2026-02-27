@@ -6,6 +6,8 @@ namespace ZTSharp;
 /// </summary>
 public sealed class FileStateStore : IStateStore
 {
+    private const long MaxReadBytes = 64L * 1024 * 1024;
+
     private readonly string _rootPath;
     private readonly StringComparison _pathComparison;
     private readonly string _rootPathPrefix;
@@ -70,6 +72,7 @@ public sealed class FileStateStore : IStateStore
         }
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
+        EnsureParentDirectoryExistsNoReparse(path);
         await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
 
         if (string.Equals(normalized, Internal.NodeStoreKeys.IdentitySecretKey, StringComparison.OrdinalIgnoreCase))
@@ -248,6 +251,11 @@ public sealed class FileStateStore : IStateStore
             bufferSize: 16 * 1024,
             options: FileOptions.Asynchronous | FileOptions.SequentialScan);
 
+        if (stream.Length > MaxReadBytes)
+        {
+            throw new IOException($"State file exceeds maximum supported size of {MaxReadBytes} bytes.");
+        }
+
         using var memory = stream.Length <= int.MaxValue ? new MemoryStream((int)stream.Length) : new MemoryStream();
         await stream.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
         return memory.ToArray();
@@ -323,6 +331,49 @@ public sealed class FileStateStore : IStateStore
                 return;
             }
 
+            if (IsReparsePoint(current))
+            {
+                throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
+            }
+        }
+    }
+
+    private void EnsureParentDirectoryExistsNoReparse(string fullPath)
+    {
+        var directory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(directory) || string.Equals(directory, _rootPathTrimmed, _pathComparison))
+        {
+            return;
+        }
+
+        directory = Path.GetFullPath(directory);
+        if (!IsUnderRoot(directory))
+        {
+            throw new ArgumentException("Path is not under state root.", nameof(fullPath));
+        }
+
+        var relative = Path.GetRelativePath(_rootPathTrimmed, directory);
+        if (relative == "." || relative.Length == 0)
+        {
+            return;
+        }
+
+        var current = _rootPathTrimmed;
+        var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            current = Path.Combine(current, parts[i]);
+            if (Directory.Exists(current))
+            {
+                if (IsReparsePoint(current))
+                {
+                    throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
+                }
+
+                continue;
+            }
+
+            Directory.CreateDirectory(current);
             if (IsReparsePoint(current))
             {
                 throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
