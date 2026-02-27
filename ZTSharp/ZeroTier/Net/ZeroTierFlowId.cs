@@ -11,7 +11,7 @@ internal static class ZeroTierFlowId
             return DeriveFromTransportTuple(src.GetAddressBytes(), dst.GetAddressBytes(), protocol, payload);
         }
 
-        if (Ipv6Codec.TryParse(ipPacket, out src, out dst, out var nextHeader, out _, out payload))
+        if (Ipv6Codec.TryParseTransportPayload(ipPacket, out src, out dst, out var nextHeader, out _, out payload))
         {
             return DeriveFromTransportTuple(src.GetAddressBytes(), dst.GetAddressBytes(), nextHeader, payload);
         }

@@ -273,7 +273,7 @@ internal sealed class UserSpaceTcpServerReceiveLoop
         }
         else
         {
-            if (!Ipv6Codec.TryParse(ipPacket.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+            if (!Ipv6Codec.TryParseTransportPayload(ipPacket.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
             {
                 return false;
             }

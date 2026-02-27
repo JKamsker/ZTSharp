@@ -7,6 +7,7 @@ internal static class Ipv6Codec
 {
     public const byte Version = 6;
     public const int HeaderLength = 40;
+    private const int MaxExtensionHeaderChain = 8;
 
     public static bool IsExtensionHeader(byte nextHeader)
         => nextHeader is 0 or 43 or 44 or 50 or 51 or 60;
@@ -91,5 +92,112 @@ internal static class Ipv6Codec
         destination = new IPAddress(packet.Slice(24, 16));
         payload = packet.Slice(HeaderLength, payloadLength);
         return true;
+    }
+
+    public static bool TryParseTransportPayload(
+        ReadOnlySpan<byte> packet,
+        out IPAddress source,
+        out IPAddress destination,
+        out byte protocol,
+        out byte hopLimit,
+        out ReadOnlySpan<byte> transportPayload)
+    {
+        transportPayload = default;
+        protocol = 0;
+
+        if (!TryParse(packet, out source, out destination, out var nextHeader, out hopLimit, out var payload))
+        {
+            return false;
+        }
+
+        return TryWalkExtensionHeaders(payload, nextHeader, out protocol, out transportPayload);
+    }
+
+    private static bool TryWalkExtensionHeaders(
+        ReadOnlySpan<byte> payload,
+        byte nextHeader,
+        out byte protocol,
+        out ReadOnlySpan<byte> transportPayload)
+    {
+        protocol = nextHeader;
+        transportPayload = payload;
+
+        var offset = 0;
+        for (var i = 0; i < MaxExtensionHeaderChain && IsExtensionHeader(protocol); i++)
+        {
+            var remaining = payload.Length - offset;
+            if (remaining < 2)
+            {
+                return false;
+            }
+
+            if (protocol is 0 or 43 or 60)
+            {
+                if (remaining < 8)
+                {
+                    return false;
+                }
+
+                var headerNext = payload[offset];
+                var hdrExtLen = payload[offset + 1];
+                var headerLength = (hdrExtLen + 1) * 8;
+                if (headerLength > remaining)
+                {
+                    return false;
+                }
+
+                offset += headerLength;
+                protocol = headerNext;
+                continue;
+            }
+
+            if (protocol == 44)
+            {
+                if (remaining < 8)
+                {
+                    return false;
+                }
+
+                var headerNext = payload[offset];
+                var fragmentOffsetAndFlags = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(offset + 2, 2));
+                var fragmentOffset = (fragmentOffsetAndFlags >> 3) & 0x1FFF;
+                if (fragmentOffset != 0)
+                {
+                    return false;
+                }
+
+                offset += 8;
+                protocol = headerNext;
+                continue;
+            }
+
+            if (protocol == 51)
+            {
+                if (remaining < 8)
+                {
+                    return false;
+                }
+
+                var headerNext = payload[offset];
+                var payloadLen32 = payload[offset + 1];
+                var headerLength = (payloadLen32 + 2) * 4;
+                if (headerLength > remaining)
+                {
+                    return false;
+                }
+
+                offset += headerLength;
+                protocol = headerNext;
+                continue;
+            }
+
+            if (protocol == 50)
+            {
+                return false;
+            }
+        }
+
+        transportPayload = payload.Slice(offset);
+        return !IsExtensionHeader(protocol);
     }
 }
