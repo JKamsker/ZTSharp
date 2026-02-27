@@ -86,8 +86,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
             var lastUsed = Volatile.Read(ref state.LastUsedMs);
             if (lastUsed != 0 &&
                 unchecked(now - lastUsed) > PeerStateTtlMs &&
-                state.Flows.IsEmpty &&
-                state.ActiveBackupPath is null)
+                state.Flows.IsEmpty)
             {
                 _peerStates.TryRemove(pair.Key, out _);
             }

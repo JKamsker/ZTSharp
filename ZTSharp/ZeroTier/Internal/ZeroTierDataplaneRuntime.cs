@@ -449,19 +449,28 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 }
             }
         }
-            else
+        else
+        {
+            var localSockets = _udp.LocalSockets;
+            for (var i = 0; i < hinted.Length; i++)
             {
-                var localSockets = _udp.LocalSockets;
-                for (var i = 0; i < hinted.Length; i++)
+                var localSocketId = localSockets.Count == 0 ? 0 : localSockets[i % localSockets.Count].Id;
+                if (shouldRecord)
                 {
-                    try
-                    {
-                    var localSocketId = localSockets.Count == 0 ? 0 : localSockets[i % localSockets.Count].Id;
+                    _peerQos.RecordOutgoingPacket(peerNodeId, localSocketId, hinted[i], parsed.PacketId);
+                }
+
+                try
+                {
                     await _udp.SendAsync(localSocketId, hinted[i], packet, cancellationToken).ConfigureAwait(false);
-                        directSuccess++;
-                    }
-                    catch (SocketException)
+                    directSuccess++;
+                }
+                catch (SocketException)
+                {
+                    if (shouldRecord)
                     {
+                        _peerQos.ForgetOutgoingPacket(peerNodeId, localSocketId, hinted[i], parsed.PacketId);
+                    }
                 }
             }
         }

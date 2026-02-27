@@ -234,6 +234,7 @@ internal sealed class ZeroTierPeerQosManager
     }
 
     private static bool ShouldTrack(ulong packetId)
+        // Intentionally mirrors upstream (Bond.cpp): record/ack most packets and skip every Nth (power-of-two) packet id.
         => (packetId & (ulong)(QosAckDivisor - 1)) != 0;
 
     private static void CleanupOutboundIfNeeded(PathState state, long now)
