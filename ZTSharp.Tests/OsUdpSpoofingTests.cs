@@ -38,6 +38,7 @@ public sealed class OsUdpSpoofingTests
         var node2Endpoint = node2.LocalTransportEndpoint;
         Assert.NotNull(node2Endpoint);
 
+        var transport2 = Assert.IsType<OsUdpNodeTransport>(node2.TransportForTests);
         await using var udp2 = new ZtUdpClient(node2, networkId, localPort: 12002);
 
         var datagram = "spoof"u8.ToArray();
@@ -54,9 +55,26 @@ public sealed class OsUdpSpoofingTests
         var frameBuffer = new byte[NodeFrameCodec.GetEncodedLength(udpPayload.Length)];
         Assert.True(NodeFrameCodec.TryEncode(networkId, node1Id, udpPayload, frameBuffer, out var frameLength));
 
-        using (var spoofUdp = CreateSpoofUdp(node2Endpoint!))
+        using var spoofUdp = CreateSpoofUdp(node2Endpoint!);
+        var spoofLocalEndpoint = (IPEndPoint)spoofUdp.Client.LocalEndPoint!;
+        var datagramSeen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        transport2.SetDatagramObserverForTests(remote =>
         {
-            await spoofUdp.SendAsync(frameBuffer.AsMemory(0, frameLength), node2Endpoint!);
+            if (remote.Equals(spoofLocalEndpoint))
+            {
+                datagramSeen.TrySetResult(true);
+            }
+        });
+
+        try
+        {
+            var sent = await spoofUdp.SendAsync(frameBuffer.AsMemory(0, frameLength), node2Endpoint!);
+            Assert.Equal(frameLength, sent);
+            _ = await datagramSeen.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            transport2.SetDatagramObserverForTests(null);
         }
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
@@ -109,9 +127,27 @@ public sealed class OsUdpSpoofingTests
         var node2Endpoint = node2.LocalTransportEndpoint;
         Assert.NotNull(node2Endpoint);
 
-        using (var spoofUdp = CreateSpoofUdp(node2Endpoint!))
+        var transport2 = Assert.IsType<OsUdpNodeTransport>(node2.TransportForTests);
+        using var spoofUdp = CreateSpoofUdp(node2Endpoint!);
+        var spoofLocalEndpoint = (IPEndPoint)spoofUdp.Client.LocalEndPoint!;
+        var datagramSeen = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        transport2.SetDatagramObserverForTests(remote =>
         {
-            await spoofUdp.SendAsync(frameBuffer.AsMemory(0, frameLength), node2Endpoint!);
+            if (remote.Equals(spoofLocalEndpoint))
+            {
+                datagramSeen.TrySetResult(true);
+            }
+        });
+
+        try
+        {
+            var sent = await spoofUdp.SendAsync(frameBuffer.AsMemory(0, frameLength), node2Endpoint!);
+            Assert.Equal(frameLength, sent);
+            _ = await datagramSeen.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            transport2.SetDatagramObserverForTests(null);
         }
 
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));

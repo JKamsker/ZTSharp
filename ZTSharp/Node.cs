@@ -32,6 +32,8 @@ public sealed class Node : IAsyncDisposable
 
     public IPEndPoint? LocalTransportEndpoint => _core.LocalTransportEndpoint;
 
+    internal Transport.INodeTransport TransportForTests => _core.TransportForTests;
+
     public NodeId NodeId => _core.NodeId;
 
     public bool IsRunning => _core.IsRunning;

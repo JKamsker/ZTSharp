@@ -318,5 +318,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         }
     }
 
+    internal void SetDatagramObserverForTests(Action<IPEndPoint>? observer)
+        => _receiver.DatagramReceivedForTests = observer;
 
 }
