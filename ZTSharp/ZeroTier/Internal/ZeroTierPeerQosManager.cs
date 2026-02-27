@@ -20,9 +20,12 @@ internal sealed class ZeroTierPeerQosManager
 
     // See: ZeroTierOne node/Bond.cpp (qosStatsOut timeout = _qosSendInterval * 3).
     private const long DefaultRecordTimeoutMs = 30_000;
+    private const long PathStateTtlMs = 300_000;
+    private const int MaxPathStates = 4096;
 
     private readonly Func<long> _nowMs;
     private readonly ConcurrentDictionary<ZeroTierPeerQosPathKey, PathState> _paths = new();
+    private long _lastPathCleanupMs;
 
     public ZeroTierPeerQosManager(Func<long>? nowMs = null)
     {
@@ -41,6 +44,8 @@ internal sealed class ZeroTierPeerQosManager
         var now = _nowMs();
         var key = new ZeroTierPeerQosPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
         var state = _paths.GetOrAdd(key, static _ => new PathState());
+        Volatile.Write(ref state.LastTouchedMs, now);
+        CleanupPathsIfNeeded(now);
 
         if (Volatile.Read(ref state.InboundCount) >= MaxPendingRecords)
         {
@@ -63,6 +68,8 @@ internal sealed class ZeroTierPeerQosManager
         var now = _nowMs();
         var key = new ZeroTierPeerQosPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
         var state = _paths.GetOrAdd(key, static _ => new PathState());
+        Volatile.Write(ref state.LastTouchedMs, now);
+        CleanupPathsIfNeeded(now);
 
         CleanupOutboundIfNeeded(state, now);
 
@@ -169,6 +176,9 @@ internal sealed class ZeroTierPeerQosManager
             return;
         }
 
+        Volatile.Write(ref state.LastTouchedMs, now);
+        CleanupPathsIfNeeded(now);
+
         CleanupOutboundIfNeeded(state, now);
 
         var count = 0;
@@ -248,11 +258,38 @@ internal sealed class ZeroTierPeerQosManager
         }
     }
 
+    private void CleanupPathsIfNeeded(long now)
+    {
+        var last = Volatile.Read(ref _lastPathCleanupMs);
+        if (last != 0 && unchecked(now - last) < 10_000 && _paths.Count <= MaxPathStates)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastPathCleanupMs, now, last) != last)
+        {
+            return;
+        }
+
+        foreach (var pair in _paths)
+        {
+            var state = pair.Value;
+            var touched = Volatile.Read(ref state.LastTouchedMs);
+            if (touched != 0 && unchecked(now - touched) > PathStateTtlMs &&
+                Volatile.Read(ref state.InboundCount) <= 0 &&
+                state.OutboundSentMs.IsEmpty)
+            {
+                _paths.TryRemove(pair.Key, out _);
+            }
+        }
+    }
+
     private sealed class PathState
     {
         public ConcurrentQueue<PendingInboundRecord> Inbound { get; } = new();
         public int InboundCount;
         public long LastSentMs;
+        public long LastTouchedMs;
 
         public ConcurrentDictionary<ulong, long> OutboundSentMs { get; } = new();
         public long LastOutboundCleanupMs;

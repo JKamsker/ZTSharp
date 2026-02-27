@@ -13,6 +13,8 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 {
+    private const long DirectEndpointManagerTtlMs = 600_000;
+
     private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
@@ -26,6 +28,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZeroTierMac _localMac;
     private readonly ConcurrentDictionary<NodeId, ZeroTierDirectEndpointManager> _directEndpoints = new();
+    private readonly ConcurrentDictionary<NodeId, long> _directEndpointLastUsedMs = new();
+    private long _lastDirectEndpointCleanupMs;
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
@@ -541,7 +545,9 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private async Task RunMultipathMaintenanceOnceAsync(CancellationToken cancellationToken)
     {
+        var nowMs = Environment.TickCount64;
         _bondEngine.MaintenanceTick();
+        CleanupDirectEndpointManagers(nowMs);
 
         var peers = _peerPaths.GetPeersSnapshot();
         if (peers.Length == 0)
@@ -790,6 +796,32 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     }
 
     private ZeroTierDirectEndpointManager GetOrCreateDirectEndpointManager(NodeId peerNodeId)
-        => _directEndpoints.GetOrAdd(peerNodeId, id => new ZeroTierDirectEndpointManager(_udp, _rootEndpoint, id));
+    {
+        _directEndpointLastUsedMs[peerNodeId] = Environment.TickCount64;
+        return _directEndpoints.GetOrAdd(peerNodeId, id => new ZeroTierDirectEndpointManager(_udp, _rootEndpoint, id));
+    }
+
+    private void CleanupDirectEndpointManagers(long nowMs)
+    {
+        var last = Volatile.Read(ref _lastDirectEndpointCleanupMs);
+        if (last != 0 && unchecked(nowMs - last) < 10_000)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastDirectEndpointCleanupMs, nowMs, last) != last)
+        {
+            return;
+        }
+
+        foreach (var pair in _directEndpointLastUsedMs)
+        {
+            if (unchecked(nowMs - pair.Value) > DirectEndpointManagerTtlMs)
+            {
+                _directEndpointLastUsedMs.TryRemove(pair.Key, out _);
+                _directEndpoints.TryRemove(pair.Key, out _);
+            }
+        }
+    }
 
 }

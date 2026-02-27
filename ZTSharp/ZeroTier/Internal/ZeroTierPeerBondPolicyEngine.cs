@@ -11,6 +11,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
     private const int AwareLatencySlackMs = 25;
     private const long ActiveBackupMinHoldMs = 10_000;
     private const int ActiveBackupLatencySlackMs = 25;
+    private const long PeerStateTtlMs = 600_000;
 
     private readonly Func<NodeId, int, IPEndPoint, int?> _getLatencyMs;
     private readonly Func<NodeId, int, IPEndPoint, short> _getRemoteUtility;
@@ -56,6 +57,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
             case ZeroTierBondPolicy.BalanceRoundRobin:
                 StableSort(observedPaths);
                 var state = _peerStates.GetOrAdd(peerNodeId, static _ => new PeerState());
+                Volatile.Write(ref state.LastUsedMs, _nowMs());
                 var rr = Interlocked.Increment(ref state.RoundRobinCounter);
                 return SelectByIndex(observedPaths, index: (int)((uint)rr % (uint)observedPaths.Length), out selected);
 
@@ -76,9 +78,19 @@ internal sealed class ZeroTierPeerBondPolicyEngine
     public void MaintenanceTick()
     {
         var now = _nowMs();
-        foreach (var state in _peerStates.Values)
+        foreach (var pair in _peerStates)
         {
+            var state = pair.Value;
             CleanupFlowsIfNeeded(state, now);
+
+            var lastUsed = Volatile.Read(ref state.LastUsedMs);
+            if (lastUsed != 0 &&
+                unchecked(now - lastUsed) > PeerStateTtlMs &&
+                state.Flows.IsEmpty &&
+                state.ActiveBackupPath is null)
+            {
+                _peerStates.TryRemove(pair.Key, out _);
+            }
         }
     }
 
@@ -172,6 +184,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
     {
         var now = _nowMs();
         var state = _peerStates.GetOrAdd(peerNodeId, static _ => new PeerState());
+        Volatile.Write(ref state.LastUsedMs, now);
 
         lock (state.Gate)
         {
@@ -261,6 +274,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
     {
         var now = _nowMs();
         var state = _peerStates.GetOrAdd(peerNodeId, static _ => new PeerState());
+        Volatile.Write(ref state.LastUsedMs, now);
 
         CleanupFlowsIfNeeded(state, now);
 
@@ -357,6 +371,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
         public long LastFlowCleanupMs;
         public ZeroTierPeerPhysicalPathKey? ActiveBackupPath;
         public long ActiveBackupSelectedAtMs;
+        public long LastUsedMs;
     }
 
     private readonly record struct FlowAssignment(ZeroTierPeerPhysicalPathKey Path, long LastUsedMs);

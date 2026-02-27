@@ -7,9 +7,12 @@ namespace ZTSharp.ZeroTier.Internal;
 internal sealed class ZeroTierPeerPathNegotiationManager
 {
     private const long MinSendIntervalMs = 10_000;
+    private const long NegotiationStateTtlMs = 300_000;
+    private const int MaxNegotiationStates = 4096;
 
     private readonly Func<long> _nowMs;
     private readonly ConcurrentDictionary<ZeroTierPeerNegotiationPathKey, NegotiationState> _state = new();
+    private long _lastCleanupMs;
 
     public ZeroTierPeerPathNegotiationManager(Func<long>? nowMs = null)
     {
@@ -21,6 +24,7 @@ internal sealed class ZeroTierPeerPathNegotiationManager
         ArgumentNullException.ThrowIfNull(remoteEndPoint);
 
         var now = _nowMs();
+        CleanupIfNeeded(now);
         var key = new ZeroTierPeerNegotiationPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
         _state.AddOrUpdate(
             key,
@@ -48,6 +52,7 @@ internal sealed class ZeroTierPeerPathNegotiationManager
         ArgumentNullException.ThrowIfNull(remoteEndPoint);
 
         var now = _nowMs();
+        CleanupIfNeeded(now);
         var key = new ZeroTierPeerNegotiationPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
 
         while (true)
@@ -70,6 +75,30 @@ internal sealed class ZeroTierPeerPathNegotiationManager
             if (_state.TryUpdate(key, existing with { LastSentMs = now }, existing))
             {
                 return true;
+            }
+        }
+    }
+
+    private void CleanupIfNeeded(long now)
+    {
+        var last = Volatile.Read(ref _lastCleanupMs);
+        if (last != 0 && unchecked(now - last) < 10_000 && _state.Count <= MaxNegotiationStates)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastCleanupMs, now, last) != last)
+        {
+            return;
+        }
+
+        foreach (var pair in _state)
+        {
+            var state = pair.Value;
+            var touched = Math.Max(state.LastReceivedMs, state.LastSentMs);
+            if (touched != 0 && unchecked(now - touched) > NegotiationStateTtlMs)
+            {
+                _state.TryRemove(pair.Key, out _);
             }
         }
     }
