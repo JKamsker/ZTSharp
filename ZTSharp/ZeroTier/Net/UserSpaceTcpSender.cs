@@ -246,6 +246,12 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
         try
         {
+            if (_disposed)
+            {
+                ackTcs.TrySetException(new ObjectDisposedException(nameof(UserSpaceTcpSender)));
+                return;
+            }
+
             for (var attempt = 0; attempt < retries; attempt++)
             {
                 if (UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendUna, expectedAck))
