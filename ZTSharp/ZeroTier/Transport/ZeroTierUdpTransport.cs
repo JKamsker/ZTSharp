@@ -130,23 +130,7 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
                     UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
                     result.Buffer)))
             {
-                try
-                {
-                    var write = _incoming.Writer.WriteAsync(new ZeroTierUdpDatagram(
-                        _localSocketId,
-                        UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
-                        result.Buffer), token);
-                    if (!write.IsCompletedSuccessfully)
-                    {
-                        Interlocked.Increment(ref _incomingBackpressureCount);
-                    }
-
-                    await write.ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or ChannelClosedException)
-                {
-                    return;
-                }
+                Interlocked.Increment(ref _incomingBackpressureCount);
             }
         }
     }
