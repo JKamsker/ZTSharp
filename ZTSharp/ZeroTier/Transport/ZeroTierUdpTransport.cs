@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Diagnostics;
 using System.Threading.Channels;
 using ZTSharp.Transport.Internal;
 using ZTSharp.ZeroTier.Internal;
@@ -15,7 +16,7 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
     private readonly Task _receiverLoop;
     private readonly int _localSocketId;
     private long _incomingBackpressureCount;
-    private bool _disposed;
+    private int _disposed;
 
     public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null, int localSocketId = 0)
     {
@@ -42,7 +43,7 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
 
     public ValueTask<ZeroTierUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         return _incoming.Reader.ReadAsync(cancellationToken);
     }
 
@@ -50,7 +51,7 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         return await ZeroTierTimeouts
             .RunWithTimeoutAsync(timeout, operation: "UDP receive", _incoming.Reader.ReadAsync, cancellationToken)
             .ConfigureAwait(false);
@@ -59,7 +60,7 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
     public Task SendAsync(IPEndPoint remoteEndpoint, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(remoteEndpoint);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         UdpEndpointNormalization.ValidateRemoteEndpoint(remoteEndpoint, nameof(remoteEndpoint));
         return _udp.SendAsync(payload, remoteEndpoint, cancellationToken).AsTask();
     }
@@ -76,16 +77,44 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
-        await _cts.CancelAsync().ConfigureAwait(false);
-        _udp.Dispose();
         _incoming.Writer.TryComplete();
-        _cts.Dispose();
+        try
+        {
+            try
+            {
+                await _cts.CancelAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+#if DEBUG
+                Debug.WriteLine($"[{nameof(ZeroTierUdpTransport)}] CancelAsync failed: {ex}");
+#endif
+            }
+
+            try
+            {
+                _udp.Dispose();
+            }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+#if DEBUG
+                Debug.WriteLine($"[{nameof(ZeroTierUdpTransport)}] UdpClient dispose failed: {ex}");
+#endif
+            }
+        }
+        finally
+        {
+            _cts.Dispose();
+        }
 
         try
         {
@@ -93,6 +122,14 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
         }
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
+        }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+#if DEBUG
+            Debug.WriteLine($"[{nameof(ZeroTierUdpTransport)}] Receiver loop completion failed: {ex}");
+#endif
         }
     }
 

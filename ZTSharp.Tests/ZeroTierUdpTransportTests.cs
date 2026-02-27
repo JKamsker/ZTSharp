@@ -28,4 +28,19 @@ public sealed class ZeroTierUdpTransportTests
         var receivedPong = await a.ReceiveAsync(cts.Token);
         Assert.True(receivedPong.Payload.AsSpan().SequenceEqual(pong));
     }
+
+    [Fact]
+    public async Task DisposeAsync_CanBeCalledConcurrently_WithoutThrowing()
+    {
+        var transport = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+
+        var tasks = Enumerable.Range(0, 20)
+            .Select(_ => transport.DisposeAsync().AsTask())
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+            transport.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x00 }));
+    }
 }
