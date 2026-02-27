@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Reflection;
 using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Tests;
@@ -42,6 +43,30 @@ public sealed class OsUdpSocketFactoryTests
         finally
         {
             socket.Dispose();
+        }
+    }
+
+    [Fact]
+    public void CreateUdp6OnlyBound_SetsDualModeFalse()
+    {
+        if (!Socket.OSSupportsIPv6)
+        {
+            throw Xunit.Sdk.SkipException.ForSkip("IPv6 not supported on this platform.");
+        }
+
+        var method = typeof(OsUdpSocketFactory).GetMethod("CreateUdp6OnlyBound", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        var udp = (UdpClient?)method!.Invoke(null, new object[] { 0 });
+        Assert.NotNull(udp);
+
+        try
+        {
+            Assert.False(udp!.Client.DualMode);
+        }
+        finally
+        {
+            udp!.Dispose();
         }
     }
 }

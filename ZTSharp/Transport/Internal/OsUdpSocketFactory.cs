@@ -108,6 +108,7 @@ internal static class OsUdpSocketFactory
         var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
         try
         {
+            udp6.Client.DualMode = false;
             udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
             return udp6;
         }
