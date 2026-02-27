@@ -10,7 +10,7 @@ internal static class Ipv6Codec
     private const int MaxExtensionHeaderChain = 8;
 
     public static bool IsExtensionHeader(byte nextHeader)
-        => nextHeader is 0 or 43 or 44 or 50 or 51 or 60;
+        => nextHeader is 0 or 43 or 44 or 50 or 51 or 60 or 135 or 139 or 140;
 
     public static byte[] Encode(
         IPAddress source,
@@ -131,7 +131,7 @@ internal static class Ipv6Codec
                 return false;
             }
 
-            if (protocol is 0 or 43 or 60)
+            if (protocol is 0 or 43 or 60 or 135 or 139 or 140)
             {
                 if (remaining < 8)
                 {
@@ -161,7 +161,9 @@ internal static class Ipv6Codec
                 var headerNext = payload[offset];
                 var fragmentOffsetAndFlags = BinaryPrimitives.ReadUInt16BigEndian(payload.Slice(offset + 2, 2));
                 var fragmentOffset = (fragmentOffsetAndFlags >> 3) & 0x1FFF;
-                if (fragmentOffset != 0)
+                var reservedBits = fragmentOffsetAndFlags & 0x6;
+                var moreFragments = (fragmentOffsetAndFlags & 0x1) != 0;
+                if (fragmentOffset != 0 || moreFragments || reservedBits != 0)
                 {
                     return false;
                 }

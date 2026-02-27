@@ -49,9 +49,10 @@ internal sealed class UserSpaceTcpRemoteSendWindow
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_terminalException is not null)
+            var terminal = Volatile.Read(ref _terminalException);
+            if (terminal is not null)
             {
-                throw _terminalException;
+                throw terminal;
             }
 
             if (_window != 0)
@@ -79,9 +80,9 @@ internal sealed class UserSpaceTcpRemoteSendWindow
             {
                 await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (_terminalException is not null && ex is not OperationCanceledException)
+            catch (Exception ex) when (Volatile.Read(ref _terminalException) is not null && ex is not OperationCanceledException)
             {
-                throw _terminalException;
+                throw Volatile.Read(ref _terminalException)!;
             }
         }
     }

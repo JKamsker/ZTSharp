@@ -30,11 +30,17 @@ internal static class ZeroTierFlowId
 
         if (protocol == TcpCodec.ProtocolNumber)
         {
-            _ = TcpCodec.TryParse(transportPayload, out srcPort, out dstPort, out _, out _, out _, out _, out _);
+            if (!TcpCodec.TryParse(transportPayload, out srcPort, out dstPort, out _, out _, out _, out _, out _))
+            {
+                return 0;
+            }
         }
         else if (protocol == UdpCodec.ProtocolNumber)
         {
-            _ = UdpCodec.TryParse(transportPayload, out srcPort, out dstPort, out _);
+            if (!UdpCodec.TryParse(transportPayload, out srcPort, out dstPort, out _))
+            {
+                return 0;
+            }
         }
         else
         {
