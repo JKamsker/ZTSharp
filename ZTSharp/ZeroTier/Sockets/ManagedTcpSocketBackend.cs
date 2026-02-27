@@ -60,6 +60,11 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
 
+            if (Volatile.Read(ref _connectInProgress) != 0)
+            {
+                throw new InvalidOperationException("Socket connect is in progress.");
+            }
+
             if (_stream is not null || _listener is not null)
             {
                 throw new InvalidOperationException("Socket is already initialized.");
@@ -84,6 +89,11 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         try
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
+
+            if (Volatile.Read(ref _connectInProgress) != 0)
+            {
+                throw new InvalidOperationException("Socket connect is in progress.");
+            }
 
             if (_listener is not null)
             {
