@@ -11,6 +11,8 @@ namespace ZTSharp.Transport;
 /// </summary>
 internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 {
+    private static readonly TimeSpan PeerDiscoveryRefreshInterval = TimeSpan.FromSeconds(90);
+
     private sealed record Subscriber(
         ulong NodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
@@ -18,11 +20,14 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     private readonly UdpClient _udp;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Guid, Subscriber>> _networkSubscribers = new();
+    private readonly ConcurrentDictionary<ulong, IPEndPoint> _advertisedEndpoints = new();
     private readonly OsUdpPeerRegistry _peers;
     private readonly OsUdpReceiveLoop _receiver;
     private readonly CancellationTokenSource _receiverCts = new();
     private readonly Task _receiverLoop;
     private readonly bool _enablePeerDiscovery;
+    private readonly CancellationTokenSource _peerRefreshCts = new();
+    private readonly Task? _peerRefreshLoop;
 
     public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true, bool enablePeerDiscovery = true)
     {
@@ -38,6 +43,11 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
             SendDiscoveryFrameAsync);
 
         _receiverLoop = Task.Run(() => _receiver.RunAsync(_receiverCts.Token));
+
+        if (enablePeerDiscovery)
+        {
+            _peerRefreshLoop = Task.Run(() => RefreshLocalDiscoveryEntriesAsync(_peerRefreshCts.Token));
+        }
     }
 
     public IPEndPoint LocalEndpoint
@@ -63,6 +73,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         var advertisedEndpoint = localEndpoint is null
             ? UdpEndpointNormalization.NormalizeForAdvertisement(LocalEndpoint)
             : UdpEndpointNormalization.NormalizeForAdvertisement(localEndpoint);
+        _advertisedEndpoints[networkId] = advertisedEndpoint;
         var subscribers = _networkSubscribers.GetOrAdd(
             networkId,
             _ => new ConcurrentDictionary<Guid, Subscriber>());
@@ -91,6 +102,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         }
 
         _peers.RemoveNetworkPeers(networkId);
+        _advertisedEndpoints.TryRemove(networkId, out _);
         if (!_networkSubscribers.TryGetValue(networkId, out var networkSubscribers))
         {
             return;
@@ -209,6 +221,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _receiverCts.CancelAsync().ConfigureAwait(false);
+        await _peerRefreshCts.CancelAsync().ConfigureAwait(false);
         try
         {
             await _receiverLoop.ConfigureAwait(false);
@@ -217,10 +230,37 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         {
         }
 
+        if (_peerRefreshLoop is not null)
+        {
+            try
+            {
+                await _peerRefreshLoop.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_peerRefreshCts.IsCancellationRequested)
+            {
+            }
+        }
+
         _udp.Dispose();
         _peers.Cleanup();
         _receiverCts.Dispose();
+        _peerRefreshCts.Dispose();
         _gate.Dispose();
+    }
+
+    private async Task RefreshLocalDiscoveryEntriesAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(PeerDiscoveryRefreshInterval);
+        while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+        {
+            foreach (var entry in _advertisedEndpoints)
+            {
+                if (_peers.TryGetLocalNodeId(entry.Key, out var localNodeId) && localNodeId != 0)
+                {
+                    _peers.RefreshLocalRegistration(entry.Key, localNodeId, entry.Value);
+                }
+            }
+        }
     }
 
     private async Task DispatchFrameAsync(ulong sourceNodeId, ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)

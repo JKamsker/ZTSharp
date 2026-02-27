@@ -98,6 +98,25 @@ internal sealed class OsUdpPeerRegistry
             .ToArray();
     }
 
+    public void RefreshLocalRegistration(ulong networkId, ulong localNodeId, IPEndPoint advertisedEndpoint)
+    {
+        if (!_enablePeerDiscovery)
+        {
+            return;
+        }
+
+        if (!_localNodeIds.TryGetValue(networkId, out var registeredNodeId) || registeredNodeId != localNodeId)
+        {
+            return;
+        }
+
+        var nowTicks = GetNowTicks();
+        var normalizedAdvertisedEndpoint = _normalizeEndpoint(advertisedEndpoint);
+        var discoveredPeers = s_networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerDirectoryEntry>());
+        discoveredPeers[localNodeId] = new PeerDirectoryEntry(normalizedAdvertisedEndpoint, nowTicks);
+        SweepDirectory(nowTicks);
+    }
+
     public void RegisterDiscoveredPeer(ulong networkId, ulong sourceNodeId, IPEndPoint remoteEndpoint)
     {
         if (!_enablePeerDiscovery)
