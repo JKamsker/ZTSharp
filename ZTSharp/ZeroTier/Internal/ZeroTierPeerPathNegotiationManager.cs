@@ -43,7 +43,7 @@ internal sealed class ZeroTierPeerPathNegotiationManager
         {
             if (state.LastReceivedMs != 0 && unchecked(now - state.LastReceivedMs) > NegotiationStateTtlMs)
             {
-                _state.TryRemove(key, out _);
+                _state.TryRemove(new KeyValuePair<ZeroTierPeerNegotiationPathKey, NegotiationState>(key, state));
                 remoteUtility = 0;
                 return false;
             }
@@ -107,7 +107,7 @@ internal sealed class ZeroTierPeerPathNegotiationManager
             var touched = Math.Max(state.LastReceivedMs, state.LastSentMs);
             if (touched != 0 && unchecked(now - touched) > NegotiationStateTtlMs)
             {
-                _state.TryRemove(pair.Key, out _);
+                _state.TryRemove(pair);
             }
         }
     }
