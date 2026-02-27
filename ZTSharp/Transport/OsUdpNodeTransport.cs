@@ -106,27 +106,29 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_networkSubscribers.TryGetValue(networkId, out var subscribers) &&
-            subscribers.TryGetValue(registrationId, out var localSubscriber))
-        {
-            _ = _peers.TryRemoveLocalNodeIdIfMatch(networkId, localSubscriber.NodeId);
-        }
-
-        _peers.RemoveNetworkPeers(networkId);
-        _advertisedEndpoints.TryRemove(networkId, out _);
-        if (!_networkSubscribers.TryGetValue(networkId, out var networkSubscribers))
-        {
-            return;
-        }
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            networkSubscribers.TryRemove(registrationId, out _);
-            if (networkSubscribers.IsEmpty)
+            if (!_networkSubscribers.TryGetValue(networkId, out var networkSubscribers))
             {
-                _networkSubscribers.TryRemove(networkId, out _);
+                return;
             }
+
+            if (!networkSubscribers.TryRemove(registrationId, out var localSubscriber))
+            {
+                return;
+            }
+
+            if (!networkSubscribers.IsEmpty)
+            {
+                return;
+            }
+
+            _networkSubscribers.TryRemove(networkId, out _);
+            _advertisedEndpoints.TryRemove(networkId, out _);
+            _ = _peers.TryRemoveLocalNodeIdIfMatch(networkId, localSubscriber.NodeId);
+            _peers.RemoveNetworkPeers(networkId);
         }
         finally
         {
