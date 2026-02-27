@@ -32,7 +32,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     private readonly UserSpaceTcpWindowUpdateTrigger _windowUpdateTrigger;
 
     private int _disposeState;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     public UserSpaceTcpSender(
         IUserSpaceIpLink link,
@@ -333,6 +333,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         }
 
         _disposed = true;
+        FailPendingOperations(new ObjectDisposedException(nameof(UserSpaceTcpSender)));
         return ValueTask.CompletedTask;
     }
 }
