@@ -8,6 +8,7 @@ namespace ZTSharp.Transport.Internal;
 internal sealed class OsUdpReceiveLoop
 {
     private const int MaxHelloResponseCacheEntries = 4096;
+    private const int MaxHelloResponseEvictionQueueEntries = MaxHelloResponseCacheEntries * 2;
     private const int MaxPendingDiscoverySends = 256;
     private const long PeerHelloResponseMinIntervalMs = 1000;
 
@@ -185,6 +186,7 @@ internal sealed class OsUdpReceiveLoop
 
         _helloResponseLastSentMs[key] = nowMs;
         _helloResponseEvictionQueue.Enqueue((key, nowMs));
+        TrimHelloResponseEvictionQueueIfNeeded();
 
         if (_helloResponseLastSentMs.Count > MaxHelloResponseCacheEntries)
         {
@@ -192,6 +194,14 @@ internal sealed class OsUdpReceiveLoop
         }
 
         return true;
+    }
+
+    private void TrimHelloResponseEvictionQueueIfNeeded()
+    {
+        while (_helloResponseEvictionQueue.Count > MaxHelloResponseEvictionQueueEntries)
+        {
+            _helloResponseEvictionQueue.Dequeue();
+        }
     }
 
     private void TrimHelloResponseCache()
