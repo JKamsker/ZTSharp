@@ -1,11 +1,16 @@
 using Microsoft.Extensions.Logging;
 using ZTSharp.Transport;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ZTSharp.Internal;
 
 internal sealed class NodeLifecycleService : IAsyncDisposable
 {
     private readonly NodeRuntimeState _runtime;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be safe during concurrent lifecycle operations; disposing this lock can throw on in-flight Release calls.")]
     private readonly SemaphoreSlim _stateLock;
     private readonly CancellationTokenSource _nodeCts;
     private readonly INodeTransport _transport;
@@ -16,6 +21,8 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
     private readonly NodeNetworkService _networkService;
     private readonly NodeTransportService _transportService;
     private readonly bool _ownsTransport;
+
+    private int _disposeState;
 
     public NodeLifecycleService(
         NodeRuntimeState runtime,
@@ -197,12 +204,23 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
         if (_runtime.Disposed)
         {
             return;
         }
 
-        await _nodeCts.CancelAsync().ConfigureAwait(false);
+        try
+        {
+            await _nodeCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
 
         using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         try
@@ -228,7 +246,6 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
             await asyncTransport.DisposeAsync().ConfigureAwait(false);
         }
 
-        _stateLock.Dispose();
         _events.Complete();
         _nodeCts.Dispose();
     }
