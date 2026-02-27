@@ -6,13 +6,10 @@ namespace ZTSharp.Tests;
 
 public sealed class OsUdpSocketFactoryTests
 {
-    [Fact]
+    [SkippableFact]
     public void WindowsSioUdpConnResetInput_IsDword()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            throw new Xunit.Sdk.SkipException("Windows-only IOControl buffer test.");
-        }
+        Skip.IfNot(OperatingSystem.IsWindows(), "Windows-only IOControl buffer test.");
 
         var buffer = OsUdpSocketFactory.CreateWindowsSioUdpConnResetInputBuffer(disableConnReset: true);
         Assert.Equal(4, buffer.Length);
@@ -46,13 +43,10 @@ public sealed class OsUdpSocketFactoryTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public void CreateUdp6OnlyBound_SetsDualModeFalse()
     {
-        if (!Socket.OSSupportsIPv6)
-        {
-            throw new Xunit.Sdk.SkipException("IPv6 not supported on this platform.");
-        }
+        Skip.IfNot(Socket.OSSupportsIPv6, "IPv6 not supported on this platform.");
 
         var method = typeof(OsUdpSocketFactory).GetMethod("CreateUdp6OnlyBound", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
@@ -64,7 +58,8 @@ public sealed class OsUdpSocketFactoryTests
         }
         catch (TargetInvocationException ex) when (ex.InnerException is SocketException or PlatformNotSupportedException or NotSupportedException)
         {
-            throw new Xunit.Sdk.SkipException($"IPv6 appears supported, but binding an IPv6 UDP socket failed: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            Skip.If(true, $"IPv6 appears supported, but binding an IPv6 UDP socket failed: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            return;
         }
         Assert.NotNull(udp);
 
