@@ -96,7 +96,16 @@ internal sealed class NodeNetworkService
             {
                 try
                 {
-                    await _transport.LeaveNetworkAsync(networkId, registration, CancellationToken.None).ConfigureAwait(false);
+                    await _leaveGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        await _transport.LeaveNetworkAsync(networkId, registration, CancellationToken.None).ConfigureAwait(false);
+                        _networkRegistrations.TryRemove(new KeyValuePair<ulong, Guid>(networkId, registration));
+                    }
+                    finally
+                    {
+                        _leaveGate.Release();
+                    }
                 }
                 catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
                 {
