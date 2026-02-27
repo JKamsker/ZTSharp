@@ -143,10 +143,17 @@ public sealed class OverlayTcpClient : IAsyncDisposable
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_incoming.RemoteClosed || _incoming.RemoteFinReceived)
+            {
+                throw new IOException("Remote has closed the connection.");
+            }
+
             var remaining = buffer;
             while (!remaining.IsEmpty)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                ObjectDisposedException.ThrowIf(_disposed, this);
                 var chunk = remaining.Slice(0, Math.Min(remaining.Length, MaxDataPerFrame));
                 remaining = remaining.Slice(chunk.Length);
 

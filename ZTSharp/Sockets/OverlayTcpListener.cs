@@ -39,7 +39,8 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleWriter = false,
-            SingleReader = true
+            // DisposeAsync drains queued connections for best-effort cleanup, so we must allow an additional reader.
+            SingleReader = false
         });
 
         _node.RawFrameReceived += OnFrameReceived;
