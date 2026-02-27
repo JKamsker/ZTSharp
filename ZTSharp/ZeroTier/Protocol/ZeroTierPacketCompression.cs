@@ -42,7 +42,7 @@ internal static class ZeroTierPacketCompression
         }
         finally
         {
-            System.Buffers.ArrayPool<byte>.Shared.Return(payload, clearArray: false);
+            System.Buffers.ArrayPool<byte>.Shared.Return(payload, clearArray: true);
         }
     }
 }
