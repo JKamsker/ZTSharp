@@ -209,21 +209,31 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
             return;
         }
 
-        // Serialize disposal with other lifecycle operations (Start/Stop/ExecuteWhileRunning),
-        // so we don't dispose the transport while another operation is mid-flight.
-        await _stateLock.WaitAsync().ConfigureAwait(false);
+        using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+
         try
         {
-            if (_runtime.Disposed)
+            // Best-effort: block new operations promptly, but don't wedge forever if some operation is stuck.
+            await _stateLock.WaitAsync(shutdownCts.Token).ConfigureAwait(false);
+            try
             {
-                return;
-            }
+                if (_runtime.Disposed)
+                {
+                    return;
+                }
 
-            _runtime.Disposed = true;
+                _runtime.Disposed = true;
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
         }
-        finally
+        catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
         {
-            _stateLock.Release();
+            // Worst case: a concurrent lifecycle operation is wedged under the state lock. Mark the node as disposed
+            // anyway so future operations fail fast.
+            _runtime.Disposed = true;
         }
 
         try
@@ -233,8 +243,6 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
         catch (ObjectDisposedException)
         {
         }
-
-        using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         try
         {
@@ -303,6 +311,6 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
 
     private void EnsureNotDisposed()
     {
-        ObjectDisposedException.ThrowIf(_runtime.Disposed, nameof(Node));
+        ObjectDisposedException.ThrowIf(_runtime.Disposed || Volatile.Read(ref _disposeState) != 0, nameof(Node));
     }
 }
