@@ -7,6 +7,34 @@ namespace ZTSharp.Tests;
 public sealed class NodeNetworkLeaveOrderingTests
 {
     [Fact]
+    public async Task JoinNetworkAsync_DuplicateJoin_IsIdempotentAndDoesNotLeakRegistrations()
+    {
+        var store = new MemoryStateStore();
+        var transport = new RecordingJoinTransport();
+        var events = new NodeEventStream(_ => { }, NullLogger.Instance);
+        var peers = new NodePeerService(store);
+        var service = new NodeNetworkService(store, transport, events, peers);
+
+        var networkId = 0xCAFE5003UL;
+
+        await service.JoinNetworkAsync(
+            networkId,
+            localNodeId: 1,
+            localEndpoint: null,
+            onFrameReceived: (_, _, _, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        await service.JoinNetworkAsync(
+            networkId,
+            localNodeId: 1,
+            localEndpoint: null,
+            onFrameReceived: (_, _, _, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal(1, transport.JoinCallCount);
+    }
+
+    [Fact]
     public async Task LeaveNetworkAsync_FailedLeave_DoesNotLoseRegistration_AndRetryUnsubscribes()
     {
         var store = new MemoryStateStore();
@@ -154,5 +182,32 @@ public sealed class NodeNetworkLeaveOrderingTests
             => Inner.FlushAsync(cancellationToken);
 
         public void Dispose() => Inner.Dispose();
+    }
+
+    private sealed class RecordingJoinTransport : INodeTransport
+    {
+        private int _joinCallCount;
+
+        public int JoinCallCount => Volatile.Read(ref _joinCallCount);
+
+        public Task<Guid> JoinNetworkAsync(
+            ulong networkId,
+            ulong nodeId,
+            Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
+            System.Net.IPEndPoint? localEndpoint = null,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _joinCallCount);
+            return Task.FromResult(Guid.NewGuid());
+        }
+
+        public Task LeaveNetworkAsync(ulong networkId, Guid registrationId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task SendFrameAsync(ulong networkId, ulong sourceNodeId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task FlushAsync(CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

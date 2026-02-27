@@ -48,6 +48,12 @@ internal sealed class NodeNetworkService
     {
         _events.Publish(EventCode.NetworkJoinRequested, DateTimeOffset.UtcNow, networkId);
 
+        // Joining a network is idempotent: avoid leaking registrations/subscribers and keep the transport state consistent.
+        if (_networkRegistrations.ContainsKey(networkId))
+        {
+            return;
+        }
+
         Guid registration = default;
         var now = DateTimeOffset.UtcNow;
         var key = BuildNetworkFileKey(networkId);
@@ -206,6 +212,11 @@ internal sealed class NodeNetworkService
 
         foreach (var network in _joinedNetworks.Keys)
         {
+            if (_networkRegistrations.ContainsKey(network))
+            {
+                continue;
+            }
+
             var registration = await _transport.JoinNetworkAsync(
                 network,
                 localNodeId,
