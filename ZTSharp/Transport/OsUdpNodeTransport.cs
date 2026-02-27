@@ -35,7 +35,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     private readonly Task? _peerRefreshLoop;
 
     private int _disposeState;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true, bool enablePeerDiscovery = true)
     {
