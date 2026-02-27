@@ -5,9 +5,12 @@ internal static class StateStoreKeySegmentValidation
     private static readonly string[] ReservedDeviceNames =
     [
         "CON",
+        "CONIN$",
+        "CONOUT$",
         "PRN",
         "AUX",
         "NUL",
+        "CLOCK$",
         "COM1",
         "COM2",
         "COM3",
