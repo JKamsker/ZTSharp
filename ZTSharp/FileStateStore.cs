@@ -22,10 +22,7 @@ public sealed class FileStateStore : IStateStore
         _pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         Directory.CreateDirectory(_rootPath);
 
-        if (IsReparsePoint(_rootPathTrimmed))
-        {
-            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
-        }
+        ThrowIfRootPathOrAncestorsAreReparsePoints();
     }
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -257,8 +254,36 @@ public sealed class FileStateStore : IStateStore
             throw new IOException($"State file exceeds maximum supported size of {MaxReadBytes} bytes.");
         }
 
-        using var memory = stream.Length <= int.MaxValue ? new MemoryStream((int)stream.Length) : new MemoryStream();
-        await stream.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
+        var initialCapacity = stream.Length <= int.MaxValue
+            ? (int)Math.Min(stream.Length, MaxReadBytes)
+            : 0;
+
+        using var memory = initialCapacity > 0 ? new MemoryStream(initialCapacity) : new MemoryStream();
+        var buffer = new byte[16 * 1024];
+        long totalRead = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            var remaining = MaxReadBytes - totalRead;
+            if (read > remaining)
+            {
+                if (remaining > 0)
+                {
+                    memory.Write(buffer, 0, (int)remaining);
+                }
+
+                throw new IOException($"State file exceeds maximum supported size of {MaxReadBytes} bytes.");
+            }
+
+            memory.Write(buffer, 0, read);
+            totalRead += read;
+        }
+
         return memory.ToArray();
     }
 
@@ -327,14 +352,45 @@ public sealed class FileStateStore : IStateStore
         for (var i = 0; i < parts.Length; i++)
         {
             current = Path.Combine(current, parts[i]);
-            if (!File.Exists(current) && !Directory.Exists(current))
+            if (!TryGetAttributes(current, out var attributes))
             {
                 return;
             }
 
-            if (IsReparsePoint(current))
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
             {
                 throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
+            }
+        }
+    }
+
+    private void ThrowIfRootPathOrAncestorsAreReparsePoints()
+    {
+        var root = Path.GetPathRoot(_rootPathTrimmed);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return;
+        }
+
+        if (IsReparsePoint(root) || IsReparsePoint(_rootPathTrimmed))
+        {
+            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
+        }
+
+        var relative = Path.GetRelativePath(root, _rootPathTrimmed);
+        if (relative == "." || relative.Length == 0)
+        {
+            return;
+        }
+
+        var current = root;
+        var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            current = Path.Combine(current, parts[i]);
+            if (IsReparsePoint(current))
+            {
+                throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
             }
         }
     }
@@ -396,6 +452,24 @@ public sealed class FileStateStore : IStateStore
         {
             return false;
         }
+    }
+
+    private static bool TryGetAttributes(string path, out FileAttributes attributes)
+    {
+        try
+        {
+            attributes = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+
+        attributes = default;
+        return false;
     }
 
 }
