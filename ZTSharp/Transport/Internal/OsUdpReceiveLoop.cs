@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
@@ -26,6 +25,7 @@ internal sealed class OsUdpReceiveLoop
     private readonly Func<ulong, ulong, IPEndPoint, OsUdpPeerDiscoveryProtocol.FrameType, CancellationToken, Task> _sendDiscoveryFrameAsync;
     private readonly Action<string>? _log;
     private readonly Dictionary<(ulong NetworkId, ulong NodeId), long> _helloResponseLastSentMs = new();
+    private readonly Queue<((ulong NetworkId, ulong NodeId) Key, long LastSentMs)> _helloResponseEvictionQueue = new();
     private readonly Channel<DiscoverySendRequest> _discoverySendQueue;
 
     internal Action<IPEndPoint>? DatagramReceivedForTests { get; set; }
@@ -184,23 +184,37 @@ internal sealed class OsUdpReceiveLoop
         }
 
         _helloResponseLastSentMs[key] = nowMs;
+        _helloResponseEvictionQueue.Enqueue((key, nowMs));
 
         if (_helloResponseLastSentMs.Count > MaxHelloResponseCacheEntries)
         {
-            var overflow = _helloResponseLastSentMs.Count - MaxHelloResponseCacheEntries;
-            var toRemove = _helloResponseLastSentMs
-                .OrderBy(pair => pair.Value)
-                .Take(overflow)
-                .Select(pair => pair.Key)
-                .ToArray();
-
-            for (var i = 0; i < toRemove.Length; i++)
-            {
-                _helloResponseLastSentMs.Remove(toRemove[i]);
-            }
+            TrimHelloResponseCache();
         }
 
         return true;
+    }
+
+    private void TrimHelloResponseCache()
+    {
+        while (_helloResponseLastSentMs.Count > MaxHelloResponseCacheEntries && _helloResponseEvictionQueue.Count > 0)
+        {
+            var (key, lastSentMs) = _helloResponseEvictionQueue.Dequeue();
+            if (_helloResponseLastSentMs.TryGetValue(key, out var currentLastSentMs) && currentLastSentMs == lastSentMs)
+            {
+                _helloResponseLastSentMs.Remove(key);
+            }
+        }
+
+        while (_helloResponseLastSentMs.Count > MaxHelloResponseCacheEntries)
+        {
+            using var enumerator = _helloResponseLastSentMs.Keys.GetEnumerator();
+            if (!enumerator.MoveNext())
+            {
+                break;
+            }
+
+            _helloResponseLastSentMs.Remove(enumerator.Current);
+        }
     }
 
     private void QueueDiscoverySend(
