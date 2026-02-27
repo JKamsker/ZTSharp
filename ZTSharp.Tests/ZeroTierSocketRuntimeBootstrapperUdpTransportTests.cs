@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Sockets;
 using ZTSharp.ZeroTier;
 using ZTSharp.ZeroTier.Internal;
@@ -50,10 +51,10 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
     [Fact]
     public async Task CreateUdpTransport_SingleSocket_HonorsLocalUdpPorts()
     {
-        const int attempts = 25;
+        const int attempts = 10;
         for (var i = 0; i < attempts; i++)
         {
-            var port = Random.Shared.Next(20_000, 60_000);
+            var port = GetAvailableUdpPort();
             var transport = default(IZeroTierUdpTransport);
             try
             {
@@ -77,6 +78,12 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
             }
         }
 
-        Assert.Fail($"Failed to bind a UDP socket to a random port after {attempts} attempts.");
+        Assert.Fail($"Failed to bind a UDP socket to an available port after {attempts} attempts.");
+    }
+
+    private static int GetAvailableUdpPort()
+    {
+        using var udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        return ((IPEndPoint)udp.Client.LocalEndPoint!).Port;
     }
 }

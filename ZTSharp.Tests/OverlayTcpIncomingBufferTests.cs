@@ -46,7 +46,7 @@ public sealed class OverlayTcpIncomingBufferTests
 
         var readTask = incoming.ReadAsync(new byte[1], CancellationToken.None).AsTask();
 
-        await Task.Delay(TimeSpan.FromMilliseconds(25));
+        await Task.Yield();
         incoming.MarkRemoteFinReceived();
 
         var eof = await readTask.WaitAsync(TimeSpan.FromSeconds(1));
