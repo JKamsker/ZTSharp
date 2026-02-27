@@ -206,9 +206,14 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                 InitLock.Release();
             }
         }
-        catch (OperationCanceledException) when (ShutdownToken.IsCancellationRequested)
+        catch (OperationCanceledException ex)
         {
-            throw new ObjectDisposedException(GetType().FullName);
+            if (ShutdownToken.IsCancellationRequested || Disposed)
+            {
+                throw new ObjectDisposedException(GetType().FullName, ex);
+            }
+
+            throw;
         }
         finally
         {
