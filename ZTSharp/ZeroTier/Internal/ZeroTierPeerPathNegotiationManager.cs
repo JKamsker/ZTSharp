@@ -36,9 +36,18 @@ internal sealed class ZeroTierPeerPathNegotiationManager
     {
         ArgumentNullException.ThrowIfNull(remoteEndPoint);
 
+        var now = _nowMs();
+        CleanupIfNeeded(now);
         var key = new ZeroTierPeerNegotiationPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
         if (_state.TryGetValue(key, out var state))
         {
+            if (state.LastReceivedMs != 0 && unchecked(now - state.LastReceivedMs) > NegotiationStateTtlMs)
+            {
+                _state.TryRemove(key, out _);
+                remoteUtility = 0;
+                return false;
+            }
+
             remoteUtility = state.RemoteUtility;
             return true;
         }
