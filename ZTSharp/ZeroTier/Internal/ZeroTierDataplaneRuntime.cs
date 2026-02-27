@@ -41,7 +41,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
     {
         FullMode = BoundedChannelFullMode.Wait,
-        SingleReader = true,
+        SingleReader = false,
         SingleWriter = true
     });
     private long _peerQueueDropCount;
