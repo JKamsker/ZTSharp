@@ -63,23 +63,47 @@ internal static class OsUdpSocketFactory
     private static UdpClient CreateUdp4Bound(int localPort)
     {
         var udp4 = new UdpClient(AddressFamily.InterNetwork);
-        udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-        return udp4;
+        try
+        {
+            udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+            return udp4;
+        }
+        catch
+        {
+            udp4.Dispose();
+            throw;
+        }
     }
 
     private static UdpClient CreateUdp6DualModeBound(int localPort)
     {
         var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
-        udp6.Client.DualMode = true;
-        udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
-        return udp6;
+        try
+        {
+            udp6.Client.DualMode = true;
+            udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
+            return udp6;
+        }
+        catch
+        {
+            udp6.Dispose();
+            throw;
+        }
     }
 
     private static UdpClient CreateUdp6OnlyBound(int localPort)
     {
         var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
-        udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
-        return udp6;
+        try
+        {
+            udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
+            return udp6;
+        }
+        catch
+        {
+            udp6.Dispose();
+            throw;
+        }
     }
 
     private static void TryDisableWindowsUdpConnReset(UdpClient udp, Action<string>? log)
