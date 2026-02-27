@@ -6,6 +6,12 @@ internal sealed class NodeRuntimeState
 
     public NodeId NodeId { get; set; }
 
-    public bool Disposed { get; set; }
+    private int _disposed;
+
+    public bool Disposed
+    {
+        get => Volatile.Read(ref _disposed) != 0;
+        set => Volatile.Write(ref _disposed, value ? 1 : 0);
+    }
 }
 
