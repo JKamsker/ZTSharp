@@ -211,7 +211,7 @@ internal sealed class OsUdpPeerRegistry
     private void EvictExpiredAndTrimNetworkPeers(ulong networkId, ConcurrentDictionary<ulong, PeerEntry> peers, long nowTicks)
     {
         EvictExpiredAndTrimPeers(peers, nowTicks);
-        if (peers.IsEmpty)
+        if (peers.IsEmpty && (!_localNodeIds.TryGetValue(networkId, out var localNodeId) || localNodeId == 0))
         {
             _networkPeers.TryRemove(networkId, out _);
         }
