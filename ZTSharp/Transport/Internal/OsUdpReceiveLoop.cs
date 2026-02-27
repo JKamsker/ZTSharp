@@ -145,8 +145,8 @@ internal sealed class OsUdpReceiveLoop
 
                 try
                 {
-                    await _dispatchFrameAsync(sourceNodeId, networkId, payload, cancellationToken).ConfigureAwait(false);
                     _peers.RefreshPeerLastSeen(networkId, sourceNodeId);
+                    await _dispatchFrameAsync(sourceNodeId, networkId, payload, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
