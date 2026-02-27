@@ -211,8 +211,10 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await connection.AcceptAsync(token).ConfigureAwait(false);
             stream = connection.GetStream();
 
+            Interlocked.Increment(ref _pendingAcceptCount);
             if (!_acceptQueue.Writer.TryWrite(new AcceptedTcpConnection(stream, localEndpoint, remoteEndpoint)))
             {
+                Interlocked.Decrement(ref _pendingAcceptCount);
                 Interlocked.Increment(ref _droppedAcceptCount);
                 if (ZeroTierTrace.Enabled)
                 {
@@ -225,7 +227,6 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 return;
             }
 
-            Interlocked.Increment(ref _pendingAcceptCount);
             handedOff = true;
             stream = null;
         }
