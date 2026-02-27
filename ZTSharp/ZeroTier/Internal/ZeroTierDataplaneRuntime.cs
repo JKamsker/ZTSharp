@@ -207,7 +207,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 }
             });
 
-        _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
+        _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue, _cts.Token), CancellationToken.None);
         _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);
         _multipathMaintenanceLoop = multipath.Enabled
             ? Task.Run(() => MultipathMaintenanceLoopAsync(_cts.Token), CancellationToken.None)

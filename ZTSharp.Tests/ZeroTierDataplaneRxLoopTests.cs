@@ -225,7 +225,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         });
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var peerNodeId = new NodeId(0x3333333333);
         var peerPacket = ZeroTierPacketCodec.Encode(
@@ -296,7 +296,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         });
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var peerNodeId = new NodeId(0x3333333333);
         var peerPacket = ZeroTierPacketCodec.Encode(
@@ -362,7 +362,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, new IPEndPoint(IPAddress.Loopback, 1), new byte[1])));
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var localNodeId = new NodeId(0x2222222222);
         var peerNodeId = new NodeId(0x3333333333);
@@ -429,7 +429,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         });
 
         using var dispatcherCts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, dispatcherCts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, dispatcherCts.Token), CancellationToken.None);
 
         var remoteNodeId = new NodeId(0xaaaaaaaaaa);
         var serverTask = RunGatherOkServerOnceAsync(

@@ -125,12 +125,15 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
                 continue;
             }
 
-            if (!_incoming.Writer.TryWrite(new ZeroTierUdpDatagram(
-                    _localSocketId,
-                    UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
-                    result.Buffer)))
+            var datagram = new ZeroTierUdpDatagram(
+                _localSocketId,
+                UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
+                result.Buffer);
+            if (!_incoming.Writer.TryWrite(datagram))
             {
                 Interlocked.Increment(ref _incomingBackpressureCount);
+                _ = _incoming.Reader.TryRead(out _);
+                _incoming.Writer.TryWrite(datagram);
             }
         }
     }

@@ -41,7 +41,7 @@ public sealed class ZeroTierDataplaneShutdownTests
         });
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var peerPacket = ZeroTierPacketCodec.Encode(
             new ZeroTierPacketHeader(

@@ -50,8 +50,10 @@ internal sealed class ZeroTierDataplaneRxLoops
         _onPeerQueueDrop = onPeerQueueDrop;
     }
 
-    public async Task DispatcherLoopAsync(ChannelWriter<ZeroTierUdpDatagram> peerWriter, CancellationToken cancellationToken)
+    public async Task DispatcherLoopAsync(Channel<ZeroTierUdpDatagram> peerQueue, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(peerQueue);
+        var peerWriter = peerQueue.Writer;
         while (!cancellationToken.IsCancellationRequested)
         {
             ZeroTierUdpDatagram datagram;
@@ -148,6 +150,8 @@ internal sealed class ZeroTierDataplaneRxLoops
                 }
 
                 _onPeerQueueDrop?.Invoke();
+                _ = peerQueue.Reader.TryRead(out _);
+                peerWriter.TryWrite(datagram);
                 continue;
             }
         }
