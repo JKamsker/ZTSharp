@@ -231,6 +231,7 @@ internal sealed class OsUdpPeerRegistry
 
         var overflow = _networkPeers.Count - DirectoryMaxNetworks;
         var toRemove = _networkPeers
+            .Where(network => !_localNodeIds.TryGetValue(network.Key, out var localNodeId) || localNodeId == 0)
             .Select(network =>
             {
                 var lastSeen = 0L;
