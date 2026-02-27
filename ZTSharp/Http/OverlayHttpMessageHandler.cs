@@ -77,10 +77,16 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
             ReleaseLocalPort(localPort);
             throw;
         }
-        catch (Exception ex) when (ex is not HttpRequestException)
+        catch (Exception ex)
         {
             await client.DisposeAsync().ConfigureAwait(false);
             ReleaseLocalPort(localPort);
+
+            if (ex is HttpRequestException)
+            {
+                throw;
+            }
+
             throw new HttpRequestException(
                 $"Overlay connect to '{host}:{endpoint.Port}' failed.",
                 ex);
