@@ -46,13 +46,13 @@ internal sealed class NodeNetworkService
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
         CancellationToken cancellationToken)
     {
-        _events.Publish(EventCode.NetworkJoinRequested, DateTimeOffset.UtcNow, networkId);
-
         // Joining a network is idempotent: avoid leaking registrations/subscribers and keep the transport state consistent.
         if (_networkRegistrations.ContainsKey(networkId))
         {
             return;
         }
+
+        _events.Publish(EventCode.NetworkJoinRequested, DateTimeOffset.UtcNow, networkId);
 
         Guid registration = default;
         var now = DateTimeOffset.UtcNow;
@@ -71,9 +71,22 @@ internal sealed class NodeNetworkService
                 JsonContext.Default.NetworkState);
 
             await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _peerService.RecoverPeersAsync(networkId, _transport, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+#pragma warning disable CA1031 // Peer recovery is best-effort during join.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+
             _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
             _networkRegistrations[networkId] = registration;
-            await _peerService.RecoverPeersAsync(networkId, _transport, cancellationToken).ConfigureAwait(false);
 
             _events.Publish(EventCode.NetworkJoined, DateTimeOffset.UtcNow, networkId);
         }
@@ -223,8 +236,21 @@ internal sealed class NodeNetworkService
                 onFrameReceived,
                 localEndpoint,
                 cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _peerService.RecoverPeersAsync(network, _transport, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+#pragma warning disable CA1031 // Peer recovery is best-effort during recovery.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+
             _networkRegistrations[network] = registration;
-            await _peerService.RecoverPeersAsync(network, _transport, cancellationToken).ConfigureAwait(false);
         }
     }
 
