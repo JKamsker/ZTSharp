@@ -95,6 +95,8 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
             {
 #if DEBUG
                 Debug.WriteLine($"[{nameof(ZeroTierUdpMultiTransport)}] CancelAsync failed: {ex}");
+#else
+                _ = ex;
 #endif
             }
 
@@ -110,6 +112,8 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
                 {
 #if DEBUG
                     Debug.WriteLine($"[{nameof(ZeroTierUdpMultiTransport)}] Socket dispose failed: {ex}");
+#else
+                    _ = ex;
 #endif
                 }
             }
@@ -126,6 +130,8 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
             {
 #if DEBUG
                 Debug.WriteLine($"[{nameof(ZeroTierUdpMultiTransport)}] Forwarder completion failed: {ex}");
+#else
+                _ = ex;
 #endif
             }
 
