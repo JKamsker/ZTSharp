@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Sockets;
 using System.Threading.Channels;
 
@@ -12,6 +13,10 @@ public sealed class OverlayTcpListener : IAsyncDisposable
     private const int HeaderLength = OverlayTcpFrameCodec.HeaderLength;
 
     private readonly Channel<OverlayTcpClient> _acceptQueue;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly Node _node;
     private readonly ulong _networkId;

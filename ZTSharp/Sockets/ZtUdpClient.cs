@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 
 namespace ZTSharp.Sockets;
@@ -16,6 +17,10 @@ public sealed class ZtUdpClient : IAsyncDisposable
     private const int UdpFrameHeaderV2Length = 14;
 
     private readonly Channel<UdpDatagram> _incoming;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly ulong _networkId;
     private readonly int _localPort;

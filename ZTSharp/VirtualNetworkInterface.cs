@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 
 namespace ZTSharp;
@@ -14,6 +15,10 @@ public sealed class VirtualNetworkInterface : IAsyncDisposable
     private const int HeaderLength = 1 + 1 + sizeof(ulong);
 
     private readonly Channel<IpPacket> _incoming;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly Node _node;
     private readonly ulong _networkId;

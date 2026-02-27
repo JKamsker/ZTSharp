@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using ZTSharp.Internal;
 using SystemTcpClient = System.Net.Sockets.TcpClient;
@@ -10,6 +11,10 @@ namespace ZTSharp.Sockets;
 /// </summary>
 public sealed class OverlayTcpPortForwarder : IAsyncDisposable
 {
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActiveTaskSet _connectionTasks = new();
