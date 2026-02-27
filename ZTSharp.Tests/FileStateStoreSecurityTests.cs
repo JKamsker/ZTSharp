@@ -76,7 +76,19 @@ public sealed class FileStateStoreSecurityTests
                 return false;
             }
 
-            process.WaitForExit(milliseconds: 5000);
+            if (!process.WaitForExit(milliseconds: 5000))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                return false;
+            }
+
             return process.ExitCode == 0 && Directory.Exists(junctionPath);
         }
         catch

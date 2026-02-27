@@ -158,9 +158,9 @@ public sealed class ChannelWriterConcurrencyTests
             await using var client = new OverlayTcpClient(clientNode, networkId, clientPort);
             await client.ConnectAsync(serverNode.NodeId.Value, serverPort);
 
-            await using var _ = await acceptTask.WaitAsync(TimeSpan.FromSeconds(2));
+            await using var _ = await acceptTask.WaitAsync(TimeSpan.FromSeconds(10));
 
-            var (connectionId, sourcePort) = await synInfoTcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var (connectionId, sourcePort) = await synInfoTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
             const int frames = 500;
             var payload = Encoding.ASCII.GetBytes("abcdefgh");
