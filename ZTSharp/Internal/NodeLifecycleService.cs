@@ -296,11 +296,22 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
 
         if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
         {
+            using var transportDisposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
             try
             {
-                await asyncTransport.DisposeAsync().ConfigureAwait(false);
+                await asyncTransport
+                    .DisposeAsync()
+                    .AsTask()
+                    .WaitAsync(transportDisposeCts.Token)
+                    .ConfigureAwait(false);
             }
             catch (ObjectDisposedException)
+            {
+            }
+            catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+            {
+            }
+            catch (OperationCanceledException) when (transportDisposeCts.IsCancellationRequested)
             {
             }
         }
