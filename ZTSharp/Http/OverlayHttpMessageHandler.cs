@@ -73,14 +73,37 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await client.DisposeAsync().ConfigureAwait(false);
-            ReleaseLocalPort(localPort);
+            try
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose is best-effort; preserve cancellation semantics and always release the reserved port.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+            finally
+            {
+                ReleaseLocalPort(localPort);
+            }
+
             throw;
         }
         catch (Exception ex)
         {
-            await client.DisposeAsync().ConfigureAwait(false);
-            ReleaseLocalPort(localPort);
+            try
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose is best-effort; preserve original exception and always release the reserved port.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+            finally
+            {
+                ReleaseLocalPort(localPort);
+            }
 
             if (ex is HttpRequestException)
             {
