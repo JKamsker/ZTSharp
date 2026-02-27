@@ -140,7 +140,7 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                     continue;
                 }
 
-                if (!dst.Equals(_localAddress) || protocol != UdpCodec.ProtocolNumber)
+                if (protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
@@ -152,7 +152,7 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                     continue;
                 }
 
-                if (!ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddress) || protocol != UdpCodec.ProtocolNumber)
+                if (protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
