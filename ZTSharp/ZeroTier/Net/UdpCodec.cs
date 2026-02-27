@@ -112,9 +112,10 @@ internal static class UdpCodec
             return false; // IPv6 UDP checksum is mandatory
         }
 
+        var udpLength = HeaderLength + payload.Length;
         try
         {
-            return ComputeChecksum(sourceIp, destinationIp, segment) == 0;
+            return ComputeChecksum(sourceIp, destinationIp, segment.Slice(0, udpLength)) == 0;
         }
         catch (ArgumentOutOfRangeException)
         {

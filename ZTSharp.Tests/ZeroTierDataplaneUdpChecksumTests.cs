@@ -51,6 +51,29 @@ public sealed class ZeroTierDataplaneUdpChecksumTests
         Assert.Equal(new NodeId(0x3333333333), delivered.PeerNodeId);
     }
 
+    [Fact]
+    public async Task ValidUdpChecksum_WithTrailingBytes_IsDelivered_ToUdpHandler()
+    {
+        var localManagedIpV4 = IPAddress.Parse("10.0.0.2");
+        await using var runtime = CreateRuntime(localManagedIpV4);
+        var ip = GetIpHandler(runtime);
+
+        const ushort localPort = 12002;
+        var udpChannel = Channel.CreateUnbounded<ZeroTierRoutedIpPacket>();
+        Assert.True(runtime.TryRegisterUdpPort(AddressFamily.InterNetwork, localPort, udpChannel.Writer));
+
+        var remoteIp = IPAddress.Parse("10.0.0.1");
+        var udp = UdpCodec.Encode(remoteIp, localManagedIpV4, sourcePort: 1111, destinationPort: localPort, payload: new byte[] { 1, 2, 3 });
+        var padded = new byte[udp.Length + 8];
+        udp.CopyTo(padded, 0);
+
+        var ipv4 = Ipv4Codec.Encode(remoteIp, localManagedIpV4, UdpCodec.ProtocolNumber, padded, identification: 1);
+        await ip.HandleIpv4PacketAsync(peerNodeId: new NodeId(0x3333333333), ipv4Packet: ipv4, cancellationToken: CancellationToken.None);
+
+        Assert.True(udpChannel.Reader.TryRead(out var delivered));
+        Assert.Equal(new NodeId(0x3333333333), delivered.PeerNodeId);
+    }
+
     private static ZeroTierDataplaneIpHandler GetIpHandler(ZeroTierDataplaneRuntime runtime)
     {
         var peerPackets = GetPrivateField<ZeroTierDataplanePeerPacketHandler>(runtime, "_peerPackets");
