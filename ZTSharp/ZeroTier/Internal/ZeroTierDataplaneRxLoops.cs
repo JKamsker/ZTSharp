@@ -180,7 +180,7 @@ internal sealed class ZeroTierDataplaneRxLoops
                     }
                 }
 
-                return;
+                continue;
             }
         }
     }
