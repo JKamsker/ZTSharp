@@ -20,6 +20,9 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     private volatile uint _sendUna;
     private volatile uint _sendNext;
 
+    private uint? _finSeq;
+    private uint? _finExpectedAck;
+
     private ushort _lastAdvertisedWindow = ushort.MaxValue;
     private readonly UserSpaceTcpWindowUpdateTrigger _windowUpdateTrigger;
 
@@ -110,6 +113,11 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
             return;
         }
 
+        if (_finSeq is not null)
+        {
+            throw new IOException("Local has closed the connection.");
+        }
+
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -182,8 +190,14 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var finSeq = AllocateNextSequence(bytes: 1);
-            var expectedAck = _sendNext;
+            if (_finSeq is null)
+            {
+                _finSeq = AllocateNextSequence(bytes: 1);
+                _finExpectedAck = _sendNext;
+            }
+
+            var finSeq = _finSeq.Value;
+            var expectedAck = _finExpectedAck!.Value;
 
             await SendTcpWithRetriesAsync(
                     seq: finSeq,

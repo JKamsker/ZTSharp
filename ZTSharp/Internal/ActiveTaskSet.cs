@@ -42,7 +42,15 @@ internal sealed class ActiveTaskSet
                 continue;
             }
 
-            await Task.WhenAll(snapshot).WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(snapshot).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // ActiveTaskSet is primarily used for shutdown coordination; faults are observed but not surfaced here.
+            catch
+#pragma warning restore CA1031
+            {
+            }
         }
     }
 }

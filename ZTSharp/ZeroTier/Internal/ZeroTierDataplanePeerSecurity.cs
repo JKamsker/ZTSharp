@@ -15,7 +15,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     private static readonly TimeSpan PeerKeyTtl = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan NegativePeerKeyTtl = TimeSpan.FromSeconds(30);
 
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly NodeId _localNodeId;
     private readonly byte[] _localPrivateKey;
@@ -27,7 +27,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     private int _trimPeerKeysInProgress;
 
     public ZeroTierDataplanePeerSecurity(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         ZeroTierDataplaneRootClient rootClient,
         ZeroTierIdentity localIdentity)
     {
@@ -48,6 +48,15 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
     public byte GetPeerProtocolVersionOrDefault(NodeId peerNodeId)
         => _peerProtocolVersions.TryGetValue(peerNodeId, out var version) ? version : (byte)0;
+
+    internal void ObservePeerProtocolVersion(NodeId peerNodeId, byte peerProtocolVersion)
+    {
+        peerProtocolVersion = peerProtocolVersion <= ZeroTierHelloClient.AdvertisedProtocolVersion
+            ? peerProtocolVersion
+            : ZeroTierHelloClient.AdvertisedProtocolVersion;
+
+        _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
+    }
 
     public bool TryGetPeerKey(NodeId peerNodeId, out byte[] key)
     {
@@ -107,6 +116,11 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (packetBytes.Length > ZeroTierProtocolLimits.MaxPacketBytes)
+        {
+            return;
+        }
+
         if (packetBytes.Length < ZeroTierPacketHeader.Length + HelloPayloadMinLength)
         {
             return;
@@ -162,10 +176,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
         CachePeerKey(peerNodeId, sharedKey, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var peerProtocolVersion = payload[0];
-        peerProtocolVersion = peerProtocolVersion <= ZeroTierHelloClient.AdvertisedProtocolVersion
-            ? peerProtocolVersion
-            : ZeroTierHelloClient.AdvertisedProtocolVersion;
-        _peerProtocolVersions[peerNodeId] = peerProtocolVersion;
+        ObservePeerProtocolVersion(peerNodeId, peerProtocolVersion);
 
         var okPacket = ZeroTierHelloOkPacketBuilder.BuildPacket(
             packetId: ZeroTierPacketIdGenerator.GeneratePacketId(),
@@ -211,6 +222,10 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
             ZeroTierC25519.Agree(_localPrivateKey, identity.PublicKey, key);
             CachePeerKey(peerNodeId, key, nowMs);
             return key;
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            throw;
         }
 #pragma warning disable CA1031 // Background WHOIS failures must not take down the dataplane.
         catch (Exception)
@@ -270,9 +285,22 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
     private void CacheNegativePeerKey(NodeId peerNodeId, long nowMs)
     {
-        _peerKeys[peerNodeId] = new PeerKeyCacheEntry(
+        var entry = new PeerKeyCacheEntry(
             Key: null,
             ExpiresAtUnixMs: nowMs + (long)NegativePeerKeyTtl.TotalMilliseconds);
+
+        _peerKeys.AddOrUpdate(
+            peerNodeId,
+            _ => entry,
+            (_, existing) =>
+            {
+                if (existing.Key is not null && existing.ExpiresAtUnixMs > nowMs)
+                {
+                    return existing;
+                }
+
+                return entry;
+            });
         TrimPeerKeyCacheIfNeeded(nowMs);
     }
 

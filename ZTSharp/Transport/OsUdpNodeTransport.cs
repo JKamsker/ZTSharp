@@ -60,7 +60,9 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         var registrationId = Guid.NewGuid();
-        var advertisedEndpoint = localEndpoint is null ? LocalEndpoint : UdpEndpointNormalization.Normalize(localEndpoint);
+        var advertisedEndpoint = localEndpoint is null
+            ? UdpEndpointNormalization.NormalizeForAdvertisement(LocalEndpoint)
+            : UdpEndpointNormalization.NormalizeForAdvertisement(localEndpoint);
         var subscribers = _networkSubscribers.GetOrAdd(
             networkId,
             _ => new ConcurrentDictionary<Guid, Subscriber>());
@@ -142,9 +144,20 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                     continue;
                 }
 
-                await _udp
-                    .SendAsync(frame, peer.Value, cancellationToken)
-                    .ConfigureAwait(false);
+                try
+                {
+                    await _udp
+                        .SendAsync(frame, peer.Value, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (ex is ObjectDisposedException or SocketException or InvalidOperationException or ArgumentException)
+                {
+                    continue;
+                }
             }
         }
         finally
@@ -164,6 +177,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
         ArgumentNullException.ThrowIfNull(endpoint);
 
+        UdpEndpointNormalization.ValidateRemoteEndpoint(endpoint, nameof(endpoint));
         var remoteEndpoint = UdpEndpointNormalization.Normalize(endpoint);
         _peers.AddOrUpdatePeer(networkId, nodeId, remoteEndpoint);
 
@@ -244,7 +258,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         CancellationToken cancellationToken)
     {
         Span<byte> payload = stackalloc byte[OsUdpPeerDiscoveryProtocol.PayloadLength];
-        OsUdpPeerDiscoveryProtocol.WritePayload(frameType, nodeId, payload);
+        OsUdpPeerDiscoveryProtocol.WritePayload(frameType, nodeId, networkId, payload);
 
         var frame = ArrayPool<byte>.Shared.Rent(NodeFrameCodec.GetEncodedLength(OsUdpPeerDiscoveryProtocol.PayloadLength));
         try

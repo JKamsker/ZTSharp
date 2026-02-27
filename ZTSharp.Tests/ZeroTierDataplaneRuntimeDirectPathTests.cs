@@ -26,16 +26,17 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
         await using var runtime = new ZeroTierDataplaneRuntime(
             udp,
             rootNodeId: rootNodeId,
-            rootEndpoint: rootUdp.LocalEndpoint,
+            rootEndpoint: TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint),
             rootKey: rootKey,
             rootProtocolVersion: 12,
             localIdentity: localIdentity,
             networkId: 0x9ad07d01093a69e3UL,
-            localManagedIpV4: IPAddress.Parse("10.0.0.1"),
+            localManagedIpsV4: new[] { IPAddress.Parse("10.0.0.1") },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: Array.Empty<byte>());
 
-        var rendezvousPayload = BuildRendezvousPayload(peerNodeId, punchReceiver.LocalEndpoint);
+        var runtimeEndpoint = TestUdpEndpoints.ToLoopback(runtime.LocalUdp);
+        var rendezvousPayload = BuildRendezvousPayload(peerNodeId, TestUdpEndpoints.ToLoopback(punchReceiver.LocalEndpoint));
         var packet = ZeroTierPacketCodec.Encode(
             new ZeroTierPacketHeader(
                 PacketId: 1,
@@ -48,7 +49,7 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
 
         ZeroTierPacketCrypto.Armor(packet, ZeroTierPacketCrypto.SelectOutboundKey(rootKey, remoteProtocolVersion: 12), encryptPayload: true);
 
-        await rootUdp.SendAsync(runtime.LocalUdp, packet);
+        await rootUdp.SendAsync(runtimeEndpoint, packet);
 
         var holePunch = await punchReceiver.ReceiveAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(4, holePunch.Payload.Length);
@@ -73,14 +74,16 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
         await using var runtime = new ZeroTierDataplaneRuntime(
             udp,
             rootNodeId: rootNodeId,
-            rootEndpoint: rootUdp.LocalEndpoint,
+            rootEndpoint: TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint),
             rootKey: rootKey,
             rootProtocolVersion: 12,
             localIdentity: localIdentity,
             networkId: 0x9ad07d01093a69e3UL,
-            localManagedIpV4: IPAddress.Parse("10.0.0.1"),
+            localManagedIpsV4: new[] { IPAddress.Parse("10.0.0.1") },
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: Array.Empty<byte>());
+
+        var runtimeEndpoint = TestUdpEndpoints.ToLoopback(runtime.LocalUdp);
 
         var sharedKey = new byte[48];
         ZeroTierC25519.Agree(peerIdentity.PrivateKey!, localIdentity.PublicKey, sharedKey);
@@ -96,7 +99,7 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
         var helloPacket = ZeroTierHelloPacketBuilder.BuildPacket(
             peerIdentity,
             destination: localIdentity.NodeId,
-            physicalDestination: runtime.LocalUdp,
+            physicalDestination: runtimeEndpoint,
             planet,
             timestamp: (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             sharedKey,
@@ -106,10 +109,10 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
             advertisedRevision: ZeroTierHelloClient.AdvertisedRevision,
             out _);
 
-        await rootUdp.SendAsync(runtime.LocalUdp, helloPacket);
+        await rootUdp.SendAsync(runtimeEndpoint, helloPacket);
         _ = await rootUdp.ReceiveAsync(TimeSpan.FromSeconds(2));
 
-        var pushPayload = BuildPushDirectPathsPayload(punchReceiver.LocalEndpoint);
+        var pushPayload = BuildPushDirectPathsPayload(TestUdpEndpoints.ToLoopback(punchReceiver.LocalEndpoint));
         var pushPacket = ZeroTierPacketCodec.Encode(
             new ZeroTierPacketHeader(
                 PacketId: 2,
@@ -122,7 +125,7 @@ public sealed class ZeroTierDataplaneRuntimeDirectPathTests
 
         ZeroTierPacketCrypto.Armor(pushPacket, ZeroTierPacketCrypto.SelectOutboundKey(sharedKey, remoteProtocolVersion: 12), encryptPayload: true);
 
-        await rootUdp.SendAsync(runtime.LocalUdp, pushPacket);
+        await rootUdp.SendAsync(runtimeEndpoint, pushPacket);
 
         var holePunch = await punchReceiver.ReceiveAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(4, holePunch.Payload.Length);

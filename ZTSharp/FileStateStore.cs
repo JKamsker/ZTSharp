@@ -19,6 +19,11 @@ public sealed class FileStateStore : IStateStore
         _rootPathPrefix = _rootPathTrimmed + Path.DirectorySeparatorChar;
         _pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         Directory.CreateDirectory(_rootPath);
+
+        if (IsReparsePoint(_rootPathTrimmed))
+        {
+            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
+        }
     }
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -66,6 +71,11 @@ public sealed class FileStateStore : IStateStore
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
         await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
+
+        if (string.Equals(normalized, Internal.NodeStoreKeys.IdentitySecretKey, StringComparison.OrdinalIgnoreCase))
+        {
+            Internal.SecretFilePermissions.TryHardenSecretFile(path);
+        }
     }
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
@@ -76,20 +86,22 @@ public sealed class FileStateStore : IStateStore
         if (StateStorePlanetAliases.IsPlanetAlias(normalized))
         {
             var planetPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.PlanetKey, key);
+            var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, key);
+            var deleted = false;
+
             if (File.Exists(planetPath))
             {
                 File.Delete(planetPath);
-                return Task.FromResult(true);
+                deleted = true;
             }
 
-            var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, key);
-            if (!File.Exists(rootsPath))
+            if (File.Exists(rootsPath))
             {
-                return Task.FromResult(false);
+                File.Delete(rootsPath);
+                deleted = true;
             }
 
-            File.Delete(rootsPath);
-            return Task.FromResult(true);
+            return Task.FromResult(deleted);
         }
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
@@ -132,6 +144,8 @@ public sealed class FileStateStore : IStateStore
             throw new ArgumentException($"Invalid key prefix: {prefix}", nameof(prefix));
         }
 
+        ThrowIfPathTraversesReparsePoint(path);
+
         if (virtualPrefix.Length != 0 && File.Exists(path))
         {
             return Task.FromResult<IReadOnlyList<string>>([virtualPrefix]);
@@ -145,7 +159,14 @@ public sealed class FileStateStore : IStateStore
         var entries = new List<string>();
         var seen = new HashSet<string>(
             OperatingSystem.IsWindows() || OperatingSystem.IsMacOS() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            IgnoreInaccessible = true,
+            AttributesToSkip = FileAttributes.ReparsePoint
+        };
+
+        foreach (var file in Directory.EnumerateFiles(path, "*", options))
         {
             var relativePath = Path.GetRelativePath(_rootPath, file).Replace('\\', '/');
             if (StateStorePlanetAliases.TryGetCanonicalAliasKey(relativePath, out var canonicalAliasKey))
@@ -241,6 +262,7 @@ public sealed class FileStateStore : IStateStore
             throw new ArgumentException($"Invalid key path: {originalKey}", nameof(originalKey));
         }
 
+        ThrowIfPathTraversesReparsePoint(path);
         return path;
     }
 
@@ -271,6 +293,57 @@ public sealed class FileStateStore : IStateStore
         }
 
         return fullPath.StartsWith(_rootPathPrefix, _pathComparison);
+    }
+
+    private void ThrowIfPathTraversesReparsePoint(string fullPath)
+    {
+        if (string.Equals(fullPath, _rootPathTrimmed, _pathComparison))
+        {
+            return;
+        }
+
+        if (!IsUnderRoot(fullPath))
+        {
+            throw new ArgumentException("Path is not under state root.", nameof(fullPath));
+        }
+
+        var relative = Path.GetRelativePath(_rootPathTrimmed, fullPath);
+        if (relative == "." || relative.Length == 0)
+        {
+            return;
+        }
+
+        var current = _rootPathTrimmed;
+        var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            current = Path.Combine(current, parts[i]);
+            if (!File.Exists(current) && !Directory.Exists(current))
+            {
+                return;
+            }
+
+            if (IsReparsePoint(current))
+            {
+                throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
+            }
+        }
+    }
+
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
     }
 
 }

@@ -108,6 +108,13 @@ internal sealed class UserSpaceTcpReceiveLoop
                 _sender.OnAckReceived(ack);
             }
 
+            if ((flags & (TcpCodec.Flags.Syn | TcpCodec.Flags.Ack)) == (TcpCodec.Flags.Syn | TcpCodec.Flags.Ack) &&
+                ack == _sender.SendNext)
+            {
+                await _sender.SendPureAckAsync(_receiver.RecvNext, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             var hasFin = (flags & TcpCodec.Flags.Fin) != 0;
             var segmentResult = await _receiver.ProcessSegmentAsync(seq, tcpPayload, hasFin).ConfigureAwait(false);
 

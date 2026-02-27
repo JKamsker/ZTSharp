@@ -10,8 +10,8 @@ internal static class ZeroTierSocketTcpConnector
     public static async ValueTask<Stream> ConnectAsync(
         Func<CancellationToken, Task> ensureJoinedAsync,
         Func<IReadOnlyList<IPAddress>> getManagedIps,
-        Func<(IPAddress? LocalManagedIpV4, byte[] InlineCom)> getLocalManagedIpv4AndInlineCom,
-        Func<IPAddress?, byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
+        Func<byte[]> getInlineCom,
+        Func<byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
         IPEndPoint? local,
         IPEndPoint remote,
         CancellationToken cancellationToken)
@@ -19,7 +19,7 @@ internal static class ZeroTierSocketTcpConnector
         var (stream, _) = await ConnectWithLocalEndpointAsync(
                 ensureJoinedAsync,
                 getManagedIps,
-                getLocalManagedIpv4AndInlineCom,
+                getInlineCom,
                 getOrCreateRuntimeAsync,
                 local,
                 remote,
@@ -36,15 +36,15 @@ internal static class ZeroTierSocketTcpConnector
     public static async ValueTask<(Stream Stream, IPEndPoint LocalEndpoint)> ConnectWithLocalEndpointAsync(
         Func<CancellationToken, Task> ensureJoinedAsync,
         Func<IReadOnlyList<IPAddress>> getManagedIps,
-        Func<(IPAddress? LocalManagedIpV4, byte[] InlineCom)> getLocalManagedIpv4AndInlineCom,
-        Func<IPAddress?, byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
+        Func<byte[]> getInlineCom,
+        Func<byte[], CancellationToken, Task<ZeroTierDataplaneRuntime>> getOrCreateRuntimeAsync,
         IPEndPoint? local,
         IPEndPoint remote,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(ensureJoinedAsync);
         ArgumentNullException.ThrowIfNull(getManagedIps);
-        ArgumentNullException.ThrowIfNull(getLocalManagedIpv4AndInlineCom);
+        ArgumentNullException.ThrowIfNull(getInlineCom);
         ArgumentNullException.ThrowIfNull(getOrCreateRuntimeAsync);
         ArgumentNullException.ThrowIfNull(remote);
 
@@ -84,7 +84,7 @@ internal static class ZeroTierSocketTcpConnector
         await ensureJoinedAsync(cancellationToken).ConfigureAwait(false);
 
         var managedIps = getManagedIps();
-        var (localManagedIpV4, inlineCom) = getLocalManagedIpv4AndInlineCom();
+        var inlineCom = getInlineCom();
 
         if (local is not null && local.Address.AddressFamily != remote.Address.AddressFamily)
         {
@@ -96,17 +96,38 @@ internal static class ZeroTierSocketTcpConnector
             throw new ArgumentOutOfRangeException(nameof(local), "Local port must be between 0 and 65535.");
         }
 
-        var localAddress = local?.Address ?? (remote.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
-            ? localManagedIpV4 ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.")
-            : managedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-              ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network."));
+        var remoteFamily = remote.Address.AddressFamily;
 
-        if (!managedIps.Contains(localAddress))
+        IPAddress localAddress;
+        if (local is null)
+        {
+            localAddress = remoteFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                ? managedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                  ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.")
+                : managedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                  ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+        }
+        else if (local.Address.Equals(IPAddress.Any))
+        {
+            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                           ?? throw new InvalidOperationException("No IPv4 managed IP assigned for this network.");
+        }
+        else if (local.Address.Equals(IPAddress.IPv6Any))
+        {
+            localAddress = managedIps.FirstOrDefault(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                           ?? throw new InvalidOperationException("No IPv6 managed IP assigned for this network.");
+        }
+        else
+        {
+            localAddress = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(local.Address);
+        }
+
+        if (!ContainsManagedIp(managedIps, localAddress))
         {
             throw new InvalidOperationException($"Local address '{localAddress}' is not one of this node's managed IPs.");
         }
 
-        var runtime = await getOrCreateRuntimeAsync(localManagedIpV4, inlineCom, cancellationToken).ConfigureAwait(false);
+        var runtime = await getOrCreateRuntimeAsync(inlineCom, cancellationToken).ConfigureAwait(false);
         var remoteNodeId = await runtime.ResolveNodeIdAsync(remote.Address, cancellationToken).ConfigureAwait(false);
 
         var fixedPort = local is not null && local.Port != 0;
@@ -165,6 +186,21 @@ internal static class ZeroTierSocketTcpConnector
         {
             var bytes = address.GetAddressBytes();
             return bytes.Length == 4 && bytes[0] is >= 224 and <= 239;
+        }
+
+        return false;
+    }
+
+    private static bool ContainsManagedIp(IReadOnlyList<IPAddress> managedIps, IPAddress candidate)
+    {
+        var canonicalCandidate = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(candidate);
+        for (var i = 0; i < managedIps.Count; i++)
+        {
+            var managedIp = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(managedIps[i]);
+            if (managedIp.Equals(canonicalCandidate))
+            {
+                return true;
+            }
         }
 
         return false;

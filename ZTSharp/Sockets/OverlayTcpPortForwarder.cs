@@ -74,7 +74,15 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
             _connectionTasks.Track(HandleConnectionAsync(accepted, token));
         }
 
-        await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        using var drainCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token);
+        drainCts.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            await _connectionTasks.WaitAsync(drainCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (drainCts.IsCancellationRequested)
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -91,7 +99,14 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
             await _shutdown.CancelAsync().ConfigureAwait(false);
             await _listener.DisposeAsync().ConfigureAwait(false);
 
-            await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _connectionTasks.WaitAsync(drainCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (drainCts.IsCancellationRequested)
+            {
+            }
         }
         finally
         {

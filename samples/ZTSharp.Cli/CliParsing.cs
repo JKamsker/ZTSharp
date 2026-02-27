@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using ZTSharp;
+using ZTSharp.ZeroTier;
 
 namespace ZTSharp.Cli;
 
@@ -31,6 +32,16 @@ internal static class CliParsing
     public static long ParseNonNegativeLong(string value, string name)
     {
         if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
+        {
+            throw new InvalidOperationException($"Invalid {name}.");
+        }
+
+        return parsed;
+    }
+
+    public static int ParsePositiveInt(string value, string name)
+    {
+        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) || parsed <= 0)
         {
             throw new InvalidOperationException($"Invalid {name}.");
         }
@@ -167,6 +178,48 @@ internal static class CliParsing
 
         var nodeId = ParseNodeId(nodeIdText);
         return (ip, nodeId);
+    }
+
+    public static ZeroTierBondPolicy ParseBondPolicy(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException("Invalid bond policy.");
+        }
+
+        value = value.Trim();
+        return value switch
+        {
+            "off" => ZeroTierBondPolicy.Off,
+            "active-backup" or "activebackup" => ZeroTierBondPolicy.ActiveBackup,
+            "broadcast" => ZeroTierBondPolicy.Broadcast,
+            "balance-rr" or "balance-roundrobin" or "balance-round-robin" or "roundrobin" or "rr" => ZeroTierBondPolicy.BalanceRoundRobin,
+            "balance-xor" or "xor" => ZeroTierBondPolicy.BalanceXor,
+            "balance-aware" or "aware" => ZeroTierBondPolicy.BalanceAware,
+            _ => throw new InvalidOperationException("Invalid bond policy (expected off|active-backup|broadcast|balance-rr|balance-xor|balance-aware).")
+        };
+    }
+
+    public static IReadOnlyList<int> ParsePortList(string value, string name)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Invalid {name}.");
+        }
+
+        var parts = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            throw new InvalidOperationException($"Invalid {name}.");
+        }
+
+        var ports = new int[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
+        {
+            ports[i] = ParseUShortPortAllowZero(parts[i], name);
+        }
+
+        return ports;
     }
 
     private static bool ContainsHexLetters(ReadOnlySpan<char> value)

@@ -4,6 +4,7 @@ internal sealed class UserSpaceTcpRemoteSendWindow
 {
     private ushort _window = ushort.MaxValue;
     private TaskCompletionSource<bool>? _windowTcs;
+    private Exception? _terminalException;
     private readonly object _lock = new();
 
     public ushort Window => _window;
@@ -29,6 +30,7 @@ internal sealed class UserSpaceTcpRemoteSendWindow
         TaskCompletionSource<bool>? toRelease = null;
         lock (_lock)
         {
+            _terminalException ??= exception;
             if (_windowTcs is not null)
             {
                 toRelease = _windowTcs;
@@ -45,6 +47,11 @@ internal sealed class UserSpaceTcpRemoteSendWindow
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (_terminalException is not null)
+            {
+                throw _terminalException;
+            }
+
             if (_window != 0)
             {
                 return;
@@ -53,6 +60,11 @@ internal sealed class UserSpaceTcpRemoteSendWindow
             TaskCompletionSource<bool> tcs;
             lock (_lock)
             {
+                if (_terminalException is not null)
+                {
+                    throw _terminalException;
+                }
+
                 if (_window != 0)
                 {
                     return;

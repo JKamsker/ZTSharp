@@ -24,7 +24,7 @@ public sealed class ZeroTierMulticastGatherClientTests
             (byte[])localIdentity.PrivateKey.Clone());
 
         await using var rootUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
-        var rootEndpoint = rootUdp.LocalEndpoint;
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint);
 
         await using var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
 
@@ -81,7 +81,7 @@ public sealed class ZeroTierMulticastGatherClientTests
             (byte[])localIdentity.PrivateKey.Clone());
 
         await using var rootUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
-        var rootEndpoint = rootUdp.LocalEndpoint;
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(rootUdp.LocalEndpoint);
 
         await using var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: true);
 

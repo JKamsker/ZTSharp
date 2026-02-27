@@ -1,3 +1,4 @@
+using System;
 using System.Net;
 using System.Net.Sockets;
 
@@ -16,27 +17,69 @@ internal static class OsUdpSocketFactory
 
     private static UdpClient CreateSocketCore(int localPort, bool enableIpv6)
     {
+        return CreateSocketCore(
+            localPort,
+            enableIpv6,
+            CreateUdp4Bound,
+            CreateUdp6DualModeBound,
+            CreateUdp6OnlyBound);
+    }
+
+    internal static UdpClient CreateSocketCore(
+        int localPort,
+        bool enableIpv6,
+        Func<int, UdpClient> createUdp4Bound,
+        Func<int, UdpClient> createUdp6DualModeBound,
+        Func<int, UdpClient> createUdp6OnlyBound)
+    {
+        ArgumentNullException.ThrowIfNull(createUdp4Bound);
+        ArgumentNullException.ThrowIfNull(createUdp6DualModeBound);
+        ArgumentNullException.ThrowIfNull(createUdp6OnlyBound);
+
         if (!enableIpv6)
         {
-            var udp4 = new UdpClient(AddressFamily.InterNetwork);
-            udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-            return udp4;
+            return createUdp4Bound(localPort);
         }
 
         try
         {
-            var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
-            udp6.Client.DualMode = true;
-            udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
-            return udp6;
+            return createUdp6DualModeBound(localPort);
         }
         catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
         {
         }
 
-        var udpFallback = new UdpClient(AddressFamily.InterNetwork);
-        udpFallback.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
-        return udpFallback;
+        try
+        {
+            return createUdp6OnlyBound(localPort);
+        }
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
+        {
+        }
+
+        return createUdp4Bound(localPort);
+    }
+
+    private static UdpClient CreateUdp4Bound(int localPort)
+    {
+        var udp4 = new UdpClient(AddressFamily.InterNetwork);
+        udp4.Client.Bind(new IPEndPoint(IPAddress.Any, localPort));
+        return udp4;
+    }
+
+    private static UdpClient CreateUdp6DualModeBound(int localPort)
+    {
+        var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
+        udp6.Client.DualMode = true;
+        udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
+        return udp6;
+    }
+
+    private static UdpClient CreateUdp6OnlyBound(int localPort)
+    {
+        var udp6 = new UdpClient(AddressFamily.InterNetworkV6);
+        udp6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, localPort));
+        return udp6;
     }
 
     private static void TryDisableWindowsUdpConnReset(UdpClient udp, Action<string>? log)
@@ -48,11 +91,11 @@ internal static class OsUdpSocketFactory
 
         try
         {
-            udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, [0], null);
+            udp.Client.IOControl((IOControlCode)WindowsSioUdpConnReset, CreateWindowsSioUdpConnResetInputBuffer(disableConnReset: true), null);
         }
-        catch (SocketException)
+        catch (SocketException ex)
         {
-            log?.Invoke("Failed to disable UDP connection reset handling (SocketException).");
+            log?.Invoke($"Failed to disable UDP connection reset handling (SocketException {ex.SocketErrorCode}: {ex.Message}).");
         }
         catch (PlatformNotSupportedException)
         {
@@ -71,4 +114,7 @@ internal static class OsUdpSocketFactory
             log?.Invoke("Failed to disable UDP connection reset handling (InvalidOperationException).");
         }
     }
+
+    internal static byte[] CreateWindowsSioUdpConnResetInputBuffer(bool disableConnReset)
+        => BitConverter.GetBytes(disableConnReset ? 0 : 1);
 }

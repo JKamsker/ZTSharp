@@ -16,6 +16,7 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
     private bool _disposed;
+    private int _disposeState;
 
     internal ZeroTierUdpSocket(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort)
     {
@@ -179,6 +180,11 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
         await _disposeLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -194,8 +200,9 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
         }
+
+        _disposeLock.Dispose();
     }
 
     private static ushort GenerateIpIdentification()

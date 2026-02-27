@@ -12,7 +12,7 @@ internal static class ZeroTierWhoisClient
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
 
     public static async Task<ZeroTierIdentity> WhoisAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
@@ -76,9 +76,26 @@ internal static class ZeroTierWhoisClient
                 }
 
                 var ptr = OkIndexPayload;
-                while (ptr < packetBytes.Length)
+                var identitiesParsed = 0;
+                while (ptr < packetBytes.Length && identitiesParsed < 32)
                 {
-                    var identity = ZeroTierIdentityCodec.Deserialize(packetBytes.AsSpan(ptr), out var bytesRead);
+                    ZeroTierIdentity identity;
+                    int bytesRead;
+                    try
+                    {
+                        identity = ZeroTierIdentityCodec.Deserialize(packetBytes.AsSpan(ptr), out bytesRead);
+                    }
+                    catch (FormatException)
+                    {
+                        break;
+                    }
+
+                    if (bytesRead <= 0)
+                    {
+                        break;
+                    }
+
+                    identitiesParsed++;
                     ptr += bytesRead;
                     if (identity.NodeId == controllerNodeId)
                     {

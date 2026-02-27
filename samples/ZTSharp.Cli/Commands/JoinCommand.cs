@@ -17,6 +17,12 @@ internal static class JoinCommand
         var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
         var once = false;
 
+        var mpEnabled = false;
+        var mpBondPolicy = ZeroTierBondPolicy.Off;
+        int? mpUdpSockets = null;
+        IReadOnlyList<int>? mpUdpPorts = null;
+        var mpWarmupRoot = true;
+
         for (var i = 0; i < commandArgs.Length; i++)
         {
             var arg = commandArgs[i];
@@ -64,6 +70,41 @@ internal static class JoinCommand
                 case "--once":
                     once = true;
                     break;
+                case "--multipath":
+                    mpEnabled = true;
+                    break;
+                case "--mp-bond":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-bond");
+                        mpBondPolicy = CliParsing.ParseBondPolicy(value);
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-sockets":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-sockets");
+                        mpUdpSockets = CliParsing.ParsePositiveInt(value, "--mp-udp-sockets value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-ports":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-ports");
+                        mpUdpPorts = CliParsing.ParsePortList(value, "--mp-udp-ports value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-warmup-root":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-warmup-root");
+                        if (!bool.TryParse(value, out mpWarmupRoot))
+                        {
+                            throw new InvalidOperationException("Invalid --mp-warmup-root value (expected true|false).");
+                        }
+
+                        mpEnabled = true;
+                        break;
+                    }
                 default:
                     throw new InvalidOperationException($"Unknown option '{arg}'.");
             }
@@ -82,7 +123,16 @@ internal static class JoinCommand
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunJoinZeroTierAsync(statePath, networkId, once, cancellation.Token).ConfigureAwait(false);
+            var multipath = new ZeroTierMultipathOptions
+            {
+                Enabled = mpEnabled,
+                BondPolicy = mpBondPolicy,
+                UdpSocketCount = mpUdpSockets ?? 1,
+                LocalUdpPorts = mpUdpPorts,
+                WarmupDuplicateToRoot = mpWarmupRoot
+            };
+
+            await RunJoinZeroTierAsync(statePath, networkId, multipath, once, cancellation.Token).ConfigureAwait(false);
             return;
         }
 
@@ -134,12 +184,18 @@ internal static class JoinCommand
         }
     }
 
-    private static async Task RunJoinZeroTierAsync(string statePath, ulong networkId, bool once, CancellationToken cancellationToken)
+    private static async Task RunJoinZeroTierAsync(
+        string statePath,
+        ulong networkId,
+        ZeroTierMultipathOptions multipath,
+        bool once,
+        CancellationToken cancellationToken)
     {
         var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
         {
             StateRootPath = statePath,
-            NetworkId = networkId
+            NetworkId = networkId,
+            Multipath = multipath
         }, cancellationToken).ConfigureAwait(false);
 
         try

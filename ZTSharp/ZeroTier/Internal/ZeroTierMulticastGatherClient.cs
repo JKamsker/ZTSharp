@@ -14,7 +14,7 @@ internal static class ZeroTierMulticastGatherClient
     private const int OkIndexPayload = OkIndexInRePacketId + 8;
 
     public static async Task<(uint TotalKnown, NodeId[] Members)> GatherAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
@@ -41,7 +41,7 @@ internal static class ZeroTierMulticastGatherClient
             .ConfigureAwait(false);
 
     public static async Task<(uint TotalKnown, NodeId[] Members)> GatherAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,

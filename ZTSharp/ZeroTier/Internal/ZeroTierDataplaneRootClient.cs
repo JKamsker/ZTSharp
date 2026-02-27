@@ -11,7 +11,7 @@ internal sealed class ZeroTierDataplaneRootClient
 {
     private static readonly TimeSpan MulticastGatherTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
@@ -24,7 +24,7 @@ internal sealed class ZeroTierDataplaneRootClient
     private readonly ConcurrentDictionary<ulong, TaskCompletionSource<(uint TotalKnown, NodeId[] Members)>> _pendingGather = new();
 
     public ZeroTierDataplaneRootClient(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
@@ -50,14 +50,14 @@ internal sealed class ZeroTierDataplaneRootClient
 
     public async Task<NodeId> ResolveNodeIdAsync(
         IPAddress managedIp,
-        ConcurrentDictionary<IPAddress, NodeId> cache,
+        ManagedIpToNodeIdCache cache,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(managedIp);
         ArgumentNullException.ThrowIfNull(cache);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (cache.TryGetValue(managedIp, out var cachedNodeId))
+        if (cache.TryGet(managedIp, out var cachedNodeId))
         {
             if (ZeroTierTrace.Enabled)
             {
@@ -82,7 +82,15 @@ internal sealed class ZeroTierDataplaneRootClient
             ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} -> {remoteNodeId} (members: {members.Length}/{totalKnown}: {list}{suffix}; root: {_rootNodeId} via {_rootEndpoint}).");
         }
 
-        cache[managedIp] = remoteNodeId;
+        if (members.Length == 1)
+        {
+            cache.SetResolved(managedIp, remoteNodeId);
+        }
+        else if (ZeroTierTrace.Enabled)
+        {
+            ZeroTierTrace.WriteLine($"[zerotier] Resolve {managedIp} is ambiguous (members: {members.Length}); skipping cache.");
+        }
+
         return remoteNodeId;
     }
 

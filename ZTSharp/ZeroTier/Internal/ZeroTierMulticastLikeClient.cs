@@ -8,7 +8,7 @@ namespace ZTSharp.ZeroTier.Internal;
 internal static class ZeroTierMulticastLikeClient
 {
     public static async Task SendAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,

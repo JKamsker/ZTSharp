@@ -7,6 +7,7 @@ namespace ZTSharp.ZeroTier.Internal;
 internal static class ZeroTierSocketStatePersistence
 {
     private const long MaxNetworkConfigBytes = 1L * 1024 * 1024;
+    private const int MaxManagedIpsFileBytes = 256 * 1024;
 
     public static IPAddress[] LoadManagedIps(string statePath, ulong networkId)
     {
@@ -22,10 +23,30 @@ internal static class ZeroTierSocketStatePersistence
 
         try
         {
-            var lines = File.ReadAllLines(path);
-            var ips = new List<IPAddress>(lines.Length);
-            foreach (var line in lines)
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 16 * 1024,
+                options: FileOptions.SequentialScan);
+
+            if (stream.Length <= 0 || stream.Length > MaxManagedIpsFileBytes)
             {
+                return Array.Empty<IPAddress>();
+            }
+
+            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 8 * 1024, leaveOpen: true);
+            var ips = new List<IPAddress>();
+
+            while (true)
+            {
+                var line = reader.ReadLine();
+                if (line is null)
+                {
+                    break;
+                }
+
                 if (IPAddress.TryParse(line.Trim(), out var ip))
                 {
                     ips.Add(ip);
@@ -58,13 +79,12 @@ internal static class ZeroTierSocketStatePersistence
 
         try
         {
-            var fileInfo = new FileInfo(path);
-            if (fileInfo.Length == 0 || fileInfo.Length > int.MaxValue || fileInfo.Length > MaxNetworkConfigBytes)
+            if (!BoundedFileIO.TryReadAllBytes(path, maxBytes: (int)MaxNetworkConfigBytes, out var bytes))
             {
                 return null;
             }
 
-            return File.ReadAllBytes(path);
+            return bytes;
         }
         catch (IOException)
         {

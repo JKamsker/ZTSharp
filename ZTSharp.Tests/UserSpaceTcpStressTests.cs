@@ -119,8 +119,8 @@ public sealed class UserSpaceTcpStressTests
 
         var writeTask = client.WriteAsync(payload, cts.Token).AsTask();
 
-        await Task.Delay(200, cts.Token);
-        Assert.False(writeTask.IsCompleted, "Writer should block when the remote receive window reaches 0.");
+        _ = await Assert.ThrowsAsync<TimeoutException>(async () =>
+            await writeTask.WaitAsync(TimeSpan.FromMilliseconds(200), cts.Token));
 
         var received = new byte[payload.Length];
         var readTask = UserSpaceTcpTestHelpers.ReadExactAsync(server, received, received.Length, cts.Token);

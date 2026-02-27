@@ -6,7 +6,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierIpv4LinkSender
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly IPEndPoint _relayEndpoint;
     private readonly ZeroTierDirectEndpointManager _directEndpoints;
     private readonly NodeId _localNodeId;
@@ -20,7 +20,7 @@ internal sealed class ZeroTierIpv4LinkSender
     private int _traceTxRemaining = 20;
 
     public ZeroTierIpv4LinkSender(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         IPEndPoint relayEndpoint,
         ZeroTierDirectEndpointManager directEndpoints,
         NodeId localNodeId,

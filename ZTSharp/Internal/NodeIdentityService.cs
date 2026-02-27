@@ -40,6 +40,7 @@ internal sealed class NodeIdentityService
         await _store.WriteAsync(NodeStoreKeys.IdentitySecretKey, identity.SecretKey, cancellationToken).ConfigureAwait(false);
         await _store.WriteAsync(NodeStoreKeys.IdentityPublicKey, identity.PublicKey, cancellationToken).ConfigureAwait(false);
         await _store.WriteAsync(NodeStoreKeys.PlanetKey, ReadOnlyMemory<byte>.Empty, cancellationToken).ConfigureAwait(false);
+        // Secret-key file permissions are state-store dependent. FileStateStore performs best-effort hardening on Unix.
         _events.Publish(EventCode.IdentityInitialized, DateTimeOffset.UtcNow);
         return identity;
     }

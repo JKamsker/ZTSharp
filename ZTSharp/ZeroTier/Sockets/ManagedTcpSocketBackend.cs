@@ -10,6 +10,7 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
     private IPEndPoint? _remoteEndPoint;
     private Stream? _stream;
     private ZeroTierTcpListener? _listener;
+    private int _connectInProgress;
 
     public ManagedTcpSocketBackend(ZeroTierSocket zeroTier, AddressFamily addressFamily)
         : base(zeroTier)
@@ -76,7 +77,6 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
 
     public override async ValueTask ListenAsync(int backlog, CancellationToken cancellationToken)
     {
-        _ = backlog;
         cancellationToken.ThrowIfCancellationRequested();
         ObjectDisposedException.ThrowIf(Disposed, this);
 
@@ -105,8 +105,9 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                 throw new NotSupportedException("Listening on port 0 is not supported. Bind to a concrete port first.");
             }
 
+            var acceptQueueCapacity = backlog <= 0 ? 128 : backlog;
             _listener = await Zt
-                .ListenTcpAsync(_localEndPoint.Address, _localEndPoint.Port, cancellationToken)
+                .ListenTcpAsync(_localEndPoint.Address, _localEndPoint.Port, acceptQueueCapacity, cancellationToken)
                 .ConfigureAwait(false);
 
             _localEndPoint = _listener.LocalEndpoint;
@@ -123,10 +124,8 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         ObjectDisposedException.ThrowIf(Disposed, this);
 
         var listener = _listener ?? throw new InvalidOperationException("Socket is not listening.");
-        var stream = await listener.AcceptAsync(cancellationToken).ConfigureAwait(false);
-
-        var local = listener.LocalEndpoint;
-        return new ManagedTcpSocketBackend(Zt, local, remoteEndPoint: null, connectedStream: stream);
+        var (stream, local, remote) = await listener.AcceptWithEndpointsAsync(cancellationToken).ConfigureAwait(false);
+        return new ManagedTcpSocketBackend(Zt, local, remote, connectedStream: stream);
     }
 
     public override async ValueTask ConnectAsync(EndPoint remoteEndPoint, CancellationToken cancellationToken)
@@ -145,40 +144,75 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
             throw new NotSupportedException("Remote address family must match the socket address family.");
         }
 
-        await InitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (Interlocked.CompareExchange(ref _connectInProgress, 1, 0) != 0)
+        {
+            throw new InvalidOperationException("Socket connect is already in progress.");
+        }
+
+        IPEndPoint? local;
         try
         {
-            ObjectDisposedException.ThrowIf(Disposed, this);
-
-            if (_stream is not null)
+            await InitLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                throw new InvalidOperationException("Socket is already connected.");
+                ObjectDisposedException.ThrowIf(Disposed, this);
+
+                if (_stream is not null)
+                {
+                    throw new InvalidOperationException("Socket is already connected.");
+                }
+
+                if (_listener is not null)
+                {
+                    throw new InvalidOperationException("Socket is listening. Create a new socket for outgoing connections.");
+                }
+
+                local = _localEndPoint;
+            }
+            finally
+            {
+                InitLock.Release();
             }
 
-            if (_listener is not null)
-            {
-                throw new InvalidOperationException("Socket is listening. Create a new socket for outgoing connections.");
-            }
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, ShutdownToken);
+            var token = linkedCts.Token;
 
-            var local = _localEndPoint;
             if (local is not null)
             {
                 local = await ManagedSocketEndpointNormalizer
-                    .NormalizeLocalEndpointAsync(Zt, AddressFamily, local, cancellationToken)
+                    .NormalizeLocalEndpointAsync(Zt, AddressFamily, local, token)
                     .ConfigureAwait(false);
             }
 
             (Stream stream, IPEndPoint localEndpoint) = local is null
-                ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, cancellationToken).ConfigureAwait(false)
-                : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, cancellationToken).ConfigureAwait(false);
+                ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, token).ConfigureAwait(false)
+                : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, token).ConfigureAwait(false);
 
-            _stream = stream;
-            _remoteEndPoint = remoteIp;
-            _localEndPoint = localEndpoint;
+            await InitLock.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                ObjectDisposedException.ThrowIf(Disposed, this);
+                _stream = stream;
+                _remoteEndPoint = remoteIp;
+                _localEndPoint = localEndpoint;
+            }
+            catch
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
+            finally
+            {
+                InitLock.Release();
+            }
+        }
+        catch (OperationCanceledException) when (ShutdownToken.IsCancellationRequested)
+        {
+            throw new ObjectDisposedException(GetType().FullName);
         }
         finally
         {
-            InitLock.Release();
+            Interlocked.Exchange(ref _connectInProgress, 0);
         }
     }
 

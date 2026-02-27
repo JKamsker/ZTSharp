@@ -27,6 +27,12 @@ internal static class ExposeCommand
         IPEndPoint? advertisedEndpoint = null;
         var peers = new List<(ulong NodeId, IPEndPoint Endpoint)>();
 
+        var mpEnabled = false;
+        var mpBondPolicy = ZeroTierBondPolicy.Off;
+        int? mpUdpSockets = null;
+        IReadOnlyList<int>? mpUdpPorts = null;
+        var mpWarmupRoot = true;
+
         for (var i = 1; i < commandArgs.Length; i++)
         {
             var arg = commandArgs[i];
@@ -83,6 +89,41 @@ internal static class ExposeCommand
                         peers.Add(parsed);
                         break;
                     }
+                case "--multipath":
+                    mpEnabled = true;
+                    break;
+                case "--mp-bond":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-bond");
+                        mpBondPolicy = CliParsing.ParseBondPolicy(value);
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-sockets":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-sockets");
+                        mpUdpSockets = CliParsing.ParsePositiveInt(value, "--mp-udp-sockets value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-ports":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-ports");
+                        mpUdpPorts = CliParsing.ParsePortList(value, "--mp-udp-ports value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-warmup-root":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-warmup-root");
+                        if (!bool.TryParse(value, out mpWarmupRoot))
+                        {
+                            throw new InvalidOperationException("Invalid --mp-warmup-root value (expected true|false).");
+                        }
+
+                        mpEnabled = true;
+                        break;
+                    }
                 default:
                     throw new InvalidOperationException($"Unknown option '{arg}'.");
             }
@@ -105,9 +146,19 @@ internal static class ExposeCommand
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
+            var multipath = new ZeroTierMultipathOptions
+            {
+                Enabled = mpEnabled,
+                BondPolicy = mpBondPolicy,
+                UdpSocketCount = mpUdpSockets ?? 1,
+                LocalUdpPorts = mpUdpPorts,
+                WarmupDuplicateToRoot = mpWarmupRoot
+            };
+
             await RunExposeZeroTierAsync(
                     statePath,
                     networkId,
+                    multipath,
                     overlayListenPort.Value,
                     target.Value.Host,
                     target.Value.Port,
@@ -182,6 +233,7 @@ internal static class ExposeCommand
     private static async Task RunExposeZeroTierAsync(
         string statePath,
         ulong networkId,
+        ZeroTierMultipathOptions multipath,
         int listenPort,
         string targetHost,
         int targetPort,
@@ -195,7 +247,8 @@ internal static class ExposeCommand
         var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
         {
             StateRootPath = statePath,
-            NetworkId = networkId
+            NetworkId = networkId,
+            Multipath = multipath
         }, cancellationToken).ConfigureAwait(false);
 
         ZeroTierTcpListener? listener = null;

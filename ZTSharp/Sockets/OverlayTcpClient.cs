@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.IO;
+using System.Net.Sockets;
 
 namespace ZTSharp.Sockets;
 
@@ -159,9 +160,10 @@ public sealed class OverlayTcpClient : IAsyncDisposable
             {
                 try
                 {
-                    await SendControlFrameAsync(OverlayTcpFrameCodec.FrameType.Fin, CancellationToken.None).ConfigureAwait(false);
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                    await SendControlFrameAsync(OverlayTcpFrameCodec.FrameType.Fin, cts.Token).ConfigureAwait(false);
                 }
-                catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or OperationCanceledException)
+                catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException or OperationCanceledException or SocketException)
                 {
                 }
             }

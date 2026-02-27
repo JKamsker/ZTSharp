@@ -15,5 +15,6 @@ public sealed class ZeroTierSocketOptions
     public ZeroTierPlanetSource PlanetSource { get; init; } = ZeroTierPlanetSource.EmbeddedDefault;
 
     public string? PlanetFilePath { get; init; }
-}
 
+    public ZeroTierMultipathOptions Multipath { get; init; } = new();
+}

@@ -38,7 +38,7 @@ public sealed class ZtUdpClient : IAsyncDisposable
         _incoming = Channel.CreateBounded<UdpDatagram>(new BoundedChannelOptions(capacity: 1024)
         {
             FullMode = BoundedChannelFullMode.DropWrite,
-            SingleWriter = true,
+            SingleWriter = false,
             SingleReader = true
         });
         _ = ownsConnection;

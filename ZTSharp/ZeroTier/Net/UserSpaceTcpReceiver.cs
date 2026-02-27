@@ -270,7 +270,21 @@ internal sealed class UserSpaceTcpReceiver
             return new ValueTask<ProcessSegmentResult>(result);
         }
 
-        var flushTask = _incoming.Writer.FlushAsync(CancellationToken.None);
+        ValueTask<FlushResult> flushTask;
+        try
+        {
+            flushTask = _incoming.Writer.FlushAsync(CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            if (markRemoteClosed)
+            {
+                MarkRemoteClosed();
+            }
+
+            return new ValueTask<ProcessSegmentResult>(result);
+        }
+
         if (flushTask.IsCompletedSuccessfully)
         {
             if (markRemoteClosed)
@@ -289,7 +303,20 @@ internal sealed class UserSpaceTcpReceiver
         ProcessSegmentResult result,
         bool markRemoteClosed)
     {
-        await flushTask.ConfigureAwait(false);
+        try
+        {
+            await flushTask.ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            if (markRemoteClosed)
+            {
+                MarkRemoteClosed();
+            }
+
+            return result;
+        }
+
         if (markRemoteClosed)
         {
             MarkRemoteClosed();

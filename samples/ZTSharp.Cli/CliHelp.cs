@@ -27,6 +27,13 @@ internal static class CliHelp
               --peer <nodeId@ip:port>     Add an OS UDP peer (repeatable)
               --http <overlay|os>         HTTP mode for 'call' (default: overlay)
               --map-ip <ip=nodeId>        Map IP to node id for overlay HTTP (repeatable)
+
+              --multipath                 Enable experimental multipath direct-path selection and bonding (managed stack only)
+              --mp-bond <policy>          Bond policy: off|active-backup|broadcast|balance-rr|balance-xor|balance-aware (default: off)
+              --mp-udp-sockets <n>        Number of UDP sockets to open when multipath is enabled (default: 1)
+              --mp-udp-ports <p1,p2,..>   Explicit local UDP ports for multipath sockets (0 = ephemeral; length must match --mp-udp-sockets)
+              --mp-warmup-root <bool>     Duplicate unconfirmed direct-path sends to the root relay (default: true)
+
               --once                      For 'join': initialize and exit
             """);
     }

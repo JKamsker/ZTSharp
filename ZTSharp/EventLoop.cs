@@ -31,6 +31,7 @@ internal sealed class EventLoop : IDisposable
     private readonly EventLoopWorkQueue _work;
 
     private bool _disposed;
+    private Exception? _fault;
 
     public EventLoop(
         TimeSpan pollInterval,
@@ -150,8 +151,13 @@ internal sealed class EventLoop : IDisposable
         catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex)
         {
+            lock (_gate)
+            {
+                _fault ??= ex;
+            }
+
             _cts.Cancel();
         }
     }
@@ -281,6 +287,11 @@ internal sealed class EventLoop : IDisposable
 
     private void ThrowIfDisposed()
     {
+        if (_fault is not null)
+        {
+            throw new InvalidOperationException("Event loop is faulted.", _fault);
+        }
+
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
 }

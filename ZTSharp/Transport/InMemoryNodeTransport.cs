@@ -115,6 +115,7 @@ internal sealed class InMemoryNodeTransport : INodeTransport, IDisposable
         }
 
         var subscribers = Volatile.Read(ref entry.Subscribers);
+        var dispatchToken = CancellationToken.None;
         for (var i = 0; i < subscribers.Length; i++)
         {
             var subscriber = subscribers[i];
@@ -123,11 +124,10 @@ internal sealed class InMemoryNodeTransport : INodeTransport, IDisposable
                 continue;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            var task = subscriber.OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken);
+            var task = subscriber.OnFrameReceived(sourceNodeId, networkId, payload, dispatchToken);
             if (!task.IsCompletedSuccessfully)
             {
-                return SendFrameSlowAsync(subscribers, i + 1, task, sourceNodeId, networkId, payload, cancellationToken);
+                return SendFrameSlowAsync(subscribers, i + 1, task, sourceNodeId, networkId, payload, dispatchToken);
             }
         }
 
@@ -149,7 +149,6 @@ internal sealed class InMemoryNodeTransport : INodeTransport, IDisposable
         ReadOnlyMemory<byte> payload,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         await currentTask.ConfigureAwait(false);
         for (var i = nextIndex; i < subscribers.Length; i++)
         {
@@ -159,7 +158,6 @@ internal sealed class InMemoryNodeTransport : INodeTransport, IDisposable
                 continue;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
             await subscriber.OnFrameReceived(sourceNodeId, networkId, payload, cancellationToken).ConfigureAwait(false);
         }
     }

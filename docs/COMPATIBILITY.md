@@ -12,9 +12,9 @@ controller-based networks and provide user-space TCP/UDP sockets. The following 
 | Area | Gap |
 |:-----|:----|
 | OS adapter | No virtual network interface -- traffic is in-process only |
-| Dataplane | Root-relayed only; no direct path negotiation or NAT traversal |
+| Dataplane | Root-relayed by default. Experimental multipath mode supports hop-0 path learning, direct sends, RTT keepalives (`ECHO`), QoS measurement (`QOS_MEASUREMENT`), path negotiation (`PATH_NEGOTIATION_REQUEST`), and basic bonding policies. Still missing: full upstream Bond quality estimation (throughput/variance), ACK logic, and full parity with `ZeroTierOne` policy tuning. |
 | Protocol coverage | Focused on join + IP dataplane + TCP/UDP socket MVP |
-| Socket options | No `SocketOptionName` support; accepted sockets lack reliable `RemoteEndPoint` |
+| Socket options | No `SocketOptionName` support (`NoDelay`, `KeepAlive`, etc.); some endpoint metadata differs from OS sockets |
 | TCP performance | No congestion control or high-throughput send pipelines |
 
 ---
@@ -27,6 +27,7 @@ It uses a custom wire format and transport layer.
 **Not implemented:**
 
 - Real ZeroTier wire format, crypto, verbs, paths, NAT traversal
+- Cryptographic authentication/encryption for legacy overlay frames
 - Planet/roots processing or controller interaction
 - OS virtual network interface (TUN/TAP)
 

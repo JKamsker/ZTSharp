@@ -6,29 +6,39 @@ using ZTSharp.ZeroTier.Internal;
 
 namespace ZTSharp.ZeroTier.Transport;
 
-internal sealed class ZeroTierUdpTransport : IAsyncDisposable
+internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
 {
     private readonly UdpClient _udp;
     private readonly Channel<ZeroTierUdpDatagram> _incoming;
     private readonly Action<string>? _log;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _receiverLoop;
+    private readonly int _localSocketId;
+    private long _incomingBackpressureCount;
     private bool _disposed;
 
-    public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null)
+    public ZeroTierUdpTransport(int localPort = 0, bool enableIpv6 = true, Action<string>? log = null, int localSocketId = 0)
     {
         _log = log;
+        _localSocketId = localSocketId;
         _udp = OsUdpSocketFactory.Create(localPort, enableIpv6, Log);
 
         _incoming = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleWriter = true
         });
         _receiverLoop = Task.Run(ProcessReceiveLoopAsync);
     }
 
+    public int LocalSocketId => _localSocketId;
+
     public IPEndPoint LocalEndpoint => UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
+
+    public IReadOnlyList<ZeroTierUdpLocalSocket> LocalSockets
+        => new[] { new ZeroTierUdpLocalSocket(_localSocketId, LocalEndpoint) };
+
+    public long IncomingBackpressureCount => Interlocked.Read(ref _incomingBackpressureCount);
 
     public ValueTask<ZeroTierUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
     {
@@ -50,7 +60,18 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(remoteEndpoint);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        UdpEndpointNormalization.ValidateRemoteEndpoint(remoteEndpoint, nameof(remoteEndpoint));
         return _udp.SendAsync(payload, remoteEndpoint, cancellationToken).AsTask();
+    }
+
+    public Task SendAsync(int localSocketId, IPEndPoint remoteEndpoint, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
+    {
+        if (localSocketId != _localSocketId)
+        {
+            throw new ArgumentOutOfRangeException(nameof(localSocketId), localSocketId, $"Invalid local socket id. This transport exposes only id {_localSocketId}.");
+        }
+
+        return SendAsync(remoteEndpoint, payload, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -105,10 +126,27 @@ internal sealed class ZeroTierUdpTransport : IAsyncDisposable
             }
 
             if (!_incoming.Writer.TryWrite(new ZeroTierUdpDatagram(
+                    _localSocketId,
                     UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
                     result.Buffer)))
             {
-                return;
+                try
+                {
+                    var write = _incoming.Writer.WriteAsync(new ZeroTierUdpDatagram(
+                        _localSocketId,
+                        UdpEndpointNormalization.Normalize(result.RemoteEndPoint),
+                        result.Buffer), token);
+                    if (!write.IsCompletedSuccessfully)
+                    {
+                        Interlocked.Increment(ref _incomingBackpressureCount);
+                    }
+
+                    await write.ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or ChannelClosedException)
+                {
+                    return;
+                }
             }
         }
     }

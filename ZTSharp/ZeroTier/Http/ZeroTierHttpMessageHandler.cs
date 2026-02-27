@@ -1,12 +1,14 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using ZTSharp.ZeroTier.Internal;
 
 namespace ZTSharp.ZeroTier.Http;
 
 public sealed class ZeroTierHttpMessageHandler : DelegatingHandler
 {
     private readonly ZeroTier.ZeroTierSocket _socket;
+    private static readonly TimeSpan DefaultPerAddressConnectTimeout = TimeSpan.FromSeconds(2);
 
     public ZeroTierHttpMessageHandler(ZeroTier.ZeroTierSocket socket)
     {
@@ -29,8 +31,12 @@ public sealed class ZeroTierHttpMessageHandler : DelegatingHandler
         var endpoint = context.DnsEndPoint;
         if (IPAddress.TryParse(endpoint.Host, out var ip))
         {
-            return await _socket
-                .ConnectTcpAsync(new IPEndPoint(ip, endpoint.Port), cancellationToken)
+            return await ConnectToResolvedAddressesAsync(
+                    endpoint,
+                    new[] { ip },
+                    connectAsync: (ep, ct) => _socket.ConnectTcpAsync(ep, ct),
+                    perAddressConnectTimeout: DefaultPerAddressConnectTimeout,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -58,9 +64,36 @@ public sealed class ZeroTierHttpMessageHandler : DelegatingHandler
             throw new HttpRequestException($"Host '{endpoint.Host}' resolved to no addresses.");
         }
 
-        Exception? lastException = null;
-        foreach (var address in addresses)
+        return await ConnectToResolvedAddressesAsync(
+                endpoint,
+                addresses,
+                connectAsync: (ep, ct) => _socket.ConnectTcpAsync(ep, ct),
+                perAddressConnectTimeout: DefaultPerAddressConnectTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    internal static async ValueTask<Stream> ConnectToResolvedAddressesAsync(
+        DnsEndPoint endpoint,
+        IPAddress[] addresses,
+        Func<IPEndPoint, CancellationToken, ValueTask<Stream>> connectAsync,
+        TimeSpan perAddressConnectTimeout,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentNullException.ThrowIfNull(addresses);
+        ArgumentNullException.ThrowIfNull(connectAsync);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (perAddressConnectTimeout <= TimeSpan.Zero)
         {
+            throw new ArgumentOutOfRangeException(nameof(perAddressConnectTimeout), perAddressConnectTimeout, "Timeout must be greater than zero.");
+        }
+
+        Exception? lastException = null;
+        for (var i = 0; i < addresses.Length; i++)
+        {
+            var address = addresses[i];
             if (address.AddressFamily != AddressFamily.InterNetwork &&
                 address.AddressFamily != AddressFamily.InterNetworkV6)
             {
@@ -69,8 +102,11 @@ public sealed class ZeroTierHttpMessageHandler : DelegatingHandler
 
             try
             {
-                return await _socket
-                    .ConnectTcpAsync(new IPEndPoint(address, endpoint.Port), cancellationToken)
+                return await ZeroTierTimeouts.RunWithTimeoutAsync(
+                        perAddressConnectTimeout,
+                        operation: $"HTTP connect ({address})",
+                        action: ct => connectAsync(new IPEndPoint(address, endpoint.Port), ct),
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

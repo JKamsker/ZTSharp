@@ -11,15 +11,22 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
     private readonly ZeroTierDataplaneRuntime _sender;
     private readonly ZeroTierMac _localMac;
     private readonly IPAddress[] _localManagedIpsV6;
+    private readonly ManagedIpToNodeIdCache _managedIpToNodeId;
 
-    public ZeroTierDataplaneIcmpv6Handler(ZeroTierDataplaneRuntime sender, ZeroTierMac localMac, IPAddress[] localManagedIpsV6)
+    public ZeroTierDataplaneIcmpv6Handler(
+        ZeroTierDataplaneRuntime sender,
+        ZeroTierMac localMac,
+        IPAddress[] localManagedIpsV6,
+        ManagedIpToNodeIdCache managedIpToNodeId)
     {
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(localManagedIpsV6);
+        ArgumentNullException.ThrowIfNull(managedIpToNodeId);
 
         _sender = sender;
         _localMac = localMac;
         _localManagedIpsV6 = localManagedIpsV6;
+        _managedIpToNodeId = managedIpToNodeId;
     }
 
     public async ValueTask HandleAsync(
@@ -40,10 +47,17 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
         // Echo request / reply
         if (type == 128 && code == 0)
         {
+            if (Icmpv6Codec.ComputeChecksum(sourceIp, destinationIp, icmpSpan) != 0)
+            {
+                return;
+            }
+
             if (IsUnspecifiedIpv6(sourceIp) || !TryGetLocalManagedIpv6(destinationIp, out _))
             {
                 return;
             }
+
+            _managedIpToNodeId.LearnFromNeighbor(sourceIp, peerNodeId);
 
             var reply = icmpSpan.ToArray();
             reply[0] = 129; // Echo Reply
@@ -67,6 +81,11 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
         // Neighbor Solicitation
         if (type == 135 && code == 0)
         {
+            if (Icmpv6Codec.ComputeChecksum(sourceIp, destinationIp, icmpSpan) != 0)
+            {
+                return;
+            }
+
             if (hopLimit != 255)
             {
                 return;
@@ -82,6 +101,8 @@ internal sealed class ZeroTierDataplaneIcmpv6Handler
             {
                 return;
             }
+
+            _managedIpToNodeId.LearnFromNeighbor(sourceIp, peerNodeId);
 
             var na = new byte[32];
             var span = na.AsSpan();

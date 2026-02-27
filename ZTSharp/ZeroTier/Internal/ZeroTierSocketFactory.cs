@@ -7,6 +7,7 @@ internal static class ZeroTierSocketFactory
     public static Task<ZeroTierSocket> CreateAsync(ZeroTierSocketOptions options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Multipath);
         cancellationToken.ThrowIfCancellationRequested();
 
         ArgumentException.ThrowIfNullOrWhiteSpace(options.StateRootPath);
@@ -31,14 +32,56 @@ internal static class ZeroTierSocketFactory
             throw new ArgumentOutOfRangeException(nameof(options), "Invalid PlanetSource value.");
         }
 
-        var statePath = Path.Combine(options.StateRootPath, "zerotier");
+        if (options.Multipath.UdpSocketCount <= 0 || options.Multipath.UdpSocketCount > 8)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), "Multipath UdpSocketCount must be in the range [1, 8].");
+        }
+
+        if (options.Multipath.LocalUdpPorts is { } ports)
+        {
+            if (ports.Count != options.Multipath.UdpSocketCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts length must match UdpSocketCount.");
+            }
+
+            for (var i = 0; i < ports.Count; i++)
+            {
+                if (ports[i] < 0 || ports[i] > 65535)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts entries must be in the range [0, 65535].");
+                }
+            }
+        }
+
+        var normalizedStateRootPath = Path.GetFullPath(options.StateRootPath);
+        var normalizedMultipath = new ZeroTierMultipathOptions
+        {
+            Enabled = options.Multipath.Enabled,
+            BondPolicy = options.Multipath.BondPolicy,
+            UdpSocketCount = options.Multipath.UdpSocketCount,
+            LocalUdpPorts = options.Multipath.LocalUdpPorts is { } localPorts ? localPorts.ToArray() : null,
+            WarmupDuplicateToRoot = options.Multipath.WarmupDuplicateToRoot
+        };
+
+        var normalizedOptions = new ZeroTierSocketOptions
+        {
+            StateRootPath = normalizedStateRootPath,
+            NetworkId = options.NetworkId,
+            JoinTimeout = options.JoinTimeout,
+            LoggerFactory = options.LoggerFactory,
+            PlanetSource = options.PlanetSource,
+            PlanetFilePath = options.PlanetFilePath,
+            Multipath = normalizedMultipath
+        };
+
+        var statePath = Path.Combine(normalizedOptions.StateRootPath, "zerotier");
         Directory.CreateDirectory(statePath);
 
         var identityPath = Path.Combine(statePath, "identity.bin");
         if (!ZeroTierIdentityStore.TryLoad(identityPath, out var identity))
         {
             if (!File.Exists(identityPath) &&
-                ZeroTierSocketIdentityMigration.TryLoadLibztIdentity(options.StateRootPath, out identity))
+                ZeroTierSocketIdentityMigration.TryLoadLibztIdentity(normalizedOptions.StateRootPath, out identity))
             {
                 ZeroTierIdentityStore.Save(identityPath, identity);
             }
@@ -53,9 +96,9 @@ internal static class ZeroTierSocketFactory
             throw new InvalidOperationException($"Invalid identity at '{identityPath}'. Delete it to regenerate.");
         }
 
-        var planet = ZeroTierPlanetLoader.Load(options, cancellationToken);
+        var planet = ZeroTierPlanetLoader.Load(normalizedOptions, cancellationToken);
 
-        return Task.FromResult(new ZeroTierSocket(options, statePath, identity, planet));
+        return Task.FromResult(new ZeroTierSocket(normalizedOptions, statePath, identity, planet));
     }
 }
 

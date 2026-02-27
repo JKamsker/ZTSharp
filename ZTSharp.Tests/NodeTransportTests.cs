@@ -134,11 +134,17 @@ public sealed class NodeTransportTests
         await node1.JoinNetworkAsync(networkId);
         await node2.JoinNetworkAsync(networkId);
 
-        await Task.Delay(100);
-        await node1.SendFrameAsync(networkId, new byte[] { 9, 9, 9 });
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var expected = new byte[] { 9, 9, 9 };
+        while (!tcs.Task.IsCompleted && !cts.IsCancellationRequested)
+        {
+            await node1.SendFrameAsync(networkId, expected, cts.Token);
+            await Task.Yield();
+        }
+
         var payload = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.True(payload.Span.SequenceEqual(new byte[] { 9, 9, 9 }));
+        Assert.True(payload.Span.SequenceEqual(expected));
 
         await node1.LeaveNetworkAsync(networkId);
         await node2.LeaveNetworkAsync(networkId);

@@ -103,6 +103,7 @@ internal static class ZeroTierNetworkConfigClient
                     controllerProtocolVersion,
                     networkId,
                     GetRemainingTimeout(deadline),
+                    allowLegacyUnsignedConfig: false,
                     cancellationToken)
                 .ConfigureAwait(false);
 

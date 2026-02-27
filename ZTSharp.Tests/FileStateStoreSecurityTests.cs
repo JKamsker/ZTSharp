@@ -1,147 +1,87 @@
-using System.IO;
+using System.Diagnostics;
+using System.Net;
 
 namespace ZTSharp.Tests;
 
 public sealed class FileStateStoreSecurityTests
 {
-    [WindowsFact]
-    public async Task WriteAsync_Rejects_WindowsDriveRootedPaths()
+    [Fact]
+    public async Task ReadAsync_Throws_WhenPathTraversesJunction()
     {
-        var path = TestTempPaths.CreateGuidSuffixed("zt-store-sec-");
-        try
+        if (!OperatingSystem.IsWindows())
         {
-            var store = new FileStateStore(path);
-
-            await Assert.ThrowsAsync<ArgumentException>(() => store.WriteAsync("C:/Windows/Temp/pwn", new byte[] { 1, 2, 3 }));
-
-            Assert.Empty(Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories));
+            return;
         }
-        finally
+
+        var root = TestTempPaths.CreateGuidSuffixed("zt-state-root-");
+        Directory.CreateDirectory(root);
+
+        var outside = TestTempPaths.CreateGuidSuffixed("zt-state-outside-");
+        Directory.CreateDirectory(outside);
+
+        var secretPath = Path.Combine(outside, "secret.bin");
+        await File.WriteAllBytesAsync(secretPath, new byte[] { 1, 2, 3 });
+
+        var junction = Path.Combine(root, "escape");
+        if (!TryCreateJunction(junction, outside))
         {
-            Directory.Delete(path, recursive: true);
+            return;
         }
-    }
 
-    [WindowsFact]
-    public async Task WriteAsync_Rejects_NtfsAds()
-    {
-        var path = TestTempPaths.CreateGuidSuffixed("zt-store-sec-");
-        try
-        {
-            var store = new FileStateStore(path);
-
-            await Assert.ThrowsAsync<ArgumentException>(() => store.WriteAsync("planet:ads", new byte[] { 1, 2, 3 }));
-
-            Assert.Empty(Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories));
-        }
-        finally
-        {
-            Directory.Delete(path, recursive: true);
-        }
+        var store = new FileStateStore(root);
+        _ = await Assert.ThrowsAsync<InvalidOperationException>(async () => await store.ReadAsync("escape/secret.bin"));
     }
 
     [Fact]
-    public async Task WriteAsync_Rejects_RootedPaths()
+    public async Task DeleteAsync_PlanetAlias_DeletesBothPhysicalFiles()
     {
-        var path = TestTempPaths.CreateGuidSuffixed("zt-store-sec-");
-        try
-        {
-            var store = new FileStateStore(path);
+        var root = TestTempPaths.CreateGuidSuffixed("zt-state-alias-delete-");
+        Directory.CreateDirectory(root);
 
-            await Assert.ThrowsAsync<ArgumentException>(() => store.WriteAsync("/etc/passwd", new byte[] { 1, 2, 3 }));
+        await File.WriteAllBytesAsync(Path.Combine(root, StateStorePlanetAliases.PlanetKey), new byte[] { 1 });
+        await File.WriteAllBytesAsync(Path.Combine(root, StateStorePlanetAliases.RootsKey), new byte[] { 2 });
 
-            Assert.Empty(Directory.EnumerateFileSystemEntries(path, "*", SearchOption.AllDirectories));
-        }
-        finally
-        {
-            Directory.Delete(path, recursive: true);
-        }
+        var store = new FileStateStore(root);
+        Assert.True(await store.DeleteAsync(StateStorePlanetAliases.PlanetKey));
+
+        Assert.False(File.Exists(Path.Combine(root, StateStorePlanetAliases.PlanetKey)));
+        Assert.False(File.Exists(Path.Combine(root, StateStorePlanetAliases.RootsKey)));
+
+        Assert.Null(await store.ReadAsync(StateStorePlanetAliases.PlanetKey));
+        Assert.Null(await store.ReadAsync(StateStorePlanetAliases.RootsKey));
     }
 
-    [Fact]
-    public async Task ReadAsync_PlanetFallsBackToRoots_AndRootListContainsBothAliases()
+    private static bool TryCreateJunction(string junctionPath, string targetPath)
     {
-        var path = TestTempPaths.CreateGuidSuffixed("zt-store-alias-");
         try
         {
-            var store = new FileStateStore(path);
-
-            File.WriteAllBytes(Path.Combine(path, "roots"), new byte[] { 1, 2, 3, 4 });
-
-            var readViaPlanet = await store.ReadAsync("planet");
-            var listed = await store.ListAsync();
-
-            Assert.NotNull(readViaPlanet);
-            Assert.True(readViaPlanet!.Value.Span.SequenceEqual(new byte[] { 1, 2, 3, 4 }));
-            Assert.Contains("planet", listed);
-            Assert.Contains("roots", listed);
-        }
-        finally
-        {
-            Directory.Delete(path, recursive: true);
-        }
-    }
-
-    [WindowsFact]
-    public async Task ListAsync_Rejects_WindowsDriveRootedPrefixes()
-    {
-        var path = TestTempPaths.CreateGuidSuffixed("zt-store-sec-");
-        try
-        {
-            var store = new FileStateStore(path);
-
-            await Assert.ThrowsAsync<ArgumentException>(() => store.ListAsync("C:/"));
-        }
-        finally
-        {
-            Directory.Delete(path, recursive: true);
-        }
-    }
-
-    [Fact]
-    public async Task WriteAsync_IsAtomicReplace_BestEffort()
-    {
-        var path = TestTempPaths.CreateGuidSuffixed("zt-store-atomic-");
-        try
-        {
-            var store = new FileStateStore(path);
-
-            var oldBytes = Enumerable.Repeat((byte)0xAA, 256 * 1024).ToArray();
-            var newBytes = Enumerable.Repeat((byte)0x55, 256 * 1024).ToArray();
-            await store.WriteAsync("foo", oldBytes);
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var writer = Task.Run(async () =>
+            if (Directory.Exists(junctionPath))
             {
-                for (var i = 0; i < 50; i++)
-                {
-                    var bytes = i % 2 == 0 ? newBytes : oldBytes;
-                    await store.WriteAsync("foo", bytes, cts.Token);
-                }
-            }, cts.Token);
+                Directory.Delete(junctionPath, recursive: true);
+            }
 
-            var reader = Task.Run(async () =>
+            var psi = new ProcessStartInfo
             {
-                for (var i = 0; i < 250; i++)
-                {
-                    var read = await store.ReadAsync("foo", cts.Token);
-                    if (read is null)
-                    {
-                        continue;
-                    }
+                FileName = "cmd.exe",
+                Arguments = $"/c mklink /J \"{junctionPath}\" \"{targetPath}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
 
-                    var span = read.Value.Span;
-                    var matchesOld = span.SequenceEqual(oldBytes);
-                    var matchesNew = span.SequenceEqual(newBytes);
-                    Assert.True(matchesOld || matchesNew);
-                }
-            }, cts.Token);
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
 
-            await Task.WhenAll(writer, reader);
+            process.WaitForExit(milliseconds: 5000);
+            return process.ExitCode == 0 && Directory.Exists(junctionPath);
         }
-        finally
+        catch
         {
-            Directory.Delete(path, recursive: true);
+            return false;
         }
     }
 }

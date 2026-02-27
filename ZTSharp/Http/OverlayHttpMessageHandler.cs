@@ -14,6 +14,8 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
     private readonly ulong _networkId;
     private readonly OverlayHttpMessageHandlerOptions _options;
     private int _nextLocalPort;
+    private readonly object _localPortLock = new();
+    private readonly HashSet<int> _reservedLocalPorts = new();
 
     public OverlayHttpMessageHandler(Node node, ulong networkId, OverlayHttpMessageHandlerOptions? options = null)
     {
@@ -56,18 +58,52 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         var endpoint = context.DnsEndPoint;
         var host = GetOriginalHostOrFallback(context, endpoint.Host);
         var remoteNodeId = ResolveNodeId(host);
-        var localPort = AllocateLocalPort();
+        var localPort = await AllocateReservedLocalPortAsync(cancellationToken).ConfigureAwait(false);
 
         var client = new OverlayTcpClient(_node, _networkId, localPort);
         try
         {
             await client.ConnectAsync(remoteNodeId, endpoint.Port, cancellationToken).ConfigureAwait(false);
-            return new OwnedOverlayTcpClientStream(client);
+            return new OwnedOverlayTcpClientStream(client, onDispose: () => ReleaseLocalPort(localPort));
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await client.DisposeAsync().ConfigureAwait(false);
+            ReleaseLocalPort(localPort);
             throw;
+        }
+        catch (Exception ex) when (ex is not HttpRequestException)
+        {
+            await client.DisposeAsync().ConfigureAwait(false);
+            ReleaseLocalPort(localPort);
+            throw new HttpRequestException(
+                $"Overlay connect to '{host}:{endpoint.Port}' failed.",
+                ex);
+        }
+    }
+
+    private async Task<int> AllocateReservedLocalPortAsync(CancellationToken cancellationToken)
+    {
+        var start = _options.LocalPortStart;
+        var end = _options.LocalPortEnd;
+        var range = end - start + 1;
+        var backoffMs = 1;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            for (var i = 0; i < range; i++)
+            {
+                var candidate = AllocateLocalPort();
+                if (TryReserveLocalPort(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            await Task.Delay(backoffMs, cancellationToken).ConfigureAwait(false);
+            backoffMs = Math.Min(backoffMs * 2, 50);
         }
     }
 
@@ -79,6 +115,22 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         var next = Interlocked.Increment(ref _nextLocalPort);
         var offset = (int)((uint)next % (uint)range);
         return start + offset;
+    }
+
+    private bool TryReserveLocalPort(int port)
+    {
+        lock (_localPortLock)
+        {
+            return _reservedLocalPorts.Add(port);
+        }
+    }
+
+    private void ReleaseLocalPort(int port)
+    {
+        lock (_localPortLock)
+        {
+            _reservedLocalPorts.Remove(port);
+        }
     }
 
     private ulong ResolveNodeId(string host)

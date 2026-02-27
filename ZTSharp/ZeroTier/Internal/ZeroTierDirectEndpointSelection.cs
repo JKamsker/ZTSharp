@@ -11,6 +11,8 @@ internal static class ZeroTierDirectEndpointSelection
         ArgumentNullException.ThrowIfNull(endpoints);
         ArgumentNullException.ThrowIfNull(relayEndpoint);
 
+        relayEndpoint = Canonicalize(relayEndpoint);
+
         var publicV4 = new List<IPEndPoint>();
         var publicV6 = new List<IPEndPoint>();
         var privateV4 = new List<IPEndPoint>();
@@ -18,24 +20,35 @@ internal static class ZeroTierDirectEndpointSelection
 
         foreach (var endpoint in endpoints)
         {
-            if (endpoint.Port is < 1 or > ushort.MaxValue)
+            if (endpoint is null)
             {
                 continue;
             }
 
-            if (endpoint.Equals(relayEndpoint))
+            var canonical = Canonicalize(endpoint);
+            if (canonical.Port is < 1 or > ushort.MaxValue)
             {
                 continue;
             }
 
-            var isPublic = IsPublicAddress(endpoint.Address);
-            if (endpoint.AddressFamily == AddressFamily.InterNetwork)
+            if (canonical.Equals(relayEndpoint))
             {
-                (isPublic ? publicV4 : privateV4).Add(endpoint);
+                continue;
             }
-            else if (endpoint.AddressFamily == AddressFamily.InterNetworkV6)
+
+            if (canonical.Address.Equals(IPAddress.Any) || canonical.Address.Equals(IPAddress.IPv6Any))
             {
-                (isPublic ? publicV6 : privateV6).Add(endpoint);
+                continue;
+            }
+
+            var isPublic = IsPublicAddress(canonical.Address);
+            if (canonical.AddressFamily == AddressFamily.InterNetwork)
+            {
+                (isPublic ? publicV4 : privateV4).Add(canonical);
+            }
+            else if (canonical.AddressFamily == AddressFamily.InterNetworkV6)
+            {
+                (isPublic ? publicV6 : privateV6).Add(canonical);
             }
         }
 
@@ -74,8 +87,23 @@ internal static class ZeroTierDirectEndpointSelection
         return string.Join(", ", endpoints.Select(endpoint => endpoint.ToString()));
     }
 
+    private static IPEndPoint Canonicalize(IPEndPoint endpoint)
+    {
+        if (endpoint.AddressFamily == AddressFamily.InterNetworkV6 && endpoint.Address.IsIPv4MappedToIPv6)
+        {
+            return new IPEndPoint(endpoint.Address.MapToIPv4(), endpoint.Port);
+        }
+
+        return endpoint;
+    }
+
     private static bool IsPublicAddress(IPAddress address)
     {
+        if (address.AddressFamily == AddressFamily.InterNetworkV6 && address.IsIPv4MappedToIPv6)
+        {
+            address = address.MapToIPv4();
+        }
+
         if (IPAddress.IsLoopback(address))
         {
             return false;
@@ -124,6 +152,11 @@ internal static class ZeroTierDirectEndpointSelection
 
         if (address.AddressFamily == AddressFamily.InterNetworkV6)
         {
+            if (address.Equals(IPAddress.IPv6Any) || address.Equals(IPAddress.IPv6None))
+            {
+                return false;
+            }
+
             if (address.IsIPv6LinkLocal ||
                 address.IsIPv6Multicast ||
                 address.IsIPv6SiteLocal ||

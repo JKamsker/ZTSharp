@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using ZTSharp.ZeroTier.Net;
@@ -11,25 +11,25 @@ internal sealed class ZeroTierDataplaneIpHandler
 {
     private readonly ZeroTierDataplaneRuntime _sender;
     private readonly ZeroTierDataplaneRouteRegistry _routes;
-    private readonly ConcurrentDictionary<IPAddress, NodeId> _managedIpToNodeId;
+    private readonly ManagedIpToNodeIdCache _managedIpToNodeId;
     private readonly ZeroTierDataplaneIcmpv6Handler _icmpv6;
     private readonly ZeroTierTcpRstSender _tcpRst;
 
     private readonly ulong _networkId;
     private readonly ZeroTierMac _localMac;
-    private readonly IPAddress? _localManagedIpV4;
-    private readonly byte[]? _localManagedIpV4Bytes;
+    private readonly IPAddress[] _localManagedIpsV4;
+    private readonly byte[][] _localManagedIpsV4Bytes;
     private readonly IPAddress[] _localManagedIpsV6;
 
     public ZeroTierDataplaneIpHandler(
         ZeroTierDataplaneRuntime sender,
         ZeroTierDataplaneRouteRegistry routes,
-        ConcurrentDictionary<IPAddress, NodeId> managedIpToNodeId,
+        ManagedIpToNodeIdCache managedIpToNodeId,
         ZeroTierDataplaneIcmpv6Handler icmpv6,
         ulong networkId,
         ZeroTierMac localMac,
-        IPAddress? localManagedIpV4,
-        byte[]? localManagedIpV4Bytes,
+        IPAddress[] localManagedIpsV4,
+        byte[][] localManagedIpsV4Bytes,
         IPAddress[] localManagedIpsV6)
     {
         ArgumentNullException.ThrowIfNull(sender);
@@ -46,8 +46,8 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         _networkId = networkId;
         _localMac = localMac;
-        _localManagedIpV4 = localManagedIpV4;
-        _localManagedIpV4Bytes = localManagedIpV4Bytes;
+        _localManagedIpsV4 = localManagedIpsV4;
+        _localManagedIpsV4Bytes = localManagedIpsV4Bytes;
         _localManagedIpsV6 = localManagedIpsV6;
     }
 
@@ -63,17 +63,22 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
+        if (Ipv6Codec.IsExtensionHeader(nextHeader) || nextHeader == 59)
+        {
+            if (ZeroTierTrace.Enabled)
+            {
+                ZeroTierTrace.WriteLine($"[zerotier] Drop: IPv6 extension header nextHeader={nextHeader} from {src} to {dst}.");
+            }
+
+            return;
+        }
+
         var isUnicastToUs = TryGetLocalManagedIpv6(dst, out _);
         var isMulticast = dst.IsIPv6Multicast;
 
         if (!isUnicastToUs && !isMulticast)
         {
             return;
-        }
-
-        if (!IsUnspecifiedIpv6(src))
-        {
-            _managedIpToNodeId[src] = peerNodeId;
         }
 
         if (nextHeader == Icmpv6Codec.ProtocolNumber)
@@ -85,7 +90,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (nextHeader == UdpCodec.ProtocolNumber && isUnicastToUs)
         {
-            if (!UdpCodec.TryParse(ipPayload, out _, out var dstPort, out _))
+            if (!UdpCodec.TryParseWithChecksum(src, dst, ipPayload, out _, out var dstPort, out _))
             {
                 return;
             }
@@ -100,7 +105,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (nextHeader == TcpCodec.ProtocolNumber && isUnicastToUs)
         {
-            if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
+            if (!TcpCodec.TryParseWithChecksum(src, dst, ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
             {
                 return;
             }
@@ -108,13 +113,47 @@ internal sealed class ZeroTierDataplaneIpHandler
             var routeKey = ZeroTierTcpRouteKeyV6.FromAddresses(dst, dstPort, src, srcPort);
             if (_routes.TryGetRoute(routeKey, out var route))
             {
-                route.IncomingWriter.TryWrite(ipv6Packet);
+                if (!route.TryEnqueueIncoming(ipv6Packet))
+                {
+                    if (ZeroTierTrace.Enabled)
+                    {
+                        ZeroTierTrace.WriteLine($"[zerotier] Drop+RST: TCP route backlog overflow for {dst}:{dstPort} <- {src}:{srcPort} (drops={route.IncomingDropCount}).");
+                    }
+
+                    var ackIncrement = 0u;
+                    if ((flags & TcpCodec.Flags.Syn) != 0)
+                    {
+                        ackIncrement++;
+                    }
+
+                    if ((flags & TcpCodec.Flags.Fin) != 0)
+                    {
+                        ackIncrement++;
+                    }
+
+                    try
+                    {
+                        await SendTcpRstAsync(
+                                peerNodeId,
+                                localIp: dst,
+                                remoteIp: src,
+                                localPort: dstPort,
+                                remotePort: srcPort,
+                                acknowledgmentNumber: unchecked(seq + (uint)tcpPayload.Length + ackIncrement),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException or IOException)
+                    {
+                    }
+                }
+
                 return;
             }
 
             if ((flags & TcpCodec.Flags.Syn) != 0 &&
                 (flags & TcpCodec.Flags.Ack) == 0 &&
-                _routes.TryGetTcpSynHandler(AddressFamily.InterNetworkV6, dstPort, out var handler))
+                _routes.TryGetTcpSynHandler(AddressFamily.InterNetworkV6, destinationIp: dst, dstPort, out var handler))
             {
                 await handler(peerNodeId, ipv6Packet, cancellationToken).ConfigureAwait(false);
                 return;
@@ -138,21 +177,29 @@ internal sealed class ZeroTierDataplaneIpHandler
 
     public async ValueTask HandleIpv4PacketAsync(NodeId peerNodeId, ReadOnlyMemory<byte> ipv4Packet, CancellationToken cancellationToken)
     {
+        if (Ipv4Codec.IsFragmented(ipv4Packet.Span))
+        {
+            if (ZeroTierTrace.Enabled)
+            {
+                ZeroTierTrace.WriteLine("[zerotier] Drop: IPv4 fragments are not supported.");
+            }
+
+            return;
+        }
+
         if (!Ipv4Codec.TryParse(ipv4Packet.Span, out var src, out var dst, out var protocol, out var ipPayload))
         {
             return;
         }
 
-        if (!dst.Equals(_localManagedIpV4))
+        if (!TryGetLocalManagedIpv4(dst, out dst))
         {
             return;
         }
 
-        _managedIpToNodeId[src] = peerNodeId;
-
         if (protocol == UdpCodec.ProtocolNumber)
         {
-            if (!UdpCodec.TryParse(ipPayload, out _, out var udpDstPort, out _))
+            if (!UdpCodec.TryParseWithChecksum(src, dst, ipPayload, out _, out var udpDstPort, out _))
             {
                 return;
             }
@@ -170,7 +217,7 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (!TcpCodec.TryParse(ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out _))
+        if (!TcpCodec.TryParseWithChecksum(src, dst, ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
         {
             return;
         }
@@ -183,13 +230,47 @@ internal sealed class ZeroTierDataplaneIpHandler
 
         if (_routes.TryGetRoute(routeKey, out var route))
         {
-            route.IncomingWriter.TryWrite(ipv4Packet);
+            if (!route.TryEnqueueIncoming(ipv4Packet))
+            {
+                if (ZeroTierTrace.Enabled)
+                {
+                    ZeroTierTrace.WriteLine($"[zerotier] Drop+RST: TCP route backlog overflow for {dst}:{dstPort} <- {src}:{srcPort} (drops={route.IncomingDropCount}).");
+                }
+
+                var ackIncrement = 0u;
+                if ((flags & TcpCodec.Flags.Syn) != 0)
+                {
+                    ackIncrement++;
+                }
+
+                if ((flags & TcpCodec.Flags.Fin) != 0)
+                {
+                    ackIncrement++;
+                }
+
+                try
+                {
+                    await SendTcpRstAsync(
+                            peerNodeId,
+                            localIp: dst,
+                            remoteIp: src,
+                            localPort: dstPort,
+                            remotePort: srcPort,
+                            acknowledgmentNumber: unchecked(seq + (uint)tcpPayload.Length + ackIncrement),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or InvalidOperationException or IOException)
+                {
+                }
+            }
+
             return;
         }
 
         if ((flags & TcpCodec.Flags.Syn) != 0 &&
             (flags & TcpCodec.Flags.Ack) == 0 &&
-            _routes.TryGetTcpSynHandler(AddressFamily.InterNetwork, dstPort, out var handler))
+            _routes.TryGetTcpSynHandler(AddressFamily.InterNetwork, destinationIp: dst, dstPort, out var handler))
         {
             await handler(peerNodeId, ipv4Packet, cancellationToken).ConfigureAwait(false);
             return;
@@ -212,8 +293,7 @@ internal sealed class ZeroTierDataplaneIpHandler
 
     public ValueTask HandleArpFrameAsync(NodeId peerNodeId, ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
     {
-        var localManagedIpV4Bytes = _localManagedIpV4Bytes;
-        if (localManagedIpV4Bytes is null)
+        if (_localManagedIpsV4Bytes.Length == 0)
         {
             return ValueTask.CompletedTask;
         }
@@ -223,13 +303,21 @@ internal sealed class ZeroTierDataplaneIpHandler
             return ValueTask.CompletedTask;
         }
 
-        if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
+        _managedIpToNodeId.LearnFromNeighbor(new IPAddress(senderIp), peerNodeId);
+
+        for (var i = 0; i < _localManagedIpsV4Bytes.Length; i++)
         {
-            return ValueTask.CompletedTask;
+            var localManagedIpV4Bytes = _localManagedIpsV4Bytes[i];
+            if (!targetIp.SequenceEqual(localManagedIpV4Bytes))
+            {
+                continue;
+            }
+
+            var reply = ZeroTierArp.BuildReply(_localMac, localManagedIpV4Bytes, senderMac, senderIp);
+            return _sender.SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeArp, reply, cancellationToken);
         }
 
-        var reply = ZeroTierArp.BuildReply(_localMac, localManagedIpV4Bytes, senderMac, senderIp);
-        return _sender.SendEthernetFrameAsync(peerNodeId, ZeroTierFrameCodec.EtherTypeArp, reply, cancellationToken);
+        return ValueTask.CompletedTask;
     }
 
     private ValueTask SendTcpRstAsync(
@@ -255,6 +343,28 @@ internal sealed class ZeroTierDataplaneIpHandler
         }
 
         localIp = IPAddress.IPv6None;
+        return false;
+    }
+
+    private bool TryGetLocalManagedIpv4(IPAddress address, out IPAddress localIp)
+    {
+        if (_localManagedIpsV4.Length == 0 || address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            localIp = IPAddress.None;
+            return false;
+        }
+
+        for (var i = 0; i < _localManagedIpsV4.Length; i++)
+        {
+            var ip = _localManagedIpsV4[i];
+            if (address.Equals(ip))
+            {
+                localIp = ip;
+                return true;
+            }
+        }
+
+        localIp = IPAddress.None;
         return false;
     }
 

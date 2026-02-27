@@ -19,7 +19,7 @@ internal static class ZeroTierNetworkConfigProtocol
         => ZeroTierRootKeyDerivation.BuildRootKeys(localIdentity, planet);
 
     public static async Task<(byte[] DictionaryBytes, IPAddress[] ManagedIps)> RequestNetworkConfigAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         Dictionary<NodeId, byte[]> keys,
         IPEndPoint rootEndpoint,
         NodeId localNodeId,
@@ -27,6 +27,7 @@ internal static class ZeroTierNetworkConfigProtocol
         byte controllerProtocolVersion,
         ulong networkId,
         TimeSpan timeout,
+        bool allowLegacyUnsignedConfig,
         CancellationToken cancellationToken)
     {
         var controllerNodeId = controllerIdentity.NodeId;
@@ -72,10 +73,11 @@ internal static class ZeroTierNetworkConfigProtocol
         async ValueTask<(byte[] DictionaryBytes, IPAddress[] ManagedIps)> WaitForConfigAsync(CancellationToken token)
         {
             byte[]? dictionary = null;
-            var receivedLength = 0;
+            var receivedLength = 0u;
             var totalLength = 0u;
             var updateId = 0UL;
-            var receivedOffsets = new HashSet<uint>();
+            var receivedRanges = new List<(uint Start, uint End)>();
+            const int maxChunks = 4096;
 
             while (true)
             {
@@ -180,6 +182,11 @@ internal static class ZeroTierNetworkConfigProtocol
                 }
                 else
                 {
+                    if (!allowLegacyUnsignedConfig)
+                    {
+                        throw new InvalidOperationException("Rejected legacy unsigned network config (missing signature).");
+                    }
+
                     configUpdateId = reqPacketId;
                     configTotalLength = (uint)chunkData.Length;
                     chunkIndex = 0;
@@ -218,19 +225,77 @@ internal static class ZeroTierNetworkConfigProtocol
                     continue;
                 }
 
-                if (!receivedOffsets.Add(chunkIndex))
+                if (chunkData.Length == 0)
                 {
                     continue;
                 }
 
-                chunkData.CopyTo(dictionary.AsSpan((int)chunkIndex, chunkData.Length));
-                receivedLength += chunkData.Length;
+                if (receivedRanges.Count >= maxChunks)
+                {
+                    throw new InvalidOperationException($"Network config chunk count exceeded max {maxChunks}.");
+                }
 
-                if ((uint)receivedLength == totalLength)
+                var start = chunkIndex;
+                var end = checked((uint)((ulong)chunkIndex + (ulong)chunkData.Length));
+
+                var added = TryAddNonOverlappingRange(receivedRanges, start, end, out var isDuplicate);
+                if (!added)
+                {
+                    if (isDuplicate)
+                    {
+                        continue;
+                    }
+
+                    throw new InvalidOperationException("Overlapping network config chunks.");
+                }
+
+                chunkData.CopyTo(dictionary.AsSpan((int)chunkIndex, chunkData.Length));
+                receivedLength += (uint)chunkData.Length;
+
+                if (receivedLength == totalLength)
                 {
                     var managedIps = ZeroTierNetworkConfigParsing.ParseManagedIps(dictionary);
                     return (dictionary, managedIps);
                 }
+            }
+
+            static bool TryAddNonOverlappingRange(
+                List<(uint Start, uint End)> ranges,
+                uint start,
+                uint end,
+                out bool isDuplicate)
+            {
+                isDuplicate = false;
+
+                var index = 0;
+                while (index < ranges.Count && ranges[index].Start < start)
+                {
+                    index++;
+                }
+
+                if (index < ranges.Count && ranges[index].Start == start)
+                {
+                    if (ranges[index].End == end)
+                    {
+                        isDuplicate = true;
+                        return false;
+                    }
+
+                    return false;
+                }
+
+                if (index > 0 && ranges[index - 1].End > start)
+                {
+                    return false;
+                }
+
+                if (index < ranges.Count && end > ranges[index].Start)
+                {
+                    return false;
+                }
+
+                ranges.Insert(index, (start, end));
+                return true;
             }
         }
     }

@@ -7,7 +7,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRxLoops
 {
-    private readonly ZeroTierUdpTransport _udp;
+    private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
     private readonly byte[] _rootKey;
@@ -15,18 +15,20 @@ internal sealed class ZeroTierDataplaneRxLoops
     private readonly ZeroTierDataplaneRootClient _rootClient;
     private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
     private readonly Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? _handleRootControlAsync;
+    private readonly Action? _onPeerQueueDrop;
 
     private int _traceRxRemaining = 200;
 
     public ZeroTierDataplaneRxLoops(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         NodeId rootNodeId,
         IPEndPoint rootEndpoint,
         byte[] rootKey,
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
         IZeroTierDataplanePeerDatagramProcessor peerDatagrams,
-        Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null)
+        Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null,
+        Action? onPeerQueueDrop = null)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(rootEndpoint);
@@ -42,6 +44,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         _rootClient = rootClient;
         _peerDatagrams = peerDatagrams;
         _handleRootControlAsync = handleRootControlAsync;
+        _onPeerQueueDrop = onPeerQueueDrop;
     }
 
     public async Task DispatcherLoopAsync(ChannelWriter<ZeroTierUdpDatagram> peerWriter, CancellationToken cancellationToken)
@@ -57,14 +60,13 @@ internal sealed class ZeroTierDataplaneRxLoops
             {
                 return;
             }
-            catch (ObjectDisposedException)
+            catch (ChannelClosedException)
             {
                 return;
             }
-
-            if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            catch (ObjectDisposedException)
             {
-                continue;
+                return;
             }
 
             var packetBytes = datagram.Payload;
@@ -87,9 +89,9 @@ internal sealed class ZeroTierDataplaneRxLoops
 
             if (decoded.Header.Source == _rootNodeId)
             {
-                if (!datagram.RemoteEndPoint.Equals(_rootEndpoint))
+                if (ZeroTierTrace.Enabled && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
                 {
-                    continue;
+                    ZeroTierTrace.WriteLine($"[zerotier] RX root packet via {datagram.RemoteEndPoint} (expected {_rootEndpoint}).");
                 }
 
                 if (!ZeroTierPacketCrypto.Dearmor(packetBytes, _rootKey))
@@ -132,7 +134,13 @@ internal sealed class ZeroTierDataplaneRxLoops
 
             if (!peerWriter.TryWrite(datagram))
             {
-                return;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                _onPeerQueueDrop?.Invoke();
+                continue;
             }
         }
     }

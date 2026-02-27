@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,13 +10,17 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
 {
     private readonly OverlayTcpClient _client;
     private readonly Stream _inner;
+    private readonly Action? _onDispose;
     private int _disposed;
+    private int _onDisposeInvoked;
+    private Task? _backgroundDispose;
 
-    public OwnedOverlayTcpClientStream(OverlayTcpClient client)
+    public OwnedOverlayTcpClientStream(OverlayTcpClient client, Action? onDispose = null)
     {
         ArgumentNullException.ThrowIfNull(client);
         _client = client;
         _inner = client.GetStream();
+        _onDispose = onDispose;
     }
 
     public override bool CanRead => _inner.CanRead;
@@ -48,6 +53,10 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
     public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         => _inner.WriteAsync(buffer, cancellationToken);
 
+    [SuppressMessage(
+        "Reliability",
+        "CA1031:Do not catch general exception types",
+        Justification = "Stream disposal is best-effort and must not throw (e.g., during HttpResponseMessage.Dispose()).")]
     protected override void Dispose(bool disposing)
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)
@@ -57,13 +66,32 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
 
         if (disposing)
         {
-            _inner.Dispose();
-            _client.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            try
+            {
+                _inner.Dispose();
+            }
+            catch
+            {
+            }
+
+            var disposeTask = _client.DisposeAsync();
+            if (disposeTask.IsCompletedSuccessfully)
+            {
+                InvokeOnDispose();
+            }
+            else
+            {
+                _backgroundDispose = ObserveDisposeAsync(disposeTask);
+            }
         }
 
         base.Dispose(disposing);
     }
 
+    [SuppressMessage(
+        "Reliability",
+        "CA1031:Do not catch general exception types",
+        Justification = "Stream disposal is best-effort and must not throw (e.g., during HttpResponseMessage.DisposeAsync()).")]
     public override async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)
@@ -71,9 +99,76 @@ internal sealed class OwnedOverlayTcpClientStream : Stream
             return;
         }
 
-        await _inner.DisposeAsync().ConfigureAwait(false);
-        await _client.DisposeAsync().ConfigureAwait(false);
+        try
+        {
+            await _inner.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await _client.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+
         await base.DisposeAsync().ConfigureAwait(false);
+
+        InvokeOnDispose();
+
+        if (_backgroundDispose is not null)
+        {
+            try
+            {
+                await _backgroundDispose.ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
+    }
+
+    [SuppressMessage(
+        "Reliability",
+        "CA1031:Do not catch general exception types",
+        Justification = "Disposal must observe and ignore failures to prevent unobserved task exceptions.")]
+    private async Task ObserveDisposeAsync(ValueTask disposeTask)
+    {
+        try
+        {
+            await disposeTask.ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            InvokeOnDispose();
+        }
+    }
+
+    [SuppressMessage(
+        "Reliability",
+        "CA1031:Do not catch general exception types",
+        Justification = "Dispose callbacks are best-effort and must not throw.")]
+    private void InvokeOnDispose()
+    {
+        if (_onDispose is null || Interlocked.Exchange(ref _onDisposeInvoked, 1) == 1)
+        {
+            return;
+        }
+
+        try
+        {
+            _onDispose();
+        }
+        catch
+        {
+        }
     }
 }
 

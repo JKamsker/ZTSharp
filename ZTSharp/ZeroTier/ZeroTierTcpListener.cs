@@ -9,16 +9,25 @@ namespace ZTSharp.ZeroTier;
 
 public sealed class ZeroTierTcpListener : IAsyncDisposable
 {
+    private const int DefaultAcceptQueueCapacity = 64;
+
+    private readonly record struct AcceptedTcpConnection(Stream Stream, IPEndPoint LocalEndpoint, IPEndPoint RemoteEndpoint);
+
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
     private readonly ActiveTaskSet _connectionTasks = new();
-    private readonly Channel<Stream> _acceptQueue = Channel.CreateUnbounded<Stream>();
+    private readonly Channel<AcceptedTcpConnection> _acceptQueue;
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
+    private readonly IPAddress _localAddressMatch;
     private readonly ushort _localPort;
+    private readonly int _acceptQueueCapacity;
+    private int _pendingAcceptCount;
+    private long _droppedAcceptCount;
     private int _disposeState;
+    private readonly bool _isWildcardBind;
 
-    internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort)
+    internal ZeroTierTcpListener(ZeroTierDataplaneRuntime runtime, IPAddress localAddress, ushort localPort, int acceptQueueCapacity = DefaultAcceptQueueCapacity)
     {
         ArgumentNullException.ThrowIfNull(runtime);
         ArgumentNullException.ThrowIfNull(localAddress);
@@ -28,34 +37,45 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             throw new NotSupportedException("Only IPv4 and IPv6 are supported.");
         }
 
+        if (acceptQueueCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(acceptQueueCapacity), acceptQueueCapacity, "Accept queue capacity must be greater than zero.");
+        }
+
         _runtime = runtime;
         _localAddress = localAddress;
+        _localAddressMatch = ZeroTierIpAddressCanonicalization.CanonicalizeForManagedIpComparison(localAddress);
         _localPort = localPort;
-
-        if (!_runtime.TryRegisterTcpListener(localAddress.AddressFamily, localPort, OnSynAsync))
+        _acceptQueueCapacity = acceptQueueCapacity;
+        _isWildcardBind = localAddress.Equals(IPAddress.Any) || localAddress.Equals(IPAddress.IPv6Any);
+        _acceptQueue = Channel.CreateBounded<AcceptedTcpConnection>(new BoundedChannelOptions(_acceptQueueCapacity)
         {
-            throw new InvalidOperationException($"A TCP listener is already registered for {localAddress.AddressFamily} port {localPort}.");
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = false
+        });
+
+        if (!_runtime.TryRegisterTcpListener(localAddress, localPort, OnSynAsync))
+        {
+            throw new InvalidOperationException($"A TCP listener is already registered for {localAddress}:{localPort} (or a wildcard listener already binds this port).");
         }
     }
 
     public IPEndPoint LocalEndpoint => new(_localAddress, _localPort);
 
+    public int AcceptQueueCapacity => _acceptQueueCapacity;
+
+    public int PendingAcceptCount => Volatile.Read(ref _pendingAcceptCount);
+
+    public long DroppedAcceptCount => Interlocked.Read(ref _droppedAcceptCount);
+
     public ValueTask<Stream> AcceptAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(IsDisposed, this);
-        return ReadFromQueueAsync(cancellationToken);
+        return AcceptStreamAsync(cancellationToken);
 
-        async ValueTask<Stream> ReadFromQueueAsync(CancellationToken token)
-        {
-            try
-            {
-                return await _acceptQueue.Reader.ReadAsync(token).ConfigureAwait(false);
-            }
-            catch (ChannelClosedException)
-            {
-                throw new ObjectDisposedException(typeof(ZeroTierTcpListener).FullName);
-            }
-        }
+        async ValueTask<Stream> AcceptStreamAsync(CancellationToken token)
+            => (await AcceptConnectionAsync(token).ConfigureAwait(false)).Stream;
     }
 
     public async ValueTask<Stream> AcceptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -76,11 +96,24 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         await _disposeLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            _runtime.UnregisterTcpListener(_localAddress.AddressFamily, _localPort);
+            _runtime.UnregisterTcpListener(_localAddress, _localPort);
             await _shutdown.CancelAsync().ConfigureAwait(false);
             _acceptQueue.Writer.TryComplete();
 
-            await _connectionTasks.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            while (_acceptQueue.Reader.TryRead(out var accepted))
+            {
+                Interlocked.Decrement(ref _pendingAcceptCount);
+                await accepted.Stream.DisposeAsync().ConfigureAwait(false);
+            }
+
+            using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _connectionTasks.WaitAsync(drainCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (drainCts.IsCancellationRequested)
+            {
+            }
         }
         finally
         {
@@ -111,7 +144,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 return Task.CompletedTask;
             }
 
-            if (!dst.Equals(_localAddress) || protocol != TcpCodec.ProtocolNumber)
+            if ((!_isWildcardBind && !dst.Equals(_localAddressMatch)) || protocol != TcpCodec.ProtocolNumber)
             {
                 return Task.CompletedTask;
             }
@@ -123,7 +156,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 return Task.CompletedTask;
             }
 
-            if (!dst.Equals(_localAddress) || nextHeader != TcpCodec.ProtocolNumber)
+            if ((!_isWildcardBind && !ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddressMatch)) || nextHeader != TcpCodec.ProtocolNumber)
             {
                 return Task.CompletedTask;
             }
@@ -152,7 +185,7 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
 
         link.IncomingWriter.TryWrite(ipPacket);
 
-        _connectionTasks.Track(HandleAcceptedConnectionAsync(connection, cancellationToken));
+        _connectionTasks.Track(HandleAcceptedConnectionAsync(connection, localEndpoint, remoteEndpoint, cancellationToken));
         return Task.CompletedTask;
     }
 
@@ -160,7 +193,11 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         "Reliability",
         "CA2000:Dispose objects before losing scope",
         Justification = "Ownership of accepted connections transfers to the accept queue consumer (via the returned Stream).")]
-    private async Task HandleAcceptedConnectionAsync(UserSpaceTcpServerConnection connection, CancellationToken cancellationToken)
+    private async Task HandleAcceptedConnectionAsync(
+        UserSpaceTcpServerConnection connection,
+        IPEndPoint localEndpoint,
+        IPEndPoint remoteEndpoint,
+        CancellationToken cancellationToken)
     {
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token, cancellationToken);
         var token = linkedCts.Token;
@@ -174,14 +211,21 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await connection.AcceptAsync(token).ConfigureAwait(false);
             stream = connection.GetStream();
 
-            if (!_acceptQueue.Writer.TryWrite(stream))
+            if (!_acceptQueue.Writer.TryWrite(new AcceptedTcpConnection(stream, localEndpoint, remoteEndpoint)))
             {
+                Interlocked.Increment(ref _droppedAcceptCount);
+                if (ZeroTierTrace.Enabled)
+                {
+                    ZeroTierTrace.WriteLine($"[zerotier] Drop accept: backlog full ({_acceptQueueCapacity}).");
+                }
+
                 await stream.DisposeAsync().ConfigureAwait(false);
                 disposed = true;
                 stream = null;
                 return;
             }
 
+            Interlocked.Increment(ref _pendingAcceptCount);
             handedOff = true;
             stream = null;
         }
@@ -204,6 +248,27 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                     await connection.DisposeAsync().ConfigureAwait(false);
                 }
             }
+        }
+    }
+
+    internal async ValueTask<(Stream Stream, IPEndPoint LocalEndpoint, IPEndPoint RemoteEndpoint)> AcceptWithEndpointsAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+        var accepted = await AcceptConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return (accepted.Stream, accepted.LocalEndpoint, accepted.RemoteEndpoint);
+    }
+
+    private async ValueTask<AcceptedTcpConnection> AcceptConnectionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var accepted = await _acceptQueue.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+            Interlocked.Decrement(ref _pendingAcceptCount);
+            return accepted;
+        }
+        catch (ChannelClosedException)
+        {
+            throw new ObjectDisposedException(typeof(ZeroTierTcpListener).FullName);
         }
     }
 

@@ -6,17 +6,21 @@ namespace ZTSharp.Transport.Internal;
 internal sealed class OsUdpReceiveLoop
 {
     private readonly UdpClient _udp;
+    private readonly Func<CancellationToken, ValueTask<UdpReceiveResult>> _receiveAsync;
     private readonly bool _enablePeerDiscovery;
     private readonly OsUdpPeerRegistry _peers;
     private readonly Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> _dispatchFrameAsync;
     private readonly Func<ulong, ulong, IPEndPoint, OsUdpPeerDiscoveryProtocol.FrameType, CancellationToken, Task> _sendDiscoveryFrameAsync;
+    private readonly Action<string>? _log;
 
     public OsUdpReceiveLoop(
         UdpClient udp,
         bool enablePeerDiscovery,
         OsUdpPeerRegistry peers,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> dispatchFrameAsync,
-        Func<ulong, ulong, IPEndPoint, OsUdpPeerDiscoveryProtocol.FrameType, CancellationToken, Task> sendDiscoveryFrameAsync)
+        Func<ulong, ulong, IPEndPoint, OsUdpPeerDiscoveryProtocol.FrameType, CancellationToken, Task> sendDiscoveryFrameAsync,
+        Action<string>? log = null,
+        Func<CancellationToken, ValueTask<UdpReceiveResult>>? receiveAsync = null)
     {
         ArgumentNullException.ThrowIfNull(udp);
         ArgumentNullException.ThrowIfNull(peers);
@@ -24,10 +28,12 @@ internal sealed class OsUdpReceiveLoop
         ArgumentNullException.ThrowIfNull(sendDiscoveryFrameAsync);
 
         _udp = udp;
+        _receiveAsync = receiveAsync ?? (ct => udp.ReceiveAsync(ct));
         _enablePeerDiscovery = enablePeerDiscovery;
         _peers = peers;
         _dispatchFrameAsync = dispatchFrameAsync;
         _sendDiscoveryFrameAsync = sendDiscoveryFrameAsync;
+        _log = log;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -37,7 +43,7 @@ internal sealed class OsUdpReceiveLoop
             UdpReceiveResult result;
             try
             {
-                result = await _udp.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+                result = await _receiveAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -51,28 +57,38 @@ internal sealed class OsUdpReceiveLoop
             {
                 continue;
             }
+            catch (SocketException ex)
+            {
+                _log?.Invoke($"OS UDP receive failed (SocketException {ex.SocketErrorCode}: {ex.Message}).");
+                continue;
+            }
+            catch (InvalidOperationException ex)
+            {
+                _log?.Invoke($"OS UDP receive failed (InvalidOperationException: {ex.Message}).");
+                continue;
+            }
 
             if (!NodeFrameCodec.TryDecode(result.Buffer.AsMemory(), out var networkId, out var sourceNodeId, out var payload))
             {
                 continue;
             }
 
-            if (OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, out var controlFrameType, out var discoveredNodeId))
+            var normalizedRemoteEndpoint = UdpEndpointNormalization.Normalize(result.RemoteEndPoint);
+            if (_enablePeerDiscovery && OsUdpPeerDiscoveryProtocol.TryParsePayload(payload.Span, networkId, out var controlFrameType, out var discoveredNodeId))
             {
-                if (_enablePeerDiscovery && discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
+                if (discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
                 {
-                    _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, result.RemoteEndPoint);
+                    _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, normalizedRemoteEndpoint);
                     if (_peers.TryGetLocalNodeId(networkId, out var localNodeId) && localNodeId != discoveredNodeId)
                     {
                         if (controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello)
                         {
-                            await _sendDiscoveryFrameAsync(
-                                    networkId,
-                                    localNodeId,
-                                    result.RemoteEndPoint,
-                                    OsUdpPeerDiscoveryProtocol.FrameType.PeerHelloResponse,
-                                    cancellationToken)
-                                .ConfigureAwait(false);
+                            _ = SendDiscoveryFrameSafeAsync(
+                                networkId,
+                                localNodeId,
+                                normalizedRemoteEndpoint,
+                                OsUdpPeerDiscoveryProtocol.FrameType.PeerHelloResponse,
+                                cancellationToken);
                         }
                     }
                 }
@@ -80,12 +96,16 @@ internal sealed class OsUdpReceiveLoop
                 continue;
             }
 
-            if (_enablePeerDiscovery &&
-                sourceNodeId != 0 &&
-                _peers.TryGetLocalNodeId(networkId, out var localNodeIdForDiscovery) &&
-                localNodeIdForDiscovery != sourceNodeId)
+            if (sourceNodeId != 0 &&
+                _peers.TryGetPeers(networkId, out var peers) &&
+                peers.TryGetValue(sourceNodeId, out var expectedEndpoint) &&
+                expectedEndpoint.Equals(normalizedRemoteEndpoint))
             {
-                _peers.RegisterDiscoveredPeer(networkId, sourceNodeId, result.RemoteEndPoint);
+                // Valid authenticated-by-endpoint peer.
+            }
+            else
+            {
+                continue;
             }
 
             try
@@ -101,6 +121,27 @@ internal sealed class OsUdpReceiveLoop
 #pragma warning restore CA1031
             {
             }
+        }
+    }
+
+    private async Task SendDiscoveryFrameSafeAsync(
+        ulong networkId,
+        ulong localNodeId,
+        IPEndPoint endpoint,
+        OsUdpPeerDiscoveryProtocol.FrameType frameType,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _sendDiscoveryFrameAsync(networkId, localNodeId, endpoint, frameType, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or SocketException)
+        {
+        }
+#pragma warning disable CA1031 // Discovery send must not kill the receive loop.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
         }
     }
 }

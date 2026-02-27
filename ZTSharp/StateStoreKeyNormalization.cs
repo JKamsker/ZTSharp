@@ -25,6 +25,8 @@ internal static class StateStoreKeyNormalization
             {
                 throw new ArgumentException($"Invalid key path: {key}", nameof(key));
             }
+
+            StateStoreKeySegmentValidation.ValidateSegment(parts[i], key, nameof(key));
         }
 
         return string.Join('/', parts);

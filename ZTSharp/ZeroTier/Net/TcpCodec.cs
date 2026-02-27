@@ -58,7 +58,13 @@ internal static class TcpCodec
             throw new ArgumentOutOfRangeException(nameof(options), "TCP header too large.");
         }
 
-        var segment = new byte[headerLength + payload.Length];
+        var segmentLength = headerLength + payload.Length;
+        if (segmentLength > ushort.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(payload), "TCP segment too large.");
+        }
+
+        var segment = new byte[segmentLength];
         var span = segment.AsSpan();
 
         BinaryPrimitives.WriteUInt16BigEndian(span.Slice(0, 2), sourcePort);

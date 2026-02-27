@@ -23,7 +23,7 @@ internal static class ZeroTierHelloClient
     internal const ushort AdvertisedRevision = 0;
 
     public static async Task<ZeroTierHelloOk> HelloRootsAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
         TimeSpan timeout,
@@ -118,6 +118,11 @@ internal static class ZeroTierHelloClient
                     continue;
                 }
 
+                if (rootNodeId != packet.Header.Source)
+                {
+                    continue;
+                }
+
                 return new ZeroTierHelloOk(
                     RootNodeId: rootNodeId,
                     RootEndpoint: datagram.RemoteEndPoint,
@@ -133,7 +138,7 @@ internal static class ZeroTierHelloClient
     }
 
     public static async Task<byte> HelloAsync(
-        ZeroTierUdpTransport udp,
+        IZeroTierUdpTransport udp,
         ZeroTierIdentity localIdentity,
         ZeroTierWorld planet,
         NodeId destination,

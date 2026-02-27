@@ -15,6 +15,12 @@ internal static class UdpSendCommand
         IPEndPoint? destination = null;
         string? dataText = null;
 
+        var mpEnabled = false;
+        var mpBondPolicy = ZeroTierBondPolicy.Off;
+        int? mpUdpSockets = null;
+        IReadOnlyList<int>? mpUdpPorts = null;
+        var mpWarmupRoot = true;
+
         for (var i = 0; i < commandArgs.Length; i++)
         {
             var arg = commandArgs[i];
@@ -38,6 +44,41 @@ internal static class UdpSendCommand
                 case "--data":
                     dataText = CliParsing.ReadOptionValue(commandArgs, ref i, "--data");
                     break;
+                case "--multipath":
+                    mpEnabled = true;
+                    break;
+                case "--mp-bond":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-bond");
+                        mpBondPolicy = CliParsing.ParseBondPolicy(value);
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-sockets":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-sockets");
+                        mpUdpSockets = CliParsing.ParsePositiveInt(value, "--mp-udp-sockets value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-udp-ports":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-udp-ports");
+                        mpUdpPorts = CliParsing.ParsePortList(value, "--mp-udp-ports value");
+                        mpEnabled = true;
+                        break;
+                    }
+                case "--mp-warmup-root":
+                    {
+                        var value = CliParsing.ReadOptionValue(commandArgs, ref i, "--mp-warmup-root");
+                        if (!bool.TryParse(value, out mpWarmupRoot))
+                        {
+                            throw new InvalidOperationException("Invalid --mp-warmup-root value (expected true|false).");
+                        }
+
+                        mpEnabled = true;
+                        break;
+                    }
                 default:
                     throw new InvalidOperationException($"Unknown option '{arg}'.");
             }
@@ -66,7 +107,16 @@ internal static class UdpSendCommand
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
-            await RunUdpSendZeroTierAsync(statePath, networkId, destination, dataText, cancellation.Token).ConfigureAwait(false);
+            var multipath = new ZeroTierMultipathOptions
+            {
+                Enabled = mpEnabled,
+                BondPolicy = mpBondPolicy,
+                UdpSocketCount = mpUdpSockets ?? 1,
+                LocalUdpPorts = mpUdpPorts,
+                WarmupDuplicateToRoot = mpWarmupRoot
+            };
+
+            await RunUdpSendZeroTierAsync(statePath, networkId, multipath, destination, dataText, cancellation.Token).ConfigureAwait(false);
             return;
         }
 
@@ -76,6 +126,7 @@ internal static class UdpSendCommand
     private static async Task RunUdpSendZeroTierAsync(
         string statePath,
         ulong networkId,
+        ZeroTierMultipathOptions multipath,
         IPEndPoint destination,
         string dataText,
         CancellationToken cancellationToken)
@@ -83,7 +134,8 @@ internal static class UdpSendCommand
         var socket = await ZeroTierSocket.CreateAsync(new ZeroTierSocketOptions
         {
             StateRootPath = statePath,
-            NetworkId = networkId
+            NetworkId = networkId,
+            Multipath = multipath
         }, cancellationToken).ConfigureAwait(false);
 
         ZeroTierUdpSocket? udp = null;

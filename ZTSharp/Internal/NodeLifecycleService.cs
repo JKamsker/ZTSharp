@@ -203,8 +203,24 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
         }
 
         await _nodeCts.CancelAsync().ConfigureAwait(false);
-        await StopAsync(CancellationToken.None).ConfigureAwait(false);
-        await _networkService.LeaveAllNetworksAsync().ConfigureAwait(false);
+
+        using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try
+        {
+            await StopAsync(shutdownCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+        {
+        }
+
+        try
+        {
+            await _networkService.LeaveAllNetworksAsync(shutdownCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+        {
+        }
+
         _runtime.Disposed = true;
 
         if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
