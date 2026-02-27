@@ -40,9 +40,19 @@ internal sealed class OverlayTcpIncomingBuffer
             return false;
         }
 
+        if (Volatile.Read(ref _remoteClosed) != 0)
+        {
+            return false;
+        }
+
         if (_incoming.Writer.TryWrite(segment))
         {
             return true;
+        }
+
+        if (Volatile.Read(ref _remoteClosed) != 0)
+        {
+            return false;
         }
 
         Fault(new IOException("Overlay TCP receive buffer overflowed; closing connection to avoid silent data loss."));
