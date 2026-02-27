@@ -274,13 +274,13 @@ public sealed class FileStateStore : IStateStore
             {
                 if (remaining > 0)
                 {
-                    memory.Write(buffer, 0, (int)remaining);
+                    await memory.WriteAsync(buffer.AsMemory(0, (int)remaining), cancellationToken).ConfigureAwait(false);
                 }
 
                 throw new IOException($"State file exceeds maximum supported size of {MaxReadBytes} bytes.");
             }
 
-            memory.Write(buffer, 0, read);
+            await memory.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             totalRead += read;
         }
 
