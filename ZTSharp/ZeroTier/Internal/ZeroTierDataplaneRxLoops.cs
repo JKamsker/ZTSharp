@@ -74,11 +74,6 @@ internal sealed class ZeroTierDataplaneRxLoops
                 return;
             }
 
-            if (!_acceptDirectPeerDatagrams && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
-            {
-                continue;
-            }
-
             var packetBytes = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
             {
@@ -139,6 +134,11 @@ internal sealed class ZeroTierDataplaneRxLoops
                         ZeroTierTrace.WriteLine($"[zerotier] Root packet handler fault: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
+                continue;
+            }
+
+            if (!_acceptDirectPeerDatagrams && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
                 continue;
             }
 
