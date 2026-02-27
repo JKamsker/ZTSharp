@@ -113,14 +113,14 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
             return;
         }
 
-        if (_finSeq is not null)
-        {
-            throw new IOException("Local has closed the connection.");
-        }
-
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_finSeq is not null)
+            {
+                throw new IOException("Local has closed the connection.");
+            }
+
             var remaining = buffer;
             while (!remaining.IsEmpty)
             {

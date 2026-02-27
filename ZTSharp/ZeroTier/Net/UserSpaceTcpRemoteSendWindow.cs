@@ -28,9 +28,11 @@ internal sealed class UserSpaceTcpRemoteSendWindow
     public void SignalWaiters(Exception exception)
     {
         TaskCompletionSource<bool>? toRelease = null;
+        Exception terminal;
         lock (_lock)
         {
             _terminalException ??= exception;
+            terminal = _terminalException;
             if (_windowTcs is not null)
             {
                 toRelease = _windowTcs;
@@ -38,7 +40,7 @@ internal sealed class UserSpaceTcpRemoteSendWindow
             }
         }
 
-        toRelease?.TrySetException(exception);
+        toRelease?.TrySetException(terminal);
     }
 
     public async Task WaitForNonZeroAsync(CancellationToken cancellationToken)
@@ -73,7 +75,14 @@ internal sealed class UserSpaceTcpRemoteSendWindow
                 tcs = _windowTcs ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
-            await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (_terminalException is not null && ex is not OperationCanceledException)
+            {
+                throw _terminalException;
+            }
         }
     }
 }
