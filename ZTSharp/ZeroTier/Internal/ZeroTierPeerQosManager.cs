@@ -21,6 +21,7 @@ internal sealed class ZeroTierPeerQosManager
     // See: ZeroTierOne node/Bond.cpp (qosStatsOut timeout = _qosSendInterval * 3).
     private const long DefaultRecordTimeoutMs = 30_000;
     private const long PathStateTtlMs = 300_000;
+    private const long LatencyAverageTtlMs = 120_000;
     private const int MaxPathStates = 4096;
 
     private readonly Func<long> _nowMs;
@@ -223,8 +224,23 @@ internal sealed class ZeroTierPeerQosManager
         ArgumentNullException.ThrowIfNull(remoteEndPoint);
 
         var key = new ZeroTierPeerQosPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
-        if (_paths.TryGetValue(key, out var state) && Volatile.Read(ref state.LastLatencyUpdatedMs) != 0)
+        if (_paths.TryGetValue(key, out var state))
         {
+            var updated = Volatile.Read(ref state.LastLatencyUpdatedMs);
+            if (updated == 0)
+            {
+                averageLatencyMs = 0;
+                return false;
+            }
+
+            var now = _nowMs();
+            var age = unchecked(now - updated);
+            if (age < 0 || age > LatencyAverageTtlMs)
+            {
+                averageLatencyMs = 0;
+                return false;
+            }
+
             averageLatencyMs = Volatile.Read(ref state.LastLatencyAvgMs);
             return true;
         }
