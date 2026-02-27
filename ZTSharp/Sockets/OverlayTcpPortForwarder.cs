@@ -111,7 +111,6 @@ public sealed class OverlayTcpPortForwarder : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
             _shutdown.Dispose();
         }
     }

@@ -60,7 +60,6 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
         }
     }
 

@@ -134,7 +134,6 @@ public sealed class ZtUdpClient : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
         }
     }
 

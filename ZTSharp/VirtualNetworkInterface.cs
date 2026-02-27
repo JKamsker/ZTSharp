@@ -57,7 +57,6 @@ public sealed class VirtualNetworkInterface : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
         }
     }
 
@@ -114,4 +113,3 @@ public sealed class VirtualNetworkInterface : IAsyncDisposable
             DateTimeOffset.UtcNow));
     }
 }
-

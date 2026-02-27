@@ -179,8 +179,6 @@ public sealed class OverlayTcpClient : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
-            _sendLock.Dispose();
         }
     }
 
