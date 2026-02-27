@@ -196,6 +196,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             _localIdentity.NodeId,
             _rootClient,
             _peerDatagrams,
+            acceptDirectPeerDatagrams: multipath.Enabled,
             handleRootControlAsync: HandleRootControlPacketAsync,
             onPeerQueueDrop: () =>
             {

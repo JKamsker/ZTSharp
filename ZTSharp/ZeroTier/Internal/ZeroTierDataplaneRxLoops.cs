@@ -16,6 +16,7 @@ internal sealed class ZeroTierDataplaneRxLoops
     private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
     private readonly Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? _handleRootControlAsync;
     private readonly Action? _onPeerQueueDrop;
+    private readonly bool _acceptDirectPeerDatagrams;
 
     private int _traceRxRemaining = 200;
 
@@ -27,6 +28,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
         IZeroTierDataplanePeerDatagramProcessor peerDatagrams,
+        bool acceptDirectPeerDatagrams = false,
         Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null,
         Action? onPeerQueueDrop = null)
     {
@@ -43,6 +45,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         _localNodeId = localNodeId;
         _rootClient = rootClient;
         _peerDatagrams = peerDatagrams;
+        _acceptDirectPeerDatagrams = acceptDirectPeerDatagrams;
         _handleRootControlAsync = handleRootControlAsync;
         _onPeerQueueDrop = onPeerQueueDrop;
     }
@@ -129,6 +132,11 @@ internal sealed class ZeroTierDataplaneRxLoops
                         ZeroTierTrace.WriteLine($"[zerotier] Root packet handler fault: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
+                continue;
+            }
+
+            if (!_acceptDirectPeerDatagrams && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
                 continue;
             }
 
