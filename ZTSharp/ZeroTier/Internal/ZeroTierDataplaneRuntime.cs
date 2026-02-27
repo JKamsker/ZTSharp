@@ -335,36 +335,50 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
+        var parsedOk = TryGetPacketIdAndVerb(packet, out var parsed);
+        var shouldRecord = parsedOk && parsed.Verb != ZeroTierVerb.QosMeasurement;
+
         var confirmed = _peerEcho.TryGetLastRttMs(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, out _);
         if (_multipath.WarmupDuplicateToRoot && !confirmed)
         {
-            var (packetId, verb) = TryGetPacketIdAndVerb(packet, out var parsed) ? parsed : default;
-            if (verb != ZeroTierVerb.QosMeasurement)
+            if (shouldRecord)
             {
-                _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId);
+                _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
             }
 
+            Task directSend = Task.CompletedTask;
+            Task rootSend = Task.CompletedTask;
             try
             {
-                await Task
-                    .WhenAll(
-                        _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken),
-                        _udp.SendAsync(_rootEndpoint, packet, cancellationToken))
-                    .ConfigureAwait(false);
+                directSend = _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken);
+                rootSend = _udp.SendAsync(_rootEndpoint, packet, cancellationToken);
+                await Task.WhenAll(directSend, rootSend).ConfigureAwait(false);
             }
             catch (SocketException)
             {
-                _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId);
-                await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+                // Warm-up duplicates to root. If the direct send fails, forget any QoS state for it and
+                // ensure a root send happens (if it hasn't already).
+                // If only the root send fails, keep QoS state intact since the direct send may still succeed.
+                var directOk = directSend.IsCompletedSuccessfully;
+                var rootOk = rootSend.IsCompletedSuccessfully;
+
+                if (!directOk && shouldRecord)
+                {
+                    _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
+                }
+
+                if (!directOk && !rootOk)
+                {
+                    await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             return;
         }
 
-        var (packetId2, verb2) = TryGetPacketIdAndVerb(packet, out var parsed2) ? parsed2 : default;
-        if (verb2 != ZeroTierVerb.QosMeasurement)
+        if (shouldRecord)
         {
-            _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId2);
+            _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
         }
 
         try
@@ -373,7 +387,11 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         }
         catch (SocketException)
         {
-            _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId2);
+            if (shouldRecord)
+            {
+                _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
+            }
+
             await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -391,8 +409,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
-        var parsed = TryGetPacketIdAndVerb(packet, out var pv) ? pv : default;
-        var shouldRecord = parsed.Verb != ZeroTierVerb.QosMeasurement;
+        var parsedOk = TryGetPacketIdAndVerb(packet, out var parsed);
+        var shouldRecord = parsedOk && parsed.Verb != ZeroTierVerb.QosMeasurement;
 
         var anyConfirmed = false;
         var directSuccess = 0;
@@ -427,17 +445,19 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 }
             }
         }
-        else
-        {
-            for (var i = 0; i < hinted.Length; i++)
+            else
             {
-                try
+                var localSockets = _udp.LocalSockets;
+                for (var i = 0; i < hinted.Length; i++)
                 {
-                    await _udp.SendAsync(localSocketId: 0, hinted[i], packet, cancellationToken).ConfigureAwait(false);
-                    directSuccess++;
-                }
-                catch (SocketException)
-                {
+                    try
+                    {
+                    var localSocketId = localSockets.Count == 0 ? 0 : localSockets[i % localSockets.Count].Id;
+                    await _udp.SendAsync(localSocketId, hinted[i], packet, cancellationToken).ConfigureAwait(false);
+                        directSuccess++;
+                    }
+                    catch (SocketException)
+                    {
                 }
             }
         }
@@ -465,8 +485,13 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         var hinted = GetOrCreateDirectEndpointManager(peerNodeId).Endpoints;
         if (hinted.Length > 0)
         {
-            var index = hinted.Length == 1 ? 0 : (int)(flowId % (uint)hinted.Length);
-            selected = new ZeroTierSelectedPeerPath(LocalSocketId: 0, hinted[index]);
+            var localSockets = _udp.LocalSockets;
+            var endpointIndex = hinted.Length == 1 ? 0 : (int)(flowId % (uint)hinted.Length);
+            var socketIndex = localSockets.Count <= 1
+                ? 0
+                : (int)((flowId / (uint)hinted.Length) % (uint)localSockets.Count);
+            var localSocketId = localSockets.Count == 0 ? 0 : localSockets[socketIndex].Id;
+            selected = new ZeroTierSelectedPeerPath(localSocketId, hinted[endpointIndex]);
             return true;
         }
 

@@ -187,7 +187,7 @@ internal static class CliParsing
             throw new InvalidOperationException("Invalid bond policy.");
         }
 
-        value = value.Trim();
+        value = value.Trim().ToLowerInvariant();
         return value switch
         {
             "off" => ZeroTierBondPolicy.Off,

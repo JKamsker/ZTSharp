@@ -12,6 +12,8 @@ internal sealed class ZeroTierDirectEndpointManager
 {
     private const int MaxEndpoints = 8;
     private const long HolePunchMinIntervalMs = 5_000;
+    private const long HolePunchCacheTtlMs = 60_000;
+    private const int HolePunchCacheMaxEntries = 2048;
     private const long PushDirectPathsCutoffTimeMs = 30_000;
     private const int PushDirectPathsCutoffLimit = 8;
 
@@ -25,6 +27,7 @@ internal sealed class ZeroTierDirectEndpointManager
 
     private IPEndPoint[] _directEndpoints = Array.Empty<IPEndPoint>();
     private readonly ConcurrentDictionary<string, long> _holePunchLastSentMs = new(StringComparer.Ordinal);
+    private long _lastHolePunchCleanupMs;
     private long _lastDirectPathPushReceiveMs;
     private int _directPathPushCutoffCount;
 
@@ -166,19 +169,43 @@ internal sealed class ZeroTierDirectEndpointManager
 
     private void TrySendHolePunch(IPEndPoint endpoint)
     {
-        if (!ShouldSendHolePunch(endpoint))
-        {
-            return;
-        }
+        var localSockets = _udp.LocalSockets;
+        var now = Environment.TickCount64;
+        CleanupHolePunchCacheIfNeeded(now);
 
         var junk = new byte[4];
         RandomNumberGenerator.Fill(junk);
 
+        if (localSockets.Count == 0)
+        {
+            if (!ShouldSendHolePunch(localSocketId: 0, endpoint, now))
+            {
+                return;
+            }
+
+            TrySendHolePunchCore(localSocketId: 0, endpoint, junk);
+            return;
+        }
+
+        for (var i = 0; i < localSockets.Count; i++)
+        {
+            var socketId = localSockets[i].Id;
+            if (!ShouldSendHolePunch(socketId, endpoint, now))
+            {
+                continue;
+            }
+
+            TrySendHolePunchCore(socketId, endpoint, junk);
+        }
+    }
+
+    private void TrySendHolePunchCore(int localSocketId, IPEndPoint endpoint, byte[] junk)
+    {
         Task sendTask;
         try
         {
-            ZeroTierTrace.WriteLine($"[zerotier] TX hole-punch to {endpoint}.");
-            sendTask = _udp.SendAsync(endpoint, junk, CancellationToken.None);
+            ZeroTierTrace.WriteLine($"[zerotier] TX hole-punch to {endpoint} (socket={localSocketId}).");
+            sendTask = _udp.SendAsync(localSocketId, endpoint, junk, CancellationToken.None);
         }
         catch (Exception ex) when (ex is ObjectDisposedException or SocketException or OperationCanceledException)
         {
@@ -192,39 +219,66 @@ internal sealed class ZeroTierDirectEndpointManager
             TaskScheduler.Default);
     }
 
-    private bool ShouldSendHolePunch(IPEndPoint endpoint)
+    private bool ShouldSendHolePunch(int localSocketId, IPEndPoint endpoint, long nowMs)
     {
-        var now = Environment.TickCount64;
         var keyAddress = endpoint.Address;
         if (keyAddress.AddressFamily == AddressFamily.InterNetworkV6 && keyAddress.IsIPv4MappedToIPv6)
         {
             keyAddress = keyAddress.MapToIPv4();
         }
 
-        var key = $"{keyAddress}:{endpoint.Port}";
+        var key = $"{localSocketId}|{keyAddress}:{endpoint.Port}";
 
         while (true)
         {
             if (_holePunchLastSentMs.TryGetValue(key, out var lastSent) &&
-                unchecked(now - lastSent) < HolePunchMinIntervalMs)
+                unchecked(nowMs - lastSent) < HolePunchMinIntervalMs)
             {
                 return false;
             }
 
-            if (_holePunchLastSentMs.TryAdd(key, now))
+            if (_holePunchLastSentMs.TryAdd(key, nowMs))
             {
                 return true;
             }
 
             _holePunchLastSentMs.TryGetValue(key, out lastSent);
-            if (unchecked(now - lastSent) < HolePunchMinIntervalMs)
+            if (unchecked(nowMs - lastSent) < HolePunchMinIntervalMs)
             {
                 return false;
             }
 
-            if (_holePunchLastSentMs.TryUpdate(key, now, lastSent))
+            if (_holePunchLastSentMs.TryUpdate(key, nowMs, lastSent))
             {
                 return true;
+            }
+        }
+    }
+
+    private void CleanupHolePunchCacheIfNeeded(long nowMs)
+    {
+        if (_holePunchLastSentMs.Count <= HolePunchCacheMaxEntries)
+        {
+            return;
+        }
+
+        var last = Volatile.Read(ref _lastHolePunchCleanupMs);
+        if (last != 0 && unchecked(nowMs - last) < 10_000)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastHolePunchCleanupMs, nowMs, last) != last)
+        {
+            return;
+        }
+
+        var cutoff = nowMs - HolePunchCacheTtlMs;
+        foreach (var entry in _holePunchLastSentMs)
+        {
+            if (entry.Value <= cutoff)
+            {
+                _holePunchLastSentMs.TryRemove(entry.Key, out _);
             }
         }
     }
