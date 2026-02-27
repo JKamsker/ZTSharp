@@ -64,6 +64,29 @@ internal sealed class OsUdpPeerRegistry
     public void RemoveNetworkPeers(ulong networkId)
         => _networkPeers.TryRemove(networkId, out _);
 
+    public void RefreshPeerLastSeen(ulong networkId, ulong nodeId)
+    {
+        if (!_networkPeers.TryGetValue(networkId, out var peers))
+        {
+            return;
+        }
+
+        var nowTicks = GetNowTicks();
+        while (peers.TryGetValue(nodeId, out var existing))
+        {
+            if (existing.LastSeenTicks >= nowTicks)
+            {
+                return;
+            }
+
+            var updated = existing with { LastSeenTicks = nowTicks };
+            if (peers.TryUpdate(nodeId, updated, existing))
+            {
+                return;
+            }
+        }
+    }
+
     public void AddOrUpdatePeer(ulong networkId, ulong nodeId, IPEndPoint endpoint)
     {
         var nowTicks = GetNowTicks();
