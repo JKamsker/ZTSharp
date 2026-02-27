@@ -56,6 +56,10 @@ public sealed class OverlayTcpListener : IAsyncDisposable
             _disposed = true;
             _node.RawFrameReceived -= OnFrameReceived;
             _acceptQueue.Writer.TryComplete();
+            while (_acceptQueue.Reader.TryRead(out var queued))
+            {
+                ObserveBestEffortAsync(queued.DisposeAsync().AsTask());
+            }
         }
         finally
         {
