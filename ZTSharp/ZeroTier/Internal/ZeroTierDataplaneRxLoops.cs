@@ -166,10 +166,21 @@ internal sealed class ZeroTierDataplaneRxLoops
                     return;
                 }
 
+                if (peerWriter.TryWrite(datagram))
+                {
+                    continue;
+                }
+
                 _onPeerQueueDrop?.Invoke();
-                _ = peerQueue.Reader.TryRead(out _);
-                peerWriter.TryWrite(datagram);
-                continue;
+                if (peerQueue.Reader.TryRead(out _))
+                {
+                    if (peerWriter.TryWrite(datagram))
+                    {
+                        continue;
+                    }
+                }
+
+                return;
             }
         }
     }
