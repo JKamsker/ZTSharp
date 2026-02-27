@@ -15,7 +15,11 @@ public sealed class FileStateStore : IStateStore
 
     public FileStateStore(string rootPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+        if (string.IsNullOrEmpty(rootPath))
+        {
+            throw new ArgumentException("Root path must not be null or empty.", nameof(rootPath));
+        }
+
         _rootPath = Path.GetFullPath(rootPath);
         _rootPathTrimmed = Path.TrimEndingDirectorySeparator(_rootPath);
         _rootPathPrefix = _rootPathTrimmed + Path.DirectorySeparatorChar;
@@ -373,13 +377,8 @@ public sealed class FileStateStore : IStateStore
             throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
         }
 
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var current = Path.GetDirectoryName(_rootPathTrimmed);
-        while (!string.IsNullOrWhiteSpace(current))
+        while (!string.IsNullOrEmpty(current))
         {
             if (IsReparsePoint(current))
             {
