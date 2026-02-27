@@ -9,7 +9,7 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketRuntimeBootstrapper
 {
-    internal static IZeroTierUdpTransport CreateUdpTransport(ZeroTierMultipathOptions multipath, bool enableIpv6)
+    private static async ValueTask<IZeroTierUdpTransport> CreateUdpTransportAsync(ZeroTierMultipathOptions multipath, bool enableIpv6)
     {
         ArgumentNullException.ThrowIfNull(multipath);
 
@@ -72,7 +72,7 @@ internal static class ZeroTierSocketRuntimeBootstrapper
                 {
                     try
                     {
-                        socket.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        await socket.DisposeAsync().ConfigureAwait(false);
                     }
                     catch (Exception ex) when (ex is ObjectDisposedException or OperationCanceledException or SocketException or InvalidOperationException)
                     {
@@ -102,7 +102,7 @@ internal static class ZeroTierSocketRuntimeBootstrapper
         ArgumentNullException.ThrowIfNull(managedIps);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
-        var udp = CreateUdpTransport(multipath, enableIpv6: true);
+        var udp = await CreateUdpTransportAsync(multipath, enableIpv6: true).ConfigureAwait(false);
         try
         {
             var localManagedIpsV6 = managedIps
