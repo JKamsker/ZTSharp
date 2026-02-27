@@ -13,6 +13,7 @@ namespace ZTSharp.Transport;
 internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 {
     private static readonly TimeSpan PeerDiscoveryRefreshInterval = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(1);
 
     private sealed record Subscriber(
         ulong NodeId,
@@ -261,7 +262,10 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 
         try
         {
-            await _receiverLoop.ConfigureAwait(false);
+            await _receiverLoop.WaitAsync(ShutdownTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
         }
         catch (OperationCanceledException) when (_receiverCts.IsCancellationRequested)
         {
@@ -274,7 +278,10 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         {
             try
             {
-                await _peerRefreshLoop.ConfigureAwait(false);
+                await _peerRefreshLoop.WaitAsync(ShutdownTimeout).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
             }
             catch (OperationCanceledException) when (_peerRefreshCts.IsCancellationRequested)
             {
