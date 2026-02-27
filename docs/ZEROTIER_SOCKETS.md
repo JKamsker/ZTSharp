@@ -132,6 +132,8 @@ There is no virtual network interface visible to the operating system.
 - TCP connect may use `IPAddress.Any` / `IPAddress.IPv6Any` as the local endpoint to mean "choose a managed IP" (the selected local endpoint is returned by APIs that surface it).
 - TCP listen with port `0` is **not supported** (`NotSupportedException`).
 - UDP bind supports port `0` (ephemeral); the bound local port is selected internally via `ZeroTierEphemeralPorts.Generate()` and can be read back from the socket.
+- UDP bind is currently **per address family + port** (not per IP + port). A UDP socket may receive datagrams destined to any of the node's managed IPs on that port.
+- `ReceiveFromAsync(...)` does not currently surface the local destination IP.
 
 ### Socket Options
 
@@ -154,3 +156,5 @@ Accepted sockets populate `ManagedSocket.RemoteEndPoint` (peer IP/port).
 The user-space TCP stack is correctness-oriented.
 It currently lacks OS optimizations like congestion control and high-throughput sender pipelines.
 Large transfers may be significantly slower than OS TCP.
+
+UDP receive queues are bounded and may drop datagrams under load.
