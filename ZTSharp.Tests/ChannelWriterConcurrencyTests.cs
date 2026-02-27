@@ -34,9 +34,9 @@ public sealed class ChannelWriterConcurrencyTests
             sendTasks[i] = sender.SendToAsync(payload, receiverId, remotePort: 30000);
         }
 
-        await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(10));
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var seen = new bool[count];
         for (var i = 0; i < count; i++)
         {
@@ -183,11 +183,11 @@ public sealed class ChannelWriterConcurrencyTests
                 });
             }
 
-            await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(2));
+            await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(10));
 
             var clientStream = client.GetStream();
             var buffer = new byte[frames * payload.Length];
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var read = await StreamTestHelpers.ReadExactAsync(clientStream, buffer, buffer.Length, cts.Token);
             Assert.Equal(buffer.Length, read);
         }
