@@ -330,6 +330,11 @@ public sealed class FileStateStore : IStateStore
 
     private void ThrowIfPathTraversesReparsePoint(string fullPath)
     {
+        if (IsReparsePoint(_rootPathTrimmed))
+        {
+            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
+        }
+
         if (string.Equals(fullPath, _rootPathTrimmed, _pathComparison))
         {
             return;
@@ -396,6 +401,11 @@ public sealed class FileStateStore : IStateStore
 
     private void EnsureParentDirectoryExistsNoReparse(string fullPath)
     {
+        if (IsReparsePoint(_rootPathTrimmed))
+        {
+            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
+        }
+
         var directory = Path.GetDirectoryName(fullPath);
         if (string.IsNullOrWhiteSpace(directory) || string.Equals(directory, _rootPathTrimmed, _pathComparison))
         {
