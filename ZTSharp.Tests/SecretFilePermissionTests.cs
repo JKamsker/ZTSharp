@@ -9,7 +9,7 @@ public sealed class SecretFilePermissionTests
     {
         if (OperatingSystem.IsWindows())
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip("Unix file mode tests require a Unix-like platform.");
         }
 
         var root = TestTempPaths.CreateGuidSuffixed("zt-secret-perms-");
