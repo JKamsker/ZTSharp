@@ -57,7 +57,15 @@ public sealed class OsUdpSocketFactoryTests
         var method = typeof(OsUdpSocketFactory).GetMethod("CreateUdp6OnlyBound", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
 
-        var udp = (UdpClient?)method!.Invoke(null, new object[] { 0 });
+        UdpClient? udp;
+        try
+        {
+            udp = (UdpClient?)method!.Invoke(null, new object[] { 0 });
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is SocketException or PlatformNotSupportedException or NotSupportedException)
+        {
+            throw Xunit.Sdk.SkipException.ForSkip($"IPv6 appears supported, but binding an IPv6 UDP socket failed: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+        }
         Assert.NotNull(udp);
 
         try
