@@ -17,7 +17,7 @@ public sealed class ZeroTierUdpSocketReceiveTests
         var ip = GetIpHandler(runtime);
 
         const ushort localPort = 12010;
-        await using var socket = new ZeroTierUdpSocket(runtime, localIpA, localPort);
+        await using var socket = new ZeroTierUdpSocket(runtime, IPAddress.Any, localPort);
 
         var buffer = new byte[32];
         var receiveTask = socket.ReceiveFromAsync(buffer, TimeSpan.FromSeconds(1)).AsTask();
@@ -67,4 +67,3 @@ public sealed class ZeroTierUdpSocketReceiveTests
             localManagedIpsV6: Array.Empty<IPAddress>(),
             inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
 }
-
