@@ -18,7 +18,7 @@ internal sealed class ZeroTierPeerPhysicalPathTracker
         }
 
         _ttl = ttl;
-        _nowUnixMs = nowUnixMs ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _nowUnixMs = nowUnixMs ?? (() => Environment.TickCount64);
     }
 
     public void ObserveHop0(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint)

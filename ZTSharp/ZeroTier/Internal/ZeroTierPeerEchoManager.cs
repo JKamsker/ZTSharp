@@ -10,6 +10,8 @@ internal sealed class ZeroTierPeerEchoManager
 {
     private const long EchoMinIntervalMs = 5_000;
     private const long PendingEchoTtlMs = 30_000;
+    private const long EchoPathCacheTtlMs = 120_000;
+    private const long RttCacheTtlMs = 120_000;
 
     private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _localNodeId;
@@ -18,8 +20,9 @@ internal sealed class ZeroTierPeerEchoManager
 
     private readonly ConcurrentDictionary<ZeroTierPeerEchoPathKey, long> _lastEchoSentUnixMs = new();
     private readonly ConcurrentDictionary<ulong, PendingEcho> _pendingByPacketId = new();
-    private readonly ConcurrentDictionary<ZeroTierPeerEchoPathKey, int> _lastRttMsByPath = new();
+    private readonly ConcurrentDictionary<ZeroTierPeerEchoPathKey, RttEntry> _lastRttMsByPath = new();
     private long _lastPendingCleanupUnixMs;
+    private long _lastCacheCleanupMs;
 
     public ZeroTierPeerEchoManager(
         IZeroTierUdpTransport udp,
@@ -33,14 +36,21 @@ internal sealed class ZeroTierPeerEchoManager
         _udp = udp;
         _localNodeId = localNodeId;
         _getPeerProtocolVersion = getPeerProtocolVersion;
-        _nowUnixMs = nowUnixMs ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _nowUnixMs = nowUnixMs ?? (() => Environment.TickCount64);
     }
 
     public bool TryGetLastRttMs(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint, out int rttMs)
     {
         ArgumentNullException.ThrowIfNull(remoteEndPoint);
         var key = new ZeroTierPeerEchoPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
-        return _lastRttMsByPath.TryGetValue(key, out rttMs);
+        if (_lastRttMsByPath.TryGetValue(key, out var entry))
+        {
+            rttMs = entry.RttMs;
+            return true;
+        }
+
+        rttMs = 0;
+        return false;
     }
 
     public void ObserveHelloOkRtt(NodeId peerNodeId, int localSocketId, IPEndPoint remoteEndPoint, ulong helloTimestampEcho)
@@ -55,7 +65,7 @@ internal sealed class ZeroTierPeerEchoManager
         }
 
         var key = new ZeroTierPeerEchoPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
-        _lastRttMsByPath[key] = (int)rtt;
+        _lastRttMsByPath[key] = new RttEntry((int)rtt, LastUpdatedMs: now);
     }
 
     public async ValueTask TrySendEchoProbeAsync(
@@ -71,6 +81,7 @@ internal sealed class ZeroTierPeerEchoManager
 
         var now = _nowUnixMs();
         CleanupPendingIfNeeded(now);
+        CleanupCachesIfNeeded(now);
 
         var pathKey = new ZeroTierPeerEchoPathKey(peerNodeId, new ZeroTierPeerPhysicalPathKey(localSocketId, remoteEndPoint));
         if (_lastEchoSentUnixMs.TryGetValue(pathKey, out var lastSent) && unchecked(now - lastSent) < EchoMinIntervalMs)
@@ -184,7 +195,7 @@ internal sealed class ZeroTierPeerEchoManager
             return;
         }
 
-        _lastRttMsByPath[pending.PathKey] = (int)rtt;
+        _lastRttMsByPath[pending.PathKey] = new RttEntry((int)rtt, LastUpdatedMs: now);
     }
 
     private void CleanupPendingIfNeeded(long nowUnixMs)
@@ -210,7 +221,41 @@ internal sealed class ZeroTierPeerEchoManager
         }
     }
 
+    private void CleanupCachesIfNeeded(long nowMs)
+    {
+        var last = Volatile.Read(ref _lastCacheCleanupMs);
+        if (last != 0 && unchecked(nowMs - last) < 10_000)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastCacheCleanupMs, nowMs, last) != last)
+        {
+            return;
+        }
+
+        var echoCutoff = nowMs - EchoPathCacheTtlMs;
+        foreach (var pair in _lastEchoSentUnixMs)
+        {
+            if (pair.Value <= echoCutoff)
+            {
+                _lastEchoSentUnixMs.TryRemove(pair.Key, out _);
+            }
+        }
+
+        var rttCutoff = nowMs - RttCacheTtlMs;
+        foreach (var pair in _lastRttMsByPath)
+        {
+            if (pair.Value.LastUpdatedMs <= rttCutoff)
+            {
+                _lastRttMsByPath.TryRemove(pair.Key, out _);
+            }
+        }
+    }
+
     private readonly record struct PendingEcho(ZeroTierPeerEchoPathKey PathKey, long TimestampUnixMs);
+
+    private readonly record struct RttEntry(int RttMs, long LastUpdatedMs);
 }
 
 internal readonly record struct ZeroTierPeerEchoPathKey(NodeId PeerNodeId, ZeroTierPeerPhysicalPathKey Path);

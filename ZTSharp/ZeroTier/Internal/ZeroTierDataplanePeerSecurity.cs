@@ -62,7 +62,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     {
         key = Array.Empty<byte>();
 
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nowMs = Environment.TickCount64;
         if (!TryGetPeerKeyEntry(peerNodeId, nowMs, out var entry))
         {
             return false;
@@ -79,7 +79,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
     public void EnsurePeerKeyAsync(NodeId peerNodeId)
     {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nowMs = Environment.TickCount64;
         if (TryGetPeerKeyEntry(peerNodeId, nowMs, out _))
         {
             return;
@@ -92,7 +92,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nowMs = Environment.TickCount64;
         if (TryGetPeerKeyEntry(peerNodeId, nowMs, out var existing))
         {
             if (existing.Key is not null)
@@ -174,7 +174,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
             return;
         }
 
-        CachePeerKey(peerNodeId, sharedKey, nowMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        CachePeerKey(peerNodeId, sharedKey, nowMs: Environment.TickCount64);
         var peerProtocolVersion = payload[0];
         ObservePeerProtocolVersion(peerNodeId, peerProtocolVersion);
 
@@ -211,7 +211,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
 
     private async Task<byte[]> FetchAndCachePeerKeyAsync(NodeId peerNodeId)
     {
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var nowMs = Environment.TickCount64;
         try
         {
             var identity = await _rootClient
@@ -323,6 +323,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
                 if (entry.ExpiresAtUnixMs <= nowMs)
                 {
                     _peerKeys.TryRemove(peerNodeId, out _);
+                    _peerProtocolVersions.TryRemove(peerNodeId, out _);
                 }
             }
 
@@ -341,6 +342,7 @@ internal sealed class ZeroTierDataplanePeerSecurity : IDisposable
                 }
 
                 _peerKeys.TryRemove(peerNodeId, out _);
+                _peerProtocolVersions.TryRemove(peerNodeId, out _);
                 toRemove--;
             }
         }

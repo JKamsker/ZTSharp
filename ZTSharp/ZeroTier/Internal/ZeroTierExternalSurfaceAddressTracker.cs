@@ -18,7 +18,7 @@ internal sealed class ZeroTierExternalSurfaceAddressTracker
         }
 
         _ttl = ttl;
-        _nowUnixMs = nowUnixMs ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _nowUnixMs = nowUnixMs ?? (() => Environment.TickCount64);
     }
 
     public void Observe(NodeId reportingPeerNodeId, int localSocketId, IPEndPoint surfaceAddress)
