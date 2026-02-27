@@ -281,6 +281,19 @@ internal sealed class ZeroTierDirectEndpointManager
                 _holePunchLastSentMs.TryRemove(entry.Key, out _);
             }
         }
+
+        if (_holePunchLastSentMs.Count <= HolePunchCacheMaxEntries)
+        {
+            return;
+        }
+
+        var snapshot = _holePunchLastSentMs.ToArray();
+        Array.Sort(snapshot, static (left, right) => left.Value.CompareTo(right.Value));
+
+        for (var i = 0; i < snapshot.Length && _holePunchLastSentMs.Count > HolePunchCacheMaxEntries; i++)
+        {
+            _holePunchLastSentMs.TryRemove(snapshot[i].Key, out _);
+        }
     }
 
     private static string FormatEndpointKey(IPEndPoint endpoint)
