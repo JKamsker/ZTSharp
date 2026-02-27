@@ -73,12 +73,13 @@ public sealed class FileStateStore : IStateStore
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
         EnsureParentDirectoryExistsNoReparse(path);
-        await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
-
         if (string.Equals(normalized, Internal.NodeStoreKeys.IdentitySecretKey, StringComparison.OrdinalIgnoreCase))
         {
-            Internal.SecretFilePermissions.TryHardenSecretFile(path);
+            await Internal.AtomicFile.WriteSecretBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
