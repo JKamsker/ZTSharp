@@ -40,6 +40,14 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
     }
 
     [Fact]
+    public void CreateUdpTransport_MultipathEnabled_RequiresAtLeastOneSocket()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ZeroTierSocketRuntimeBootstrapper.CreateUdpTransport(
+            new ZeroTierMultipathOptions { Enabled = true, UdpSocketCount = 0 },
+            enableIpv6: false));
+    }
+
+    [Fact]
     public async Task CreateUdpTransport_SingleSocket_HonorsLocalUdpPorts()
     {
         const int attempts = 25;
