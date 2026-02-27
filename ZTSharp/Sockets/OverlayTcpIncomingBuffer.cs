@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using System.Threading.Channels;
 
 namespace ZTSharp.Sockets;
@@ -16,14 +17,14 @@ internal sealed class OverlayTcpIncomingBuffer
     });
     private ReadOnlyMemory<byte> _currentSegment;
     private int _currentSegmentOffset;
-    private bool _remoteClosed;
+    private int _remoteClosed;
     private IOException? _fault;
 
-    public bool RemoteClosed => _remoteClosed;
+    public bool RemoteClosed => Volatile.Read(ref _remoteClosed) != 0;
 
     public bool TryWrite(ReadOnlyMemory<byte> segment)
     {
-        if (_fault is not null)
+        if (Volatile.Read(ref _fault) is not null)
         {
             return false;
         }
@@ -50,7 +51,7 @@ internal sealed class OverlayTcpIncomingBuffer
 
     public void MarkRemoteClosed()
     {
-        _remoteClosed = true;
+        Volatile.Write(ref _remoteClosed, 1);
         _incoming.Writer.TryComplete();
     }
 
@@ -60,9 +61,10 @@ internal sealed class OverlayTcpIncomingBuffer
     public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_fault is not null)
+        var fault = Volatile.Read(ref _fault);
+        if (fault is not null)
         {
-            throw _fault;
+            throw fault;
         }
 
         if (_currentSegment.Length == 0 || _currentSegmentOffset >= _currentSegment.Length)
@@ -76,8 +78,20 @@ internal sealed class OverlayTcpIncomingBuffer
                     break;
                 }
 
-                if (_remoteClosed)
+                if (Volatile.Read(ref _remoteClosed) != 0)
                 {
+                    fault = Volatile.Read(ref _fault);
+                    if (fault is not null)
+                    {
+                        throw fault;
+                    }
+
+                    if (_incoming.Reader.Completion.IsFaulted &&
+                        _incoming.Reader.Completion.Exception?.InnerException is IOException ioException)
+                    {
+                        throw ioException;
+                    }
+
                     return 0;
                 }
 
@@ -109,13 +123,12 @@ internal sealed class OverlayTcpIncomingBuffer
 
     private void Fault(IOException exception)
     {
-        if (_fault is not null)
+        if (Interlocked.CompareExchange(ref _fault, exception, null) is not null)
         {
             return;
         }
 
-        _fault = exception;
-        _remoteClosed = true;
+        Volatile.Write(ref _remoteClosed, 1);
         _incoming.Writer.TryComplete(exception);
     }
 }
