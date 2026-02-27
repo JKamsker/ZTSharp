@@ -72,7 +72,23 @@ internal sealed class OverlayTcpIncomingBuffer
     {
         if (Interlocked.CompareExchange(ref _remoteFinReceived, 1, 0) == 0)
         {
-            Volatile.Write(ref _remoteFinReceivedAtMs, Environment.TickCount64);
+            var finReceivedAtMs = Environment.TickCount64;
+            Volatile.Write(ref _remoteFinReceivedAtMs, finReceivedAtMs);
+
+            while (true)
+            {
+                var lastActivityMs = Volatile.Read(ref _lastActivityMs);
+                if (lastActivityMs >= finReceivedAtMs)
+                {
+                    break;
+                }
+
+                if (Interlocked.CompareExchange(ref _lastActivityMs, finReceivedAtMs, lastActivityMs) == lastActivityMs)
+                {
+                    break;
+                }
+            }
+
             _finArrived.TrySetResult(true);
         }
     }
@@ -130,9 +146,16 @@ internal sealed class OverlayTcpIncomingBuffer
                     {
                         var now = Environment.TickCount64;
                         var finReceivedAtMs = Volatile.Read(ref _remoteFinReceivedAtMs);
-                        var last = Volatile.Read(ref _lastActivityMs);
+                        var lastActivityMs = Volatile.Read(ref _lastActivityMs);
+                        var last = Math.Max(lastActivityMs, finReceivedAtMs);
                         var gracePeriodMs = last > finReceivedAtMs ? FinLateDataGracePeriodMs : FinProbeGracePeriodMs;
-                        var remainingGraceMs = gracePeriodMs - (int)unchecked(now - last);
+                        var elapsedMs = now - last;
+                        if (elapsedMs < 0)
+                        {
+                            elapsedMs = 0;
+                        }
+
+                        var remainingGraceMs = gracePeriodMs - elapsedMs;
                         if (remainingGraceMs <= 0)
                         {
                             MarkRemoteClosed();
@@ -140,6 +163,7 @@ internal sealed class OverlayTcpIncomingBuffer
                         }
 
                         using var graceCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        remainingGraceMs = Math.Min(remainingGraceMs, gracePeriodMs);
                         graceCts.CancelAfter(TimeSpan.FromMilliseconds(remainingGraceMs));
                         try
                         {
