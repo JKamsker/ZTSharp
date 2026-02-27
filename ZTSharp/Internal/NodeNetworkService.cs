@@ -16,6 +16,7 @@ internal sealed class NodeNetworkService
 
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
     private readonly ConcurrentDictionary<ulong, Guid> _networkRegistrations = new();
+    private readonly ConcurrentDictionary<ulong, SemaphoreSlim> _leaveGates = new();
     private readonly NetworkIdReadOnlyCollection _joinedNetworkIds;
 
     public NodeNetworkService(IStateStore store, INodeTransport transport, NodeEventStream events, NodePeerService peerService)
@@ -85,17 +86,26 @@ internal sealed class NodeNetworkService
     public async Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken)
     {
         var key = BuildNetworkFileKey(networkId);
-        if (_networkRegistrations.TryGetValue(networkId, out var registration))
+        var gate = _leaveGates.GetOrAdd(networkId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await _transport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
-            _networkRegistrations.TryRemove(networkId, out _);
-        }
+            if (_networkRegistrations.TryGetValue(networkId, out var registration))
+            {
+                await _transport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
+                _networkRegistrations.TryRemove(networkId, out _);
+            }
 
-        var removed = _joinedNetworks.TryRemove(networkId, out _);
-        if (removed)
+            var removed = _joinedNetworks.TryRemove(networkId, out _);
+            if (removed)
+            {
+                await _store.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
+                _events.Publish(EventCode.NetworkLeft, DateTimeOffset.UtcNow, networkId);
+            }
+        }
+        finally
         {
-            await _store.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
-            _events.Publish(EventCode.NetworkLeft, DateTimeOffset.UtcNow, networkId);
+            gate.Release();
         }
     }
 
@@ -213,7 +223,20 @@ internal sealed class NodeNetworkService
     {
         foreach (var kv in _networkRegistrations)
         {
-            await _transport.LeaveNetworkAsync(kv.Key, kv.Value, cancellationToken).ConfigureAwait(false);
+            var gate = _leaveGates.GetOrAdd(kv.Key, static _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_networkRegistrations.TryGetValue(kv.Key, out var registration))
+                {
+                    await _transport.LeaveNetworkAsync(kv.Key, registration, cancellationToken).ConfigureAwait(false);
+                    _networkRegistrations.TryRemove(kv.Key, out _);
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         _networkRegistrations.Clear();
