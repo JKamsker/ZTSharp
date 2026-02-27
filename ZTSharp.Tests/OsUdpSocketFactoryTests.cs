@@ -10,7 +10,7 @@ public sealed class OsUdpSocketFactoryTests
     {
         if (!OperatingSystem.IsWindows())
         {
-            return;
+            throw Xunit.Sdk.SkipException.ForSkip("Windows-only IOControl buffer test.");
         }
 
         var buffer = OsUdpSocketFactory.CreateWindowsSioUdpConnResetInputBuffer(disableConnReset: true);
@@ -19,7 +19,7 @@ public sealed class OsUdpSocketFactoryTests
     }
 
     [Fact]
-    public void CreateSocketCore_WhenDualModeFails_TriesIpv6OnlyBeforeIpv4()
+    public void CreateSocketCore_WhenDualModeFails_TriesIpv4BeforeIpv6Only()
     {
         var calls = new List<string>();
 
@@ -36,8 +36,8 @@ public sealed class OsUdpSocketFactoryTests
 
         try
         {
-            Assert.Equal(new[] { "dual", "v6only" }, calls);
-            Assert.Equal(AddressFamily.InterNetworkV6, socket.Client.AddressFamily);
+            Assert.Equal(new[] { "dual", "v4" }, calls);
+            Assert.Equal(AddressFamily.InterNetwork, socket.Client.AddressFamily);
         }
         finally
         {

@@ -41,12 +41,23 @@ internal static class OsUdpSocketFactory
             return createUdp4Bound(localPort);
         }
 
+        Exception? lastException = null;
         try
         {
             return createUdp6DualModeBound(localPort);
         }
         catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
         {
+            lastException = ex;
+        }
+
+        try
+        {
+            return createUdp4Bound(localPort);
+        }
+        catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
+        {
+            lastException = ex;
         }
 
         try
@@ -55,9 +66,10 @@ internal static class OsUdpSocketFactory
         }
         catch (Exception ex) when (ex is SocketException or PlatformNotSupportedException or NotSupportedException)
         {
+            lastException = ex;
         }
 
-        return createUdp4Bound(localPort);
+        throw lastException!;
     }
 
     private static UdpClient CreateUdp4Bound(int localPort)
