@@ -218,6 +218,11 @@ internal static class Ipv6Codec
                 var headerNext = payload[offset];
                 var payloadLen32 = payload[offset + 1];
                 var headerLength = (payloadLen32 + 2) * 4;
+                if (headerLength < 12)
+                {
+                    return false;
+                }
+
                 if (headerLength > remaining)
                 {
                     return false;
