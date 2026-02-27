@@ -158,7 +158,9 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                 }
             }
 
-            if (!dst.Equals(_localAddress))
+            if (!_localAddress.Equals(IPAddress.Any) &&
+                !_localAddress.Equals(IPAddress.IPv6Any) &&
+                !dst.Equals(_localAddress))
             {
                 continue;
             }
