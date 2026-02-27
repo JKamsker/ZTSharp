@@ -372,6 +372,28 @@ public sealed class FileStateStore : IStateStore
         {
             throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
         }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var current = Path.GetDirectoryName(_rootPathTrimmed);
+        while (!string.IsNullOrWhiteSpace(current))
+        {
+            if (IsReparsePoint(current))
+            {
+                throw new InvalidOperationException("State root path must not be under a symlink/junction/reparse point.");
+            }
+
+            var parent = Path.GetDirectoryName(current);
+            if (parent is null || string.Equals(parent, current, _pathComparison))
+            {
+                break;
+            }
+
+            current = parent;
+        }
     }
 
     private void EnsureParentDirectoryExistsNoReparse(string fullPath)
