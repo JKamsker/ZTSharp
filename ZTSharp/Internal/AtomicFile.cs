@@ -396,6 +396,15 @@ internal static class AtomicFile
         }
         catch (PlatformNotSupportedException)
         {
+            fallback.Dispose();
+            TryDeleteFallback(path);
+            throw new IOException("Failed to set secret file permissions.");
+        }
+        catch (NotSupportedException)
+        {
+            fallback.Dispose();
+            TryDeleteFallback(path);
+            throw new IOException("Failed to set secret file permissions.");
         }
         catch (IOException ex)
         {
@@ -409,5 +418,22 @@ internal static class AtomicFile
         }
 
         return fallback;
+    }
+
+    private static void TryDeleteFallback(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 }
