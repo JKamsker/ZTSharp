@@ -16,7 +16,7 @@ internal sealed class NodeNetworkService
 
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
     private readonly ConcurrentDictionary<ulong, Guid> _networkRegistrations = new();
-    private readonly ConcurrentDictionary<ulong, SemaphoreSlim> _leaveGates = new();
+    private readonly SemaphoreSlim _leaveGate = new(1, 1);
     private readonly NetworkIdReadOnlyCollection _joinedNetworkIds;
 
     public NodeNetworkService(IStateStore store, INodeTransport transport, NodeEventStream events, NodePeerService peerService)
@@ -86,8 +86,7 @@ internal sealed class NodeNetworkService
     public async Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken)
     {
         var key = BuildNetworkFileKey(networkId);
-        var gate = _leaveGates.GetOrAdd(networkId, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _leaveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_networkRegistrations.TryGetValue(networkId, out var registration))
@@ -105,7 +104,7 @@ internal sealed class NodeNetworkService
         }
         finally
         {
-            gate.Release();
+            _leaveGate.Release();
         }
     }
 
@@ -223,8 +222,7 @@ internal sealed class NodeNetworkService
     {
         foreach (var kv in _networkRegistrations)
         {
-            var gate = _leaveGates.GetOrAdd(kv.Key, static _ => new SemaphoreSlim(1, 1));
-            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _leaveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (_networkRegistrations.TryGetValue(kv.Key, out var registration))
@@ -235,7 +233,7 @@ internal sealed class NodeNetworkService
             }
             finally
             {
-                gate.Release();
+                _leaveGate.Release();
             }
         }
 
