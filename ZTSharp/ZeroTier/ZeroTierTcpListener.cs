@@ -151,12 +151,12 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         }
         else
         {
-            if (!Ipv6Codec.TryParse(ipPacket.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+            if (!Ipv6Codec.TryParseTransportPayload(ipPacket.Span, out src, out dst, out var protocol, out _, out ipPayload))
             {
                 return Task.CompletedTask;
             }
 
-            if ((!_isWildcardBind && !ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddressMatch)) || nextHeader != TcpCodec.ProtocolNumber)
+            if ((!_isWildcardBind && !ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddressMatch)) || protocol != TcpCodec.ProtocolNumber)
             {
                 return Task.CompletedTask;
             }

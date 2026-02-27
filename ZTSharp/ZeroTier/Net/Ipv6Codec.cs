@@ -110,17 +110,46 @@ internal static class Ipv6Codec
             return false;
         }
 
-        return TryWalkExtensionHeaders(payload, nextHeader, out protocol, out transportPayload);
+        return TryWalkExtensionHeaders(payload, nextHeader, out protocol, out transportPayload, out _);
+    }
+
+    public static bool TryParseTransportPayload(
+        ReadOnlySpan<byte> packet,
+        out IPAddress source,
+        out IPAddress destination,
+        out byte protocol,
+        out byte hopLimit,
+        out ReadOnlySpan<byte> transportPayload,
+        out int transportPayloadOffset)
+    {
+        transportPayload = default;
+        transportPayloadOffset = 0;
+        protocol = 0;
+
+        if (!TryParse(packet, out source, out destination, out var nextHeader, out hopLimit, out var payload))
+        {
+            return false;
+        }
+
+        if (!TryWalkExtensionHeaders(payload, nextHeader, out protocol, out transportPayload, out var offsetFromPayload))
+        {
+            return false;
+        }
+
+        transportPayloadOffset = HeaderLength + offsetFromPayload;
+        return true;
     }
 
     private static bool TryWalkExtensionHeaders(
         ReadOnlySpan<byte> payload,
         byte nextHeader,
         out byte protocol,
-        out ReadOnlySpan<byte> transportPayload)
+        out ReadOnlySpan<byte> transportPayload,
+        out int transportPayloadOffsetFromPayload)
     {
         protocol = nextHeader;
         transportPayload = payload;
+        transportPayloadOffsetFromPayload = 0;
 
         var offset = 0;
         for (var i = 0; i < MaxExtensionHeaderChain && IsExtensionHeader(protocol); i++)
@@ -199,6 +228,7 @@ internal static class Ipv6Codec
             }
         }
 
+        transportPayloadOffsetFromPayload = offset;
         transportPayload = payload.Slice(offset);
         return !IsExtensionHeader(protocol);
     }

@@ -49,6 +49,40 @@ public sealed class ZeroTierDataplaneFragmentPolicyTests
         Assert.False(Ipv6Codec.IsExtensionHeader(TcpCodec.ProtocolNumber));
     }
 
+    [Fact]
+    public async Task Ipv6HopByHopHeader_DoesNotPreventUdpHandlerDispatch()
+    {
+        var localManagedIpV6 = IPAddress.Parse("fd00::2");
+        await using var runtime = CreateRuntimeV6(localManagedIpV6);
+        var ip = GetIpHandler(runtime);
+
+        const ushort localPort = 12011;
+        var udpChannel = Channel.CreateUnbounded<ZeroTierRoutedIpPacket>();
+        Assert.True(runtime.TryRegisterUdpPort(AddressFamily.InterNetworkV6, localPort, udpChannel.Writer));
+
+        var remoteIpV6 = IPAddress.Parse("fd00::1");
+        var udp = UdpCodec.Encode(remoteIpV6, localManagedIpV6, sourcePort: 1111, destinationPort: localPort, payload: new byte[] { 1, 2, 3 });
+
+        var hbh = new byte[8];
+        hbh[0] = UdpCodec.ProtocolNumber; // next header
+        hbh[1] = 0; // hdr ext len (8 bytes total)
+
+        var payload = new byte[hbh.Length + udp.Length];
+        hbh.CopyTo(payload, 0);
+        udp.CopyTo(payload, hbh.Length);
+
+        var ipv6 = Ipv6Codec.Encode(
+            source: remoteIpV6,
+            destination: localManagedIpV6,
+            nextHeader: 0, // hop-by-hop
+            payload: payload,
+            hopLimit: 64);
+
+        await ip.HandleIpv6PacketAsync(peerNodeId: new NodeId(0x3333333333), ipv6Packet: ipv6, cancellationToken: CancellationToken.None);
+
+        Assert.True(udpChannel.Reader.TryRead(out _));
+    }
+
     private static void RewriteIpv4HeaderChecksum(byte[] packet)
     {
         var headerLength = (packet[0] & 0x0F) * 4;
@@ -111,5 +145,22 @@ public sealed class ZeroTierDataplaneFragmentPolicyTests
             networkId: 1,
             localManagedIpsV4: new[] { localManagedIpV4 },
             localManagedIpsV6: Array.Empty<IPAddress>(),
+            inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
+
+    [global::System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "UDP transport ownership transfers to ZeroTierDataplaneRuntime, which is disposed by the caller.")]
+    private static ZeroTierDataplaneRuntime CreateRuntimeV6(IPAddress localManagedIpV6)
+        => new(
+            udp: new ZeroTierUdpTransport(localPort: 0, enableIpv6: false),
+            rootNodeId: new NodeId(0x1111111111),
+            rootEndpoint: new IPEndPoint(IPAddress.Loopback, 9999),
+            rootKey: new byte[48],
+            rootProtocolVersion: 12,
+            localIdentity: ZeroTierTestIdentities.CreateFastIdentity(0x2222222222),
+            networkId: 1,
+            localManagedIpsV4: Array.Empty<IPAddress>(),
+            localManagedIpsV6: new[] { localManagedIpV6 },
             inlineCom: new byte[] { 1, 0, 0, 0, 0, 0, 0, 0 });
 }

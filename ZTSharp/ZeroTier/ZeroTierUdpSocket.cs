@@ -140,12 +140,12 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
             }
             else
             {
-                if (!Ipv6Codec.TryParse(routed.Packet.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+                if (!Ipv6Codec.TryParseTransportPayload(routed.Packet.Span, out src, out dst, out var protocol, out _, out ipPayload))
                 {
                     continue;
                 }
 
-                if (!dst.Equals(_localAddress) || nextHeader != UdpCodec.ProtocolNumber)
+                if (!dst.Equals(_localAddress) || protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
