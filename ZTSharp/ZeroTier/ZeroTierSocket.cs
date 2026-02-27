@@ -57,6 +57,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         var token = linkedCts.Token;
 
+        Task joinTask;
         try
         {
             await _joinLock.WaitAsync(token).ConfigureAwait(false);
@@ -79,6 +80,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             }
 
             _joinTask ??= JoinCoreAsync(_shutdown.Token);
+            joinTask = _joinTask;
         }
         finally
         {
@@ -87,7 +89,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
         try
         {
-            await _joinTask.WaitAsync(token).ConfigureAwait(false);
+            await joinTask.WaitAsync(token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
@@ -355,6 +357,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         var token = linkedCts.Token;
 
+        Task<ZeroTierDataplaneRuntime> runtimeTask;
         try
         {
             await _runtimeLock.WaitAsync(token).ConfigureAwait(false);
@@ -377,6 +380,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
             }
 
             _runtimeTask ??= CreateRuntimeAsync(inlineCom, _shutdown.Token);
+            runtimeTask = _runtimeTask;
         }
         finally
         {
@@ -385,7 +389,7 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
         try
         {
-            return await _runtimeTask.WaitAsync(token).ConfigureAwait(false);
+            return await runtimeTask.WaitAsync(token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
