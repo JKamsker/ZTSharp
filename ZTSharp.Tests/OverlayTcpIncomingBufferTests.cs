@@ -40,6 +40,26 @@ public sealed class OverlayTcpIncomingBufferTests
     }
 
     [Fact]
+    public async Task FinGrace_AfterSegmentConsumed_SetsRemoteClosed_WhenNoLateDataArrives()
+    {
+        var incoming = new OverlayTcpIncomingBuffer();
+
+        var payload = new byte[] { 1, 2, 3 };
+        Assert.True(incoming.TryWrite(payload));
+
+        var buffer = new byte[3];
+        var read = await incoming.ReadAsync(buffer, CancellationToken.None);
+        Assert.Equal(3, read);
+        Assert.Equal(payload, buffer);
+
+        incoming.MarkRemoteFinReceived();
+
+        var eof = await incoming.ReadAsync(new byte[1], CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(0, eof);
+        Assert.True(incoming.RemoteClosed);
+    }
+
+    [Fact]
     public async Task FinArrival_UnblocksReaderAwaitingReadAsync()
     {
         var incoming = new OverlayTcpIncomingBuffer();

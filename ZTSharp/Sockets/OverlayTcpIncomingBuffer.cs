@@ -113,6 +113,12 @@ internal sealed class OverlayTcpIncomingBuffer
 
         if (_currentSegment.Length == 0 || _currentSegmentOffset >= _currentSegment.Length)
         {
+            if (_currentSegmentOffset >= _currentSegment.Length)
+            {
+                _currentSegment = default;
+                _currentSegmentOffset = 0;
+            }
+
             while (true)
             {
                 if (_incoming.Reader.TryRead(out var nextSegment))
