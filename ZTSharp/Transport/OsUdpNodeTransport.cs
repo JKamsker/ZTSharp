@@ -161,6 +161,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                     await _udp
                         .SendAsync(frame, peer.Value.Endpoint, cancellationToken)
                         .ConfigureAwait(false);
+                    _peers.RefreshPeerLastSeen(networkId, peer.Key);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
