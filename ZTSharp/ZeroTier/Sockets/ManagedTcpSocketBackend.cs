@@ -188,7 +188,15 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                 ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, token).ConfigureAwait(false)
                 : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, token).ConfigureAwait(false);
 
-            await InitLock.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await InitLock.WaitAsync(token).ConfigureAwait(false);
+            }
+            catch
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
             try
             {
                 ObjectDisposedException.ThrowIf(Disposed, this);
