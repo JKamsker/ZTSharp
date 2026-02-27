@@ -13,9 +13,26 @@ internal static class ZeroTierSocketRuntimeBootstrapper
     {
         ArgumentNullException.ThrowIfNull(multipath);
 
-        if (!multipath.Enabled || multipath.UdpSocketCount == 1)
+        if (!multipath.Enabled)
         {
             return new ZeroTierUdpTransport(localPort: 0, enableIpv6: enableIpv6, localSocketId: 0);
+        }
+
+        if (multipath.UdpSocketCount == 1)
+        {
+            var port = 0;
+            var localPorts = multipath.LocalUdpPorts;
+            if (localPorts is not null)
+            {
+                if (localPorts.Count != 1)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts length must match UdpSocketCount.");
+                }
+
+                port = localPorts[0];
+            }
+
+            return new ZeroTierUdpTransport(localPort: port, enableIpv6: enableIpv6, localSocketId: 0);
         }
 
         var ports = multipath.LocalUdpPorts;
