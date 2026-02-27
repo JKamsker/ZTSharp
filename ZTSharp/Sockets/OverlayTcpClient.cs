@@ -125,6 +125,11 @@ public sealed class OverlayTcpClient : IAsyncDisposable
             throw new IOException("Remote has closed the connection.");
         }
 
+        if (_incoming.RemoteFinReceived)
+        {
+            throw new IOException("Remote has closed the connection.");
+        }
+
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -213,7 +218,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
 
         if (type == OverlayTcpFrameCodec.FrameType.Fin)
         {
-            _incoming.MarkRemoteClosed();
+            _incoming.MarkRemoteFinReceived();
             return;
         }
 

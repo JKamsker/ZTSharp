@@ -8,6 +8,7 @@ internal sealed class OverlayTcpIncomingBuffer
 {
     private const int MaxQueuedSegments = 1024;
     private const int MaxSegmentLength = 1024;
+    private const int FinGracePeriodMs = 200;
 
     private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateBounded<ReadOnlyMemory<byte>>(new BoundedChannelOptions(MaxQueuedSegments)
     {
@@ -17,10 +18,14 @@ internal sealed class OverlayTcpIncomingBuffer
     });
     private ReadOnlyMemory<byte> _currentSegment;
     private int _currentSegmentOffset;
+    private int _remoteFinReceived;
     private int _remoteClosed;
+    private long _lastActivityMs;
     private IOException? _fault;
 
     public bool RemoteClosed => Volatile.Read(ref _remoteClosed) != 0;
+
+    public bool RemoteFinReceived => Volatile.Read(ref _remoteFinReceived) != 0;
 
     public bool TryWrite(ReadOnlyMemory<byte> segment)
     {
@@ -47,6 +52,7 @@ internal sealed class OverlayTcpIncomingBuffer
 
         if (_incoming.Writer.TryWrite(segment))
         {
+            Volatile.Write(ref _lastActivityMs, Environment.TickCount64);
             return true;
         }
 
@@ -57,6 +63,14 @@ internal sealed class OverlayTcpIncomingBuffer
 
         Fault(new IOException("Overlay TCP receive buffer overflowed; closing connection to avoid silent data loss."));
         return false;
+    }
+
+    public void MarkRemoteFinReceived()
+    {
+        if (Interlocked.CompareExchange(ref _remoteFinReceived, 1, 0) == 0)
+        {
+            Volatile.Write(ref _lastActivityMs, Environment.TickCount64);
+        }
     }
 
     public void MarkRemoteClosed()
@@ -107,6 +121,32 @@ internal sealed class OverlayTcpIncomingBuffer
 
                 try
                 {
+                    if (Volatile.Read(ref _remoteFinReceived) != 0)
+                    {
+                        var now = Environment.TickCount64;
+                        var last = Volatile.Read(ref _lastActivityMs);
+                        var remainingGraceMs = FinGracePeriodMs - (int)unchecked(now - last);
+                        if (remainingGraceMs <= 0)
+                        {
+                            MarkRemoteClosed();
+                            return 0;
+                        }
+
+                        using var graceCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                        graceCts.CancelAfter(TimeSpan.FromMilliseconds(remainingGraceMs));
+                        try
+                        {
+                            _currentSegment = await _incoming.Reader.ReadAsync(graceCts.Token).ConfigureAwait(false);
+                            _currentSegmentOffset = 0;
+                            break;
+                        }
+                        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && graceCts.IsCancellationRequested)
+                        {
+                            MarkRemoteClosed();
+                            return 0;
+                        }
+                    }
+
                     _currentSegment = await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
                     _currentSegmentOffset = 0;
                     break;

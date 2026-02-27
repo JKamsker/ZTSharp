@@ -20,4 +20,22 @@ public sealed class OverlayTcpIncomingBufferTests
 
         await Assert.ThrowsAsync<IOException>(() => incoming.ReadAsync(new byte[1], CancellationToken.None).AsTask());
     }
+
+    [Fact]
+    public async Task FinGrace_AllowsLateDataFramesToBeRead()
+    {
+        var incoming = new OverlayTcpIncomingBuffer();
+        incoming.MarkRemoteFinReceived();
+
+        var payload = new byte[] { 1, 2, 3 };
+        Assert.True(incoming.TryWrite(payload));
+
+        var buffer = new byte[3];
+        var read = await incoming.ReadAsync(buffer, CancellationToken.None);
+        Assert.Equal(3, read);
+        Assert.Equal(payload, buffer);
+
+        var eof = await incoming.ReadAsync(new byte[1], CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(0, eof);
+    }
 }
