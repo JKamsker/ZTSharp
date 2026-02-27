@@ -132,8 +132,15 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
             if (!_incoming.Writer.TryWrite(datagram))
             {
                 Interlocked.Increment(ref _incomingBackpressureCount);
-                _ = _incoming.Reader.TryRead(out _);
-                _incoming.Writer.TryWrite(datagram);
+                if (_incoming.Writer.TryWrite(datagram))
+                {
+                    continue;
+                }
+
+                if (_incoming.Reader.TryRead(out _))
+                {
+                    _incoming.Writer.TryWrite(datagram);
+                }
             }
         }
     }
