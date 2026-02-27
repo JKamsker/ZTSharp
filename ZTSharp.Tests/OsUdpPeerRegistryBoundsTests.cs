@@ -32,7 +32,10 @@ public sealed class OsUdpPeerRegistryBoundsTests
 
             for (var i = 0; i < OsUdpPeerRegistry.DirectoryMaxPeersPerNetwork + 50; i++)
             {
-                registry.RegisterDiscoveredPeer(networkId, sourceNodeId: (ulong)(i + 1), new IPEndPoint(IPAddress.Loopback, 9999));
+                _ = registry.RegisterLocalAndGetKnownPeers(
+                    networkId,
+                    localNodeId: (ulong)(i + 1),
+                    advertisedEndpoint: new IPEndPoint(IPAddress.Loopback, 9999));
             }
 
             Assert.True(OsUdpPeerRegistry.GetDirectoryPeerCountForTests(networkId) <= OsUdpPeerRegistry.DirectoryMaxPeersPerNetwork);
@@ -53,11 +56,11 @@ public sealed class OsUdpPeerRegistryBoundsTests
             var registry = new OsUdpPeerRegistry(enablePeerDiscovery: true, UdpEndpointNormalization.Normalize, timeProvider: time);
             var networkId = 0x5678UL;
 
-            registry.RegisterDiscoveredPeer(networkId, sourceNodeId: 1, new IPEndPoint(IPAddress.Loopback, 9999));
+            _ = registry.RegisterLocalAndGetKnownPeers(networkId, localNodeId: 1, advertisedEndpoint: new IPEndPoint(IPAddress.Loopback, 9999));
             Assert.Equal(1, OsUdpPeerRegistry.GetDirectoryPeerCountForTests(networkId));
 
             time.Advance(OsUdpPeerRegistry.DirectoryPeerTtl + TimeSpan.FromSeconds(1));
-            registry.Cleanup();
+            _ = registry.RegisterLocalAndGetKnownPeers(networkId: networkId + 1, localNodeId: 2, advertisedEndpoint: new IPEndPoint(IPAddress.Loopback, 9998));
 
             Assert.Equal(0, OsUdpPeerRegistry.GetDirectoryPeerCountForTests(networkId));
         }

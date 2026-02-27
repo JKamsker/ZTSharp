@@ -113,9 +113,9 @@ internal sealed class OsUdpReceiveLoop
                 {
                     if (discoveredNodeId != 0 && discoveredNodeId == sourceNodeId)
                     {
-                        _peers.RegisterDiscoveredPeer(networkId, discoveredNodeId, normalizedRemoteEndpoint);
                         if (localNodeId != discoveredNodeId &&
                             controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello &&
+                            IPAddress.IsLoopback(normalizedRemoteEndpoint.Address) &&
                             ShouldSendHelloResponse(networkId, discoveredNodeId))
                         {
                             QueueDiscoverySend(

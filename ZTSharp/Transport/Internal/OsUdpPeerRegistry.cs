@@ -57,7 +57,9 @@ internal sealed class OsUdpPeerRegistry
             return false;
         }
 
-        EvictExpiredAndTrimNetworkPeers(networkId, peers, GetNowTicks());
+        var nowTicks = GetNowTicks();
+        ImportDirectoryPeers(networkId, peers, nowTicks);
+        EvictExpiredAndTrimNetworkPeers(networkId, peers, nowTicks);
         return true;
     }
 
@@ -150,23 +152,6 @@ internal sealed class OsUdpPeerRegistry
         SweepDirectory(nowTicks);
     }
 
-    public void RegisterDiscoveredPeer(ulong networkId, ulong sourceNodeId, IPEndPoint remoteEndpoint)
-    {
-        if (!_enablePeerDiscovery)
-        {
-            return;
-        }
-
-        var nowTicks = GetNowTicks();
-        var endpoint = _normalizeEndpoint(remoteEndpoint);
-        var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerEntry>());
-        peers[sourceNodeId] = new PeerEntry(endpoint, nowTicks);
-        var directoryPeers = s_networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerEntry>());
-        directoryPeers[sourceNodeId] = new PeerEntry(endpoint, nowTicks);
-        SweepDirectory(nowTicks);
-        SweepNetworkPeers(nowTicks);
-    }
-
     public void Cleanup()
     {
         var nowTicks = GetNowTicks();
@@ -196,21 +181,21 @@ internal sealed class OsUdpPeerRegistry
     private long GetNowTicks()
         => _timeProvider.GetUtcNow().UtcDateTime.Ticks;
 
-    private static void EvictExpiredAndTrimNetwork(ulong networkId, ConcurrentDictionary<ulong, PeerEntry> discoveredPeers, long nowTicks)
+    private static void EvictExpiredAndTrimPeers(ConcurrentDictionary<ulong, PeerEntry> peers, long nowTicks)
     {
         var cutoffTicks = nowTicks - DirectoryPeerTtlTicks;
-        foreach (var peer in discoveredPeers)
+        foreach (var peer in peers)
         {
             if (peer.Value.LastSeenTicks < cutoffTicks)
             {
-                discoveredPeers.TryRemove(peer.Key, out _);
+                peers.TryRemove(peer.Key, out _);
             }
         }
 
-        if (discoveredPeers.Count > DirectoryMaxPeersPerNetwork)
+        if (peers.Count > DirectoryMaxPeersPerNetwork)
         {
-            var removeCount = discoveredPeers.Count - DirectoryMaxPeersPerNetwork;
-            var toRemove = discoveredPeers
+            var removeCount = peers.Count - DirectoryMaxPeersPerNetwork;
+            var toRemove = peers
                 .OrderBy(p => p.Value.LastSeenTicks)
                 .Take(removeCount)
                 .Select(p => p.Key)
@@ -218,19 +203,14 @@ internal sealed class OsUdpPeerRegistry
 
             foreach (var key in toRemove)
             {
-                discoveredPeers.TryRemove(key, out _);
+                peers.TryRemove(key, out _);
             }
-        }
-
-        if (discoveredPeers.IsEmpty)
-        {
-            s_networkDirectory.TryRemove(networkId, out _);
         }
     }
 
     private void EvictExpiredAndTrimNetworkPeers(ulong networkId, ConcurrentDictionary<ulong, PeerEntry> peers, long nowTicks)
     {
-        EvictExpiredAndTrimNetwork(networkId, peers, nowTicks);
+        EvictExpiredAndTrimPeers(peers, nowTicks);
         if (peers.IsEmpty)
         {
             _networkPeers.TryRemove(networkId, out _);
@@ -279,7 +259,11 @@ internal sealed class OsUdpPeerRegistry
     {
         foreach (var network in s_networkDirectory)
         {
-            EvictExpiredAndTrimNetwork(network.Key, network.Value, nowTicks);
+            EvictExpiredAndTrimPeers(network.Value, nowTicks);
+            if (network.Value.IsEmpty)
+            {
+                s_networkDirectory.TryRemove(network.Key, out _);
+            }
         }
 
         if (s_networkDirectory.Count <= DirectoryMaxNetworks)
@@ -310,6 +294,37 @@ internal sealed class OsUdpPeerRegistry
         foreach (var networkId in toRemove)
         {
             s_networkDirectory.TryRemove(networkId, out _);
+        }
+    }
+
+    private void ImportDirectoryPeers(ulong networkId, ConcurrentDictionary<ulong, PeerEntry> peers, long nowTicks)
+    {
+        if (!_enablePeerDiscovery)
+        {
+            return;
+        }
+
+        if (!s_networkDirectory.TryGetValue(networkId, out var directoryPeers))
+        {
+            return;
+        }
+
+        EvictExpiredAndTrimPeers(directoryPeers, nowTicks);
+        if (directoryPeers.IsEmpty)
+        {
+            s_networkDirectory.TryRemove(networkId, out _);
+            return;
+        }
+
+        _localNodeIds.TryGetValue(networkId, out var localNodeId);
+        foreach (var peer in directoryPeers)
+        {
+            if (peer.Key == localNodeId)
+            {
+                continue;
+            }
+
+            peers[peer.Key] = new PeerEntry(peer.Value.Endpoint, nowTicks);
         }
     }
 
