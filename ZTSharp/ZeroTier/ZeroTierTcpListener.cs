@@ -103,7 +103,15 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             while (_acceptQueue.Reader.TryRead(out var accepted))
             {
                 Interlocked.Decrement(ref _pendingAcceptCount);
-                await accepted.Stream.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await accepted.Stream.DisposeAsync().ConfigureAwait(false);
+                }
+#pragma warning disable CA1031 // Dispose is best-effort during shutdown/drain.
+                catch
+#pragma warning restore CA1031
+                {
+                }
             }
 
             using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
