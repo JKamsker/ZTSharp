@@ -127,8 +127,8 @@ public sealed class FileStateStore : IStateStore
         if (virtualPrefix.Length != 0 &&
             StateStorePlanetAliases.TryGetCanonicalAliasKey(virtualPrefix, out var canonicalAliasPrefix))
         {
-            var planetPath = Path.Combine(_rootPath, StateStorePlanetAliases.PlanetKey);
-            var rootsPath = Path.Combine(_rootPath, StateStorePlanetAliases.RootsKey);
+            var planetPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.PlanetKey, StateStorePlanetAliases.PlanetKey);
+            var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, StateStorePlanetAliases.RootsKey);
             if (File.Exists(planetPath) || File.Exists(rootsPath))
             {
                 return Task.FromResult<IReadOnlyList<string>>([canonicalAliasPrefix]);
@@ -370,32 +370,9 @@ public sealed class FileStateStore : IStateStore
 
     private void ThrowIfRootPathOrAncestorsAreReparsePoints()
     {
-        var root = Path.GetPathRoot(_rootPathTrimmed);
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            return;
-        }
-
-        if (IsReparsePoint(root) || IsReparsePoint(_rootPathTrimmed))
+        if (IsReparsePoint(_rootPathTrimmed))
         {
             throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
-        }
-
-        var relative = Path.GetRelativePath(root, _rootPathTrimmed);
-        if (relative == "." || relative.Length == 0)
-        {
-            return;
-        }
-
-        var current = root;
-        var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
-        for (var i = 0; i < parts.Length; i++)
-        {
-            current = Path.Combine(current, parts[i]);
-            if (IsReparsePoint(current))
-            {
-                throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
-            }
         }
     }
 
