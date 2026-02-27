@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Net;
+using ZTSharp.ZeroTier.Internal;
 
 namespace ZTSharp.ZeroTier.Net;
 
@@ -194,6 +195,11 @@ internal static class Ipv6Codec
                 var moreFragments = (fragmentOffsetAndFlags & 0x1) != 0;
                 if (fragmentOffset != 0 || moreFragments || reservedBits != 0)
                 {
+                    if (ZeroTierTrace.Enabled)
+                    {
+                        ZeroTierTrace.WriteLine("[zerotier] Drop: IPv6 fragments are not supported.");
+                    }
+
                     return false;
                 }
 
