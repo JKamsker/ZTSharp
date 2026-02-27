@@ -408,39 +408,54 @@ public sealed class ZeroTierSocket : IAsyncDisposable
                 cancellationToken)
             .ConfigureAwait(false);
 
-        cancellationToken.ThrowIfCancellationRequested();
-        ThrowIfDisposed();
-
-        ZeroTierDataplaneRuntime? toDispose = null;
-        ZeroTierDataplaneRuntime runtime;
-        await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var createdNeedsDispose = true;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             ThrowIfDisposed();
-            if (_runtime is not null)
-            {
-                toDispose = created;
-                runtime = _runtime;
-            }
-            else
-            {
-                _upstreamRoot ??= helloOk;
-                _upstreamRootKey ??= rootKey;
-                _runtime = created;
-                runtime = created;
-            }
-        }
-        finally
-        {
-            _runtimeLock.Release();
-        }
 
-        if (toDispose is not null)
-        {
-            await toDispose.DisposeAsync().ConfigureAwait(false);
-        }
+            ZeroTierDataplaneRuntime? toDispose = null;
+            ZeroTierDataplaneRuntime runtime;
+            await _runtimeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ThrowIfDisposed();
+                if (_runtime is not null)
+                {
+                    toDispose = created;
+                    runtime = _runtime;
+                }
+                else
+                {
+                    _upstreamRoot ??= helloOk;
+                    _upstreamRootKey ??= rootKey;
+                    _runtime = created;
+                    runtime = created;
+                    createdNeedsDispose = false;
+                }
+            }
+            finally
+            {
+                _runtimeLock.Release();
+            }
 
-        return runtime;
+            if (toDispose is not null)
+            {
+                await toDispose.DisposeAsync().ConfigureAwait(false);
+                createdNeedsDispose = false;
+            }
+
+            return runtime;
+        }
+        catch
+        {
+            if (createdNeedsDispose)
+            {
+                await created.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw;
+        }
     }
 
     private void ThrowIfDisposed()
