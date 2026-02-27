@@ -12,6 +12,7 @@ public sealed class ZtTcpListener : IAsyncDisposable
 {
     private readonly SystemTcpListener _listener;
     private bool _started;
+    private int _disposeState;
 
     public ZtTcpListener(IPAddress address, int port)
     {
@@ -30,6 +31,7 @@ public sealed class ZtTcpListener : IAsyncDisposable
 
     public async Task<ZtTcpClient> AcceptTcpClientAsync(CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposeState) != 0, this);
         if (!_started)
         {
             _listener.Start();
@@ -42,10 +44,29 @@ public sealed class ZtTcpListener : IAsyncDisposable
         return new ZtTcpClient(client);
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        await Task.Yield();
-        _listener.Stop();
-        _listener.Dispose();
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        try
+        {
+            _listener.Stop();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            _listener.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        return ValueTask.CompletedTask;
     }
 }
