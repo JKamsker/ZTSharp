@@ -131,7 +131,7 @@ There is no virtual network interface visible to the operating system.
   - `ZeroTierSocket.ListenTcpAsync(IPAddress.IPv6Any, port)` / `ManagedSocket.BindAsync(IPAddress.IPv6Any, port)` + `ListenAsync(...)` create a wildcard listener that accepts connections addressed to any of the node's managed IPv6s.
 - TCP connect may use `IPAddress.Any` / `IPAddress.IPv6Any` as the local endpoint to mean "choose a managed IP" (the selected local endpoint is returned by APIs that surface it).
 - TCP listen with port `0` is **not supported** (`NotSupportedException`).
-- UDP bind supports port `0` (ephemeral); the bound local port is assigned by the OS and can be read back from the socket.
+- UDP bind supports port `0` (ephemeral); the bound local port is selected internally via `ZeroTierEphemeralPorts.Generate()` and can be read back from the socket.
 
 ### Socket Options
 
