@@ -20,8 +20,9 @@ public sealed class FileStateStore : IStateStore
         _rootPathTrimmed = Path.TrimEndingDirectorySeparator(_rootPath);
         _rootPathPrefix = _rootPathTrimmed + Path.DirectorySeparatorChar;
         _pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        ThrowIfRootPathOrAncestorsAreReparsePoints();
+        ThrowIfRootPathIsReparsePoint();
         Directory.CreateDirectory(_rootPath);
+        ThrowIfRootPathIsReparsePoint();
     }
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -330,10 +331,7 @@ public sealed class FileStateStore : IStateStore
 
     private void ThrowIfPathTraversesReparsePoint(string fullPath)
     {
-        if (IsReparsePoint(_rootPathTrimmed))
-        {
-            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
-        }
+        ThrowIfRootPathIsReparsePoint();
 
         if (string.Equals(fullPath, _rootPathTrimmed, _pathComparison))
         {
@@ -368,7 +366,7 @@ public sealed class FileStateStore : IStateStore
         }
     }
 
-    private void ThrowIfRootPathOrAncestorsAreReparsePoints()
+    private void ThrowIfRootPathIsReparsePoint()
     {
         if (IsReparsePoint(_rootPathTrimmed))
         {
@@ -378,10 +376,7 @@ public sealed class FileStateStore : IStateStore
 
     private void EnsureParentDirectoryExistsNoReparse(string fullPath)
     {
-        if (IsReparsePoint(_rootPathTrimmed))
-        {
-            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
-        }
+        ThrowIfRootPathIsReparsePoint();
 
         var directory = Path.GetDirectoryName(fullPath);
         if (string.IsNullOrWhiteSpace(directory) || string.Equals(directory, _rootPathTrimmed, _pathComparison))
