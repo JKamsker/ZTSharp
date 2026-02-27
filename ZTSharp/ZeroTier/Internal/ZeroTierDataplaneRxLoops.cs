@@ -74,6 +74,23 @@ internal sealed class ZeroTierDataplaneRxLoops
                 return;
             }
 
+            if (!_acceptDirectPeerDatagrams && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
+                var peek = datagram.Payload.AsSpan();
+                if (peek.Length < ZeroTierPacketHeader.Length)
+                {
+                    continue;
+                }
+
+                var source = new NodeId(
+                    ZeroTierBinaryPrimitives.ReadUInt40BigEndian(
+                        peek.Slice(ZeroTierPacketHeader.IndexSource, 5)));
+                if (source != _rootNodeId)
+                {
+                    continue;
+                }
+            }
+
             var packetBytes = datagram.Payload;
             if (!ZeroTierPacketCodec.TryDecode(packetBytes, out var decoded))
             {
