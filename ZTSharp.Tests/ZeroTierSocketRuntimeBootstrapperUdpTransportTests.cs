@@ -82,6 +82,15 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
         Assert.Fail($"Failed to bind a UDP socket to an available port after {attempts} attempts.");
     }
 
+    [Fact]
+    public async Task CreateUdpTransport_MultipathEnabled_RejectsDuplicateNonZeroLocalUdpPorts()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await ZeroTierSocketRuntimeBootstrapper.CreateUdpTransportAsync(
+                new ZeroTierMultipathOptions { Enabled = true, UdpSocketCount = 2, LocalUdpPorts = new[] { 12345, 12345 } },
+                enableIpv6: false));
+    }
+
     private static int GetAvailableUdpPort()
     {
         using var udp = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));

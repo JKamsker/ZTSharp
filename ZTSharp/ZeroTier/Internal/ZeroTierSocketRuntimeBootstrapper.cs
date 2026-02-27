@@ -37,6 +37,11 @@ internal static class ZeroTierSocketRuntimeBootstrapper
                 port = localPorts[0];
             }
 
+            if (port < 0 || port > 65535)
+            {
+                throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts entries must be in the range [0, 65535].");
+            }
+
             return new ZeroTierUdpTransport(localPort: port, enableIpv6: enableIpv6, localSocketId: 0);
         }
 
@@ -49,6 +54,21 @@ internal static class ZeroTierSocketRuntimeBootstrapper
         if (ports.Count != multipath.UdpSocketCount)
         {
             throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts length must match UdpSocketCount.");
+        }
+
+        var seenNonZeroPorts = new HashSet<int>();
+        for (var i = 0; i < ports.Count; i++)
+        {
+            var port = ports[i];
+            if (port < 0 || port > 65535)
+            {
+                throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts entries must be in the range [0, 65535].");
+            }
+
+            if (port != 0 && !seenNonZeroPorts.Add(port))
+            {
+                throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts must not contain duplicate non-zero ports.");
+            }
         }
 
         var sockets = new List<ZeroTierUdpTransport>(multipath.UdpSocketCount);
