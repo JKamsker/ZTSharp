@@ -421,6 +421,15 @@ internal sealed class ZeroTierPeerBondPolicyEngine
                 return xb.Length.CompareTo(yb.Length);
             }
 
+            if (x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            {
+                var scopeCompare = x.Address.ScopeId.CompareTo(y.Address.ScopeId);
+                if (scopeCompare != 0)
+                {
+                    return scopeCompare;
+                }
+            }
+
             return x.Port.CompareTo(y.Port);
         }
     }

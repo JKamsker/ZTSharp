@@ -174,4 +174,23 @@ public sealed class ZeroTierPeerBondPolicyEngineTests
         Assert.Equal(2, broadcast[1].LocalSocketId);
         Assert.Equal(epB, broadcast[1].RemoteEndPoint);
     }
+
+    [Fact]
+    public void Broadcast_SortsLinkLocalEndpointsByScopeId()
+    {
+        var addrBytes = IPAddress.Parse("fe80::1").GetAddressBytes();
+        var epScope2 = new IPEndPoint(new IPAddress(addrBytes, scopeid: 2), 1001);
+        var epScope1 = new IPEndPoint(new IPAddress(addrBytes, scopeid: 1), 1001);
+
+        var paths = new[]
+        {
+            new ZeroTierPeerPhysicalPath(LocalSocketId: 1, epScope2, LastSeenUnixMs: 1),
+            new ZeroTierPeerPhysicalPath(LocalSocketId: 1, epScope1, LastSeenUnixMs: 1),
+        };
+
+        var broadcast = ZeroTierPeerBondPolicyEngine.GetBroadcastPaths((ZeroTierPeerPhysicalPath[])paths.Clone());
+        Assert.Equal(2, broadcast.Length);
+        Assert.Equal(epScope1, broadcast[0].RemoteEndPoint);
+        Assert.Equal(epScope2, broadcast[1].RemoteEndPoint);
+    }
 }
