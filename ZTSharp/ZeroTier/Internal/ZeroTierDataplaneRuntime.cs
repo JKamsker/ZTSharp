@@ -358,7 +358,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 rootSend = _udp.SendAsync(_rootEndpoint, packet, cancellationToken);
                 await Task.WhenAll(directSend, rootSend).ConfigureAwait(false);
             }
-            catch (SocketException)
+            catch (Exception ex) when (ex is SocketException || (ex is AggregateException ae && ae.InnerExceptions.All(static inner => inner is SocketException)))
             {
                 // Warm-up duplicates to root. If the direct send fails, forget any QoS state for it and
                 // ensure a root send happens (if it hasn't already).
