@@ -5,8 +5,6 @@ namespace ZTSharp.Internal;
 
 internal sealed class NodeEventStream
 {
-    private const int DispatchQueueCapacity = 1024;
-
     private readonly Action<NodeEvent> _onEventRaised;
     private readonly ILogger _logger;
     private readonly Channel<NodeEvent> _dispatchQueue;
@@ -17,9 +15,8 @@ internal sealed class NodeEventStream
     {
         _onEventRaised = onEventRaised ?? throw new ArgumentNullException(nameof(onEventRaised));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _dispatchQueue = Channel.CreateBounded<NodeEvent>(new BoundedChannelOptions(capacity: DispatchQueueCapacity)
+        _dispatchQueue = Channel.CreateUnbounded<NodeEvent>(new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = false
         });
