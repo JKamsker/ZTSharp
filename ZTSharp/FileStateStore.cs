@@ -20,9 +20,8 @@ public sealed class FileStateStore : IStateStore
         _rootPathTrimmed = Path.TrimEndingDirectorySeparator(_rootPath);
         _rootPathPrefix = _rootPathTrimmed + Path.DirectorySeparatorChar;
         _pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        Directory.CreateDirectory(_rootPath);
-
         ThrowIfRootPathOrAncestorsAreReparsePoints();
+        Directory.CreateDirectory(_rootPath);
     }
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
