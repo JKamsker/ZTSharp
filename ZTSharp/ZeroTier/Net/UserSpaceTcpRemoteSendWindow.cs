@@ -2,12 +2,12 @@ namespace ZTSharp.ZeroTier.Net;
 
 internal sealed class UserSpaceTcpRemoteSendWindow
 {
-    private ushort _window = ushort.MaxValue;
+    private int _window = ushort.MaxValue;
     private TaskCompletionSource<bool>? _windowTcs;
     private Exception? _terminalException;
     private readonly object _lock = new();
 
-    public ushort Window => _window;
+    public ushort Window => (ushort)Volatile.Read(ref _window);
 
     public void Update(ushort windowSize)
     {
@@ -55,7 +55,7 @@ internal sealed class UserSpaceTcpRemoteSendWindow
                 throw terminal;
             }
 
-            if (_window != 0)
+            if (Volatile.Read(ref _window) != 0)
             {
                 return;
             }
