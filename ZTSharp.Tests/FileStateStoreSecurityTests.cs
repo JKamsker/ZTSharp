@@ -9,7 +9,7 @@ public sealed class FileStateStoreSecurityTests
     {
         if (!OperatingSystem.IsWindows())
         {
-            throw Xunit.Sdk.SkipException.ForSkip("Junction traversal tests require Windows.");
+            throw new Xunit.Sdk.SkipException("Junction traversal tests require Windows.");
         }
 
         var root = TestTempPaths.CreateGuidSuffixed("zt-state-root-");
@@ -24,7 +24,7 @@ public sealed class FileStateStoreSecurityTests
         var junction = Path.Combine(root, "escape");
         if (!TryCreateJunction(junction, outside))
         {
-            throw Xunit.Sdk.SkipException.ForSkip("Failed to create junction (insufficient privileges or mklink unavailable).");
+            throw new Xunit.Sdk.SkipException("Failed to create junction (insufficient privileges or mklink unavailable).");
         }
 
         var store = new FileStateStore(root);
