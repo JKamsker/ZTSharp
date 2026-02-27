@@ -67,7 +67,9 @@ internal static class BoundedFileIO
             return false;
         }
 
-        text = encoding.GetString(bytes);
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: true);
+        text = reader.ReadToEnd();
         return true;
     }
 }
