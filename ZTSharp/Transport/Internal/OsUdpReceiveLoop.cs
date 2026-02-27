@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 
@@ -5,6 +6,9 @@ namespace ZTSharp.Transport.Internal;
 
 internal sealed class OsUdpReceiveLoop
 {
+    private const int MaxHelloResponseCacheEntries = 4096;
+    private const long PeerHelloResponseMinIntervalMs = 1000;
+
     private readonly UdpClient _udp;
     private readonly Func<CancellationToken, ValueTask<UdpReceiveResult>> _receiveAsync;
     private readonly bool _enablePeerDiscovery;
@@ -12,6 +16,7 @@ internal sealed class OsUdpReceiveLoop
     private readonly Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> _dispatchFrameAsync;
     private readonly Func<ulong, ulong, IPEndPoint, OsUdpPeerDiscoveryProtocol.FrameType, CancellationToken, Task> _sendDiscoveryFrameAsync;
     private readonly Action<string>? _log;
+    private readonly Dictionary<(ulong NetworkId, ulong NodeId), long> _helloResponseLastSentMs = new();
 
     public OsUdpReceiveLoop(
         UdpClient udp,
@@ -83,12 +88,15 @@ internal sealed class OsUdpReceiveLoop
                     {
                         if (controlFrameType == OsUdpPeerDiscoveryProtocol.FrameType.PeerHello)
                         {
-                            _ = SendDiscoveryFrameSafeAsync(
+                            if (ShouldSendHelloResponse(networkId, discoveredNodeId))
+                            {
+                                _ = SendDiscoveryFrameSafeAsync(
                                 networkId,
                                 localNodeId,
                                 normalizedRemoteEndpoint,
                                 OsUdpPeerDiscoveryProtocol.FrameType.PeerHelloResponse,
                                 cancellationToken);
+                            }
                         }
                     }
                 }
@@ -96,16 +104,24 @@ internal sealed class OsUdpReceiveLoop
                 continue;
             }
 
-            if (sourceNodeId != 0 &&
-                _peers.TryGetPeers(networkId, out var peers) &&
-                peers.TryGetValue(sourceNodeId, out var expectedEndpoint) &&
-                expectedEndpoint.Equals(normalizedRemoteEndpoint))
-            {
-                // Valid authenticated-by-endpoint peer.
-            }
-            else
+            if (sourceNodeId == 0 || !_peers.TryGetPeers(networkId, out var peers) || !peers.TryGetValue(sourceNodeId, out var expectedEndpoint))
             {
                 continue;
+            }
+
+            if (!expectedEndpoint.Equals(normalizedRemoteEndpoint))
+            {
+                // Allow NAT rebinding / port changes without opening too wide a spoofing hole:
+                // - same IP, different port: accept and update endpoint
+                // - different IP: require a discovery control frame (handled above) before accepting
+                if (expectedEndpoint.Address.Equals(normalizedRemoteEndpoint.Address))
+                {
+                    _peers.AddOrUpdatePeer(networkId, sourceNodeId, normalizedRemoteEndpoint);
+                }
+                else
+                {
+                    continue;
+                }
             }
 
             try
@@ -122,6 +138,27 @@ internal sealed class OsUdpReceiveLoop
             {
             }
         }
+    }
+
+    private bool ShouldSendHelloResponse(ulong networkId, ulong remoteNodeId)
+    {
+        if (_helloResponseLastSentMs.Count > MaxHelloResponseCacheEntries)
+        {
+            _helloResponseLastSentMs.Clear();
+        }
+
+        var key = (networkId, remoteNodeId);
+        var nowMs = Environment.TickCount64;
+        if (_helloResponseLastSentMs.TryGetValue(key, out var lastMs))
+        {
+            if (unchecked(nowMs - lastMs) < PeerHelloResponseMinIntervalMs)
+            {
+                return false;
+            }
+        }
+
+        _helloResponseLastSentMs[key] = nowMs;
+        return true;
     }
 
     private async Task SendDiscoveryFrameSafeAsync(

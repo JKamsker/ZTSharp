@@ -1,4 +1,5 @@
 using System.Net.Sockets;
+using System.Net;
 using ZTSharp.Sockets;
 using ZTSharp.Transport;
 
@@ -15,14 +16,16 @@ public sealed class OsUdpSpoofingTests
         {
             StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore(),
-            TransportMode = TransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp,
+            EnableIpv6 = false
         });
 
         await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore(),
-            TransportMode = TransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp,
+            EnableIpv6 = false
         });
 
         await node1.StartAsync();
@@ -69,14 +72,16 @@ public sealed class OsUdpSpoofingTests
         {
             StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore(),
-            TransportMode = TransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp,
+            EnableIpv6 = false
         });
 
         await using var node2 = new Node(new NodeOptions
         {
             StateRootPath = TestTempPaths.CreateGuidSuffixed("zt-node-"),
             StateStore = new MemoryStateStore(),
-            TransportMode = TransportMode.OsUdp
+            TransportMode = TransportMode.OsUdp,
+            EnableIpv6 = false
         });
 
         await node1.StartAsync();
@@ -124,7 +129,10 @@ public sealed class OsUdpSpoofingTests
         }
 
         var v4 = new UdpClient(System.Net.Sockets.AddressFamily.InterNetwork);
-        v4.Client.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0));
+        var spoofAddress = destination.Address.Equals(IPAddress.Parse("127.0.0.2"))
+            ? IPAddress.Parse("127.0.0.3")
+            : IPAddress.Parse("127.0.0.2");
+        v4.Client.Bind(new System.Net.IPEndPoint(spoofAddress, 0));
         return v4;
     }
 }
