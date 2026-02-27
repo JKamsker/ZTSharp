@@ -277,8 +277,17 @@ public sealed class ZeroTierSocket : IAsyncDisposable
 
         await _shutdown.CancelAsync().ConfigureAwait(false);
 
-        _runtimeTask = null;
-        var runtime = Interlocked.Exchange(ref _runtime, null);
+        ZeroTierDataplaneRuntime? runtime;
+        await _runtimeLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _runtimeTask = null;
+            runtime = Interlocked.Exchange(ref _runtime, null);
+        }
+        finally
+        {
+            _runtimeLock.Release();
+        }
 
         if (runtime is not null)
         {
