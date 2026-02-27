@@ -24,13 +24,22 @@ internal static class BoundedFileIO
                 bufferSize: 16 * 1024,
                 options: FileOptions.SequentialScan);
 
-            if (stream.Length <= 0 || stream.Length > maxBytes || stream.Length > int.MaxValue)
+            long length;
+            try
+            {
+                length = stream.Length;
+            }
+            catch (NotSupportedException)
             {
                 return false;
             }
 
-            var length = (int)stream.Length;
-            var buffer = new byte[length];
+            if (length <= 0 || length > maxBytes || length > int.MaxValue)
+            {
+                return false;
+            }
+
+            var buffer = new byte[(int)length];
 
             var totalRead = 0;
             while (totalRead < buffer.Length)
@@ -52,6 +61,10 @@ internal static class BoundedFileIO
             return false;
         }
         catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
         {
             return false;
         }
