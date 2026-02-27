@@ -37,7 +37,13 @@ internal sealed class ZeroTierUdpTransport : IZeroTierUdpTransport
     public IPEndPoint LocalEndpoint => UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
 
     public IReadOnlyList<ZeroTierUdpLocalSocket> LocalSockets
-        => new[] { new ZeroTierUdpLocalSocket(_localSocketId, LocalEndpoint) };
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            return new[] { new ZeroTierUdpLocalSocket(_localSocketId, LocalEndpoint) };
+        }
+    }
 
     public long IncomingBackpressureCount => Interlocked.Read(ref _incomingBackpressureCount);
 
