@@ -51,7 +51,7 @@ public sealed class ZeroTierSocketRuntimeBootstrapperUdpTransportTests
     [Fact]
     public async Task CreateUdpTransport_SingleSocket_HonorsLocalUdpPorts()
     {
-        const int attempts = 10;
+        const int attempts = 25;
         for (var i = 0; i < attempts; i++)
         {
             var port = GetAvailableUdpPort();
