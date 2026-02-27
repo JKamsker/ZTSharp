@@ -38,4 +38,18 @@ public sealed class OverlayTcpIncomingBufferTests
         var eof = await incoming.ReadAsync(new byte[1], CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(1));
         Assert.Equal(0, eof);
     }
+
+    [Fact]
+    public async Task FinArrival_UnblocksReaderAwaitingReadAsync()
+    {
+        var incoming = new OverlayTcpIncomingBuffer();
+
+        var readTask = incoming.ReadAsync(new byte[1], CancellationToken.None).AsTask();
+
+        await Task.Delay(TimeSpan.FromMilliseconds(25));
+        incoming.MarkRemoteFinReceived();
+
+        var eof = await readTask.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(0, eof);
+    }
 }

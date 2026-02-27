@@ -8,7 +8,8 @@ internal sealed class OverlayTcpIncomingBuffer
 {
     private const int MaxQueuedSegments = 1024;
     private const int MaxSegmentLength = 1024;
-    private const int FinGracePeriodMs = 200;
+    private const int FinProbeGracePeriodMs = 50;
+    private const int FinLateDataGracePeriodMs = 200;
 
     private readonly Channel<ReadOnlyMemory<byte>> _incoming = Channel.CreateBounded<ReadOnlyMemory<byte>>(new BoundedChannelOptions(MaxQueuedSegments)
     {
@@ -16,9 +17,11 @@ internal sealed class OverlayTcpIncomingBuffer
         SingleWriter = false,
         SingleReader = true
     });
+    private readonly TaskCompletionSource<bool> _finArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private ReadOnlyMemory<byte> _currentSegment;
     private int _currentSegmentOffset;
     private int _remoteFinReceived;
+    private long _remoteFinReceivedAtMs;
     private int _remoteClosed;
     private long _lastActivityMs;
     private IOException? _fault;
@@ -69,7 +72,8 @@ internal sealed class OverlayTcpIncomingBuffer
     {
         if (Interlocked.CompareExchange(ref _remoteFinReceived, 1, 0) == 0)
         {
-            Volatile.Write(ref _lastActivityMs, Environment.TickCount64);
+            Volatile.Write(ref _remoteFinReceivedAtMs, Environment.TickCount64);
+            _finArrived.TrySetResult(true);
         }
     }
 
@@ -95,9 +99,9 @@ internal sealed class OverlayTcpIncomingBuffer
         {
             while (true)
             {
-                if (_incoming.Reader.TryRead(out var segment))
+                if (_incoming.Reader.TryRead(out var nextSegment))
                 {
-                    _currentSegment = segment;
+                    _currentSegment = nextSegment;
                     _currentSegmentOffset = 0;
                     break;
                 }
@@ -121,11 +125,14 @@ internal sealed class OverlayTcpIncomingBuffer
 
                 try
                 {
+                    ReadOnlyMemory<byte> segment;
                     if (Volatile.Read(ref _remoteFinReceived) != 0)
                     {
                         var now = Environment.TickCount64;
+                        var finReceivedAtMs = Volatile.Read(ref _remoteFinReceivedAtMs);
                         var last = Volatile.Read(ref _lastActivityMs);
-                        var remainingGraceMs = FinGracePeriodMs - (int)unchecked(now - last);
+                        var gracePeriodMs = last > finReceivedAtMs ? FinLateDataGracePeriodMs : FinProbeGracePeriodMs;
+                        var remainingGraceMs = gracePeriodMs - (int)unchecked(now - last);
                         if (remainingGraceMs <= 0)
                         {
                             MarkRemoteClosed();
@@ -136,9 +143,23 @@ internal sealed class OverlayTcpIncomingBuffer
                         graceCts.CancelAfter(TimeSpan.FromMilliseconds(remainingGraceMs));
                         try
                         {
-                            _currentSegment = await _incoming.Reader.ReadAsync(graceCts.Token).ConfigureAwait(false);
-                            _currentSegmentOffset = 0;
-                            break;
+                            while (await _incoming.Reader.WaitToReadAsync(graceCts.Token).ConfigureAwait(false))
+                            {
+                                if (_incoming.Reader.TryRead(out segment))
+                                {
+                                    _currentSegment = segment;
+                                    _currentSegmentOffset = 0;
+                                    break;
+                                }
+                            }
+
+                            if (_currentSegment.Length != 0)
+                            {
+                                break;
+                            }
+
+                            MarkRemoteClosed();
+                            return 0;
                         }
                         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && graceCts.IsCancellationRequested)
                         {
@@ -147,9 +168,24 @@ internal sealed class OverlayTcpIncomingBuffer
                         }
                     }
 
-                    _currentSegment = await _incoming.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-                    _currentSegmentOffset = 0;
-                    break;
+                    var waitToReadTask = _incoming.Reader.WaitToReadAsync(cancellationToken).AsTask();
+                    var completed = await Task.WhenAny(waitToReadTask, _finArrived.Task).ConfigureAwait(false);
+                    if (completed != waitToReadTask)
+                    {
+                        continue;
+                    }
+
+                    if (!await waitToReadTask.ConfigureAwait(false))
+                    {
+                        throw new ChannelClosedException();
+                    }
+
+                    if (_incoming.Reader.TryRead(out segment))
+                    {
+                        _currentSegment = segment;
+                        _currentSegmentOffset = 0;
+                        break;
+                    }
                 }
                 catch (ChannelClosedException)
                 {
