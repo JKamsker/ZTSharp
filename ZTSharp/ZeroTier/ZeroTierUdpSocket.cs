@@ -10,8 +10,15 @@ namespace ZTSharp.ZeroTier;
 
 public sealed class ZeroTierUdpSocket : IAsyncDisposable
 {
+    private const int MaxQueuedDatagrams = 1024;
+
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
-    private readonly Channel<ZeroTierRoutedIpPacket> _incoming = Channel.CreateUnbounded<ZeroTierRoutedIpPacket>();
+    private readonly Channel<ZeroTierRoutedIpPacket> _incoming = Channel.CreateBounded<ZeroTierRoutedIpPacket>(new BoundedChannelOptions(MaxQueuedDatagrams)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleWriter = false,
+        SingleReader = true
+    });
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
@@ -133,7 +140,7 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                     continue;
                 }
 
-                if (!dst.Equals(_localAddress) || protocol != UdpCodec.ProtocolNumber)
+                if (protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
@@ -145,7 +152,7 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                     continue;
                 }
 
-                if (!dst.Equals(_localAddress) || protocol != UdpCodec.ProtocolNumber)
+                if (protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
