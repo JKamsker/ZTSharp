@@ -294,30 +294,35 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
         {
         }
 
-        if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
+        try
         {
-            using var transportDisposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-            try
+            if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
             {
-                await asyncTransport
-                    .DisposeAsync()
-                    .AsTask()
-                    .WaitAsync(transportDisposeCts.Token)
-                    .ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
-            {
-            }
-            catch (OperationCanceledException) when (transportDisposeCts.IsCancellationRequested)
-            {
+                using var transportDisposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                try
+                {
+                    await asyncTransport
+                        .DisposeAsync()
+                        .AsTask()
+                        .WaitAsync(transportDisposeCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+                {
+                }
+                catch (OperationCanceledException) when (transportDisposeCts.IsCancellationRequested)
+                {
+                }
             }
         }
-
-        _events.Complete();
-        _nodeCts.Dispose();
+        finally
+        {
+            _events.Complete();
+            _nodeCts.Dispose();
+        }
     }
 
     private void EnsureNotDisposed()
