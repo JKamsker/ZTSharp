@@ -287,9 +287,10 @@ internal sealed class EventLoop : IDisposable
 
     private void ThrowIfDisposed()
     {
-        if (_fault is not null)
+        var fault = Volatile.Read(ref _fault);
+        if (fault is not null)
         {
-            throw new InvalidOperationException("Event loop is faulted.", _fault);
+            throw new InvalidOperationException("Event loop is faulted.", fault);
         }
 
         ObjectDisposedException.ThrowIf(_disposed, this);

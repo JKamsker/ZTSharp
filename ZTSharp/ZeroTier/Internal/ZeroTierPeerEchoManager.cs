@@ -170,7 +170,7 @@ internal sealed class ZeroTierPeerEchoManager
     {
         ArgumentNullException.ThrowIfNull(remoteEndPoint);
 
-        if (!_pendingByPacketId.TryRemove(inRePacketId, out var pending))
+        if (!_pendingByPacketId.TryGetValue(inRePacketId, out var pending))
         {
             return;
         }
@@ -191,6 +191,11 @@ internal sealed class ZeroTierPeerEchoManager
         var now = _nowUnixMs();
         var rtt = unchecked((long)now - (long)timestampEcho);
         if (rtt < 0 || rtt > int.MaxValue)
+        {
+            return;
+        }
+
+        if (!_pendingByPacketId.TryRemove(inRePacketId, out _))
         {
             return;
         }

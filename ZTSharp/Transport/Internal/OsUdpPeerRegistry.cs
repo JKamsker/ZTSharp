@@ -7,7 +7,13 @@ namespace ZTSharp.Transport.Internal;
 
 internal sealed class OsUdpPeerRegistry
 {
-    internal readonly record struct PeerEntry(IPEndPoint Endpoint, long LastSeenTicks);
+    internal enum PeerEntrySource
+    {
+        Manual = 0,
+        Directory = 1
+    }
+
+    internal readonly record struct PeerEntry(IPEndPoint Endpoint, long LastSeenTicks, PeerEntrySource Source);
 
     private const int DirectoryMaxNetworks = 256;
     internal const int DirectoryMaxPeersPerNetwork = 1024;
@@ -94,7 +100,7 @@ internal sealed class OsUdpPeerRegistry
         var nowTicks = GetNowTicks();
         var normalized = _normalizeEndpoint(endpoint);
         var peers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerEntry>());
-        peers[nodeId] = new PeerEntry(normalized, nowTicks);
+        peers[nodeId] = new PeerEntry(normalized, nowTicks, PeerEntrySource.Manual);
         SweepNetworkPeers(nowTicks);
     }
 
@@ -113,7 +119,7 @@ internal sealed class OsUdpPeerRegistry
         var nowTicks = GetNowTicks();
         var normalizedAdvertisedEndpoint = _normalizeEndpoint(advertisedEndpoint);
         var discoveredPeers = s_networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerEntry>());
-        discoveredPeers[localNodeId] = new PeerEntry(normalizedAdvertisedEndpoint, nowTicks);
+        discoveredPeers[localNodeId] = new PeerEntry(normalizedAdvertisedEndpoint, nowTicks, PeerEntrySource.Directory);
         SweepDirectory(nowTicks);
 
         var localPeers = _networkPeers.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerEntry>());
@@ -124,8 +130,10 @@ internal sealed class OsUdpPeerRegistry
                 continue;
             }
 
-            localPeers[peer.Key] = new PeerEntry(peer.Value.Endpoint, nowTicks);
+            localPeers[peer.Key] = new PeerEntry(peer.Value.Endpoint, nowTicks, PeerEntrySource.Directory);
         }
+
+        PruneDirectoryPeers(localPeers, discoveredPeers, localNodeId);
 
         return discoveredPeers
             .Where(p => p.Key != localNodeId)
@@ -148,8 +156,13 @@ internal sealed class OsUdpPeerRegistry
         var nowTicks = GetNowTicks();
         var normalizedAdvertisedEndpoint = _normalizeEndpoint(advertisedEndpoint);
         var discoveredPeers = s_networkDirectory.GetOrAdd(networkId, _ => new ConcurrentDictionary<ulong, PeerEntry>());
-        discoveredPeers[localNodeId] = new PeerEntry(normalizedAdvertisedEndpoint, nowTicks);
+        discoveredPeers[localNodeId] = new PeerEntry(normalizedAdvertisedEndpoint, nowTicks, PeerEntrySource.Directory);
         SweepDirectory(nowTicks);
+
+        if (_networkPeers.TryGetValue(networkId, out var localPeers))
+        {
+            PruneDirectoryPeers(localPeers, discoveredPeers, localNodeId);
+        }
     }
 
     public void Cleanup()
@@ -298,6 +311,35 @@ internal sealed class OsUdpPeerRegistry
         }
     }
 
+    private static void PruneDirectoryPeers(
+        ConcurrentDictionary<ulong, PeerEntry> localPeers,
+        ConcurrentDictionary<ulong, PeerEntry> discoveredPeers,
+        ulong localNodeId)
+    {
+        foreach (var peer in localPeers)
+        {
+            if (peer.Value.Source != PeerEntrySource.Directory ||
+                peer.Key == localNodeId ||
+                discoveredPeers.ContainsKey(peer.Key))
+            {
+                continue;
+            }
+
+            localPeers.TryRemove(peer.Key, out _);
+        }
+    }
+
+    private static void RemoveAllDirectoryPeers(ConcurrentDictionary<ulong, PeerEntry> peers)
+    {
+        foreach (var peer in peers)
+        {
+            if (peer.Value.Source == PeerEntrySource.Directory)
+            {
+                peers.TryRemove(peer.Key, out _);
+            }
+        }
+    }
+
     private void ImportDirectoryPeers(ulong networkId, ConcurrentDictionary<ulong, PeerEntry> peers, long nowTicks)
     {
         if (!_enablePeerDiscovery)
@@ -307,6 +349,7 @@ internal sealed class OsUdpPeerRegistry
 
         if (!s_networkDirectory.TryGetValue(networkId, out var directoryPeers))
         {
+            RemoveAllDirectoryPeers(peers);
             return;
         }
 
@@ -314,6 +357,7 @@ internal sealed class OsUdpPeerRegistry
         if (directoryPeers.IsEmpty)
         {
             s_networkDirectory.TryRemove(networkId, out _);
+            RemoveAllDirectoryPeers(peers);
             return;
         }
 
@@ -325,8 +369,10 @@ internal sealed class OsUdpPeerRegistry
                 continue;
             }
 
-            peers[peer.Key] = new PeerEntry(peer.Value.Endpoint, nowTicks);
+            peers[peer.Key] = new PeerEntry(peer.Value.Endpoint, nowTicks, PeerEntrySource.Directory);
         }
+
+        PruneDirectoryPeers(peers, directoryPeers, localNodeId);
     }
 
     internal static void ClearDirectoryForTests()

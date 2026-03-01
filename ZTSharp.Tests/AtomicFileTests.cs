@@ -10,16 +10,23 @@ public sealed class AtomicFileTests
         var root = TestTempPaths.CreateGuidSuffixed("zt-atomic-file-");
         Directory.CreateDirectory(root);
 
-        var destination = Path.Combine(root, "dest");
-        Directory.CreateDirectory(destination);
-
-        var ex = await Assert.ThrowsAsync<IOException>(async () =>
+        try
         {
-            await AtomicFile.WriteAllBytesAsync(destination, new byte[] { 1, 2, 3 }, CancellationToken.None);
-        });
+            var destination = Path.Combine(root, "dest");
+            Directory.CreateDirectory(destination);
 
-        Assert.Contains("Atomic replace failed", ex.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.True(Directory.Exists(destination));
+            var ex = await Assert.ThrowsAsync<IOException>(async () =>
+            {
+                await AtomicFile.WriteAllBytesAsync(destination, new byte[] { 1, 2, 3 }, CancellationToken.None);
+            });
+
+            Assert.Contains("Atomic replace failed", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(Directory.Exists(destination));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }
 
