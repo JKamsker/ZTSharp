@@ -83,6 +83,46 @@ public sealed class ZeroTierPeerBondPolicyEngineTests
     }
 
     [Fact]
+    public void ActiveBackup_IsSticky_AndSwitchesAfterHold()
+    {
+        var peer = new NodeId(0x1111111111);
+        var epA = new IPEndPoint(IPAddress.Parse("203.0.113.1"), 1001);
+        var epB = new IPEndPoint(IPAddress.Parse("203.0.113.2"), 1002);
+
+        var paths = new[]
+        {
+            new ZeroTierPeerPhysicalPath(LocalSocketId: 1, epA, LastSeenUnixMs: 1),
+            new ZeroTierPeerPhysicalPath(LocalSocketId: 2, epB, LastSeenUnixMs: 1),
+        };
+
+        var now = 1_000L;
+        var latency = new Dictionary<IPEndPoint, int>
+        {
+            [epA] = 10,
+            [epB] = 100
+        };
+
+        var engine = new ZeroTierPeerBondPolicyEngine(
+            getLatencyMs: (_, _, ep) => latency.TryGetValue(ep, out var l) ? l : null,
+            getRemoteUtility: (_, _, _) => 0,
+            nowMs: () => now);
+
+        Assert.True(engine.TrySelectSinglePath(peer, (ZeroTierPeerPhysicalPath[])paths.Clone(), flowId: 0, ZeroTierBondPolicy.ActiveBackup, out var s0));
+        Assert.Equal(epA, s0.RemoteEndPoint);
+
+        latency[epA] = 200;
+        latency[epB] = 10;
+        now += 1_000;
+
+        Assert.True(engine.TrySelectSinglePath(peer, (ZeroTierPeerPhysicalPath[])paths.Clone(), flowId: 0, ZeroTierBondPolicy.ActiveBackup, out var s1));
+        Assert.Equal(epA, s1.RemoteEndPoint);
+
+        now += 20_000;
+        Assert.True(engine.TrySelectSinglePath(peer, (ZeroTierPeerPhysicalPath[])paths.Clone(), flowId: 0, ZeroTierBondPolicy.ActiveBackup, out var s2));
+        Assert.Equal(epB, s2.RemoteEndPoint);
+    }
+
+    [Fact]
     public void BalanceAware_ChoosesOnlyWithinSlack()
     {
         var peer = new NodeId(0x1111111111);
@@ -133,5 +173,24 @@ public sealed class ZeroTierPeerBondPolicyEngineTests
         Assert.Equal(epA, broadcast[0].RemoteEndPoint);
         Assert.Equal(2, broadcast[1].LocalSocketId);
         Assert.Equal(epB, broadcast[1].RemoteEndPoint);
+    }
+
+    [Fact]
+    public void Broadcast_SortsLinkLocalEndpointsByScopeId()
+    {
+        var addrBytes = IPAddress.Parse("fe80::1").GetAddressBytes();
+        var epScope2 = new IPEndPoint(new IPAddress(addrBytes, scopeid: 2), 1001);
+        var epScope1 = new IPEndPoint(new IPAddress(addrBytes, scopeid: 1), 1001);
+
+        var paths = new[]
+        {
+            new ZeroTierPeerPhysicalPath(LocalSocketId: 1, epScope2, LastSeenUnixMs: 1),
+            new ZeroTierPeerPhysicalPath(LocalSocketId: 1, epScope1, LastSeenUnixMs: 1),
+        };
+
+        var broadcast = ZeroTierPeerBondPolicyEngine.GetBroadcastPaths((ZeroTierPeerPhysicalPath[])paths.Clone());
+        Assert.Equal(2, broadcast.Length);
+        Assert.Equal(epScope1, broadcast[0].RemoteEndPoint);
+        Assert.Equal(epScope2, broadcast[1].RemoteEndPoint);
     }
 }

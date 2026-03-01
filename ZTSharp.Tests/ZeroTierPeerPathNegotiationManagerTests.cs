@@ -22,6 +22,22 @@ public sealed class ZeroTierPeerPathNegotiationManagerTests
     }
 
     [Fact]
+    public void TryGetRemoteUtility_DoesNotReturnStaleUtilityBeyondTtl()
+    {
+        var now = 1_000L;
+        var mgr = new ZeroTierPeerPathNegotiationManager(nowMs: () => now);
+
+        var peerNodeId = new NodeId(0x1111111111);
+        var endpoint = new IPEndPoint(IPAddress.Parse("203.0.113.9"), 9999);
+
+        mgr.HandleInboundRequest(peerNodeId, localSocketId: 2, endpoint, remoteUtility: 123);
+
+        now += 300_001;
+
+        Assert.False(mgr.TryGetRemoteUtility(peerNodeId, localSocketId: 2, endpoint, out _));
+    }
+
+    [Fact]
     public void TryMarkSent_RateLimitsPerPath()
     {
         var now = 1_000L;

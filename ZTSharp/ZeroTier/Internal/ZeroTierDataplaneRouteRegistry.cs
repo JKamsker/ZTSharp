@@ -249,6 +249,7 @@ internal sealed class ZeroTierDataplaneRouteRegistry
         Func<NodeId, ReadOnlyMemory<byte>, CancellationToken, Task> onSyn)
     {
         ArgumentNullException.ThrowIfNull(localAddress);
+        ArgumentNullException.ThrowIfNull(onSyn);
 
         return localAddress.AddressFamily switch
         {
@@ -330,6 +331,21 @@ internal sealed class ZeroTierDataplaneRouteRegistry
         ushort localPort,
         out Func<NodeId, ReadOnlyMemory<byte>, CancellationToken, Task> handler)
     {
+        ArgumentNullException.ThrowIfNull(destinationIp);
+        if (addressFamily == AddressFamily.InterNetwork &&
+            destinationIp.AddressFamily == AddressFamily.InterNetworkV6 &&
+            destinationIp.IsIPv4MappedToIPv6)
+        {
+            destinationIp = destinationIp.MapToIPv4();
+        }
+
+        if (destinationIp.AddressFamily != addressFamily)
+        {
+            throw new ArgumentException(
+                "Destination IP address family must match the provided address family.",
+                nameof(destinationIp));
+        }
+
         if (addressFamily == AddressFamily.InterNetwork)
         {
             if (_tcpListenersV4.TryGetValue(localPort, out var registrations) && registrations.TryGet(destinationIp, out var existing))

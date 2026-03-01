@@ -52,7 +52,7 @@ public sealed class ZeroTierSizeCapHardeningTests
             networkId: 1,
             inlineCom: Array.Empty<byte>());
 
-        var peerSecurity = new ZeroTierDataplanePeerSecurity(udp, rootClient, localIdentity);
+        using var peerSecurity = new ZeroTierDataplanePeerSecurity(udp, rootClient, localIdentity);
 
         var packetBytes = new byte[ZeroTierProtocolLimits.MaxPacketBytes + 1];
         await peerSecurity.HandleHelloAsync(

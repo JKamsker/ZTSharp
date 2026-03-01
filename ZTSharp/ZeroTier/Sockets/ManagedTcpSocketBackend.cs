@@ -60,6 +60,11 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
 
+            if (Volatile.Read(ref _connectInProgress) != 0)
+            {
+                throw new InvalidOperationException("Socket connect is in progress.");
+            }
+
             if (_stream is not null || _listener is not null)
             {
                 throw new InvalidOperationException("Socket is already initialized.");
@@ -84,6 +89,11 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
         try
         {
             ObjectDisposedException.ThrowIf(Disposed, this);
+
+            if (Volatile.Read(ref _connectInProgress) != 0)
+            {
+                throw new InvalidOperationException("Socket connect is in progress.");
+            }
 
             if (_listener is not null)
             {
@@ -188,7 +198,15 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                 ? await Zt.ConnectTcpWithLocalEndpointAsync(remoteIp, token).ConfigureAwait(false)
                 : await Zt.ConnectTcpWithLocalEndpointAsync(local, remoteIp, token).ConfigureAwait(false);
 
-            await InitLock.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                await InitLock.WaitAsync(token).ConfigureAwait(false);
+            }
+            catch
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
             try
             {
                 ObjectDisposedException.ThrowIf(Disposed, this);
@@ -206,9 +224,14 @@ internal sealed class ManagedTcpSocketBackend : ManagedSocketBackend
                 InitLock.Release();
             }
         }
-        catch (OperationCanceledException) when (ShutdownToken.IsCancellationRequested)
+        catch (OperationCanceledException ex)
         {
-            throw new ObjectDisposedException(GetType().FullName);
+            if (ShutdownToken.IsCancellationRequested || Disposed)
+            {
+                throw new ObjectDisposedException(GetType().FullName, ex);
+            }
+
+            throw;
         }
         finally
         {

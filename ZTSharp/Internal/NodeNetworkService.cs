@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
@@ -7,6 +8,10 @@ using ZTSharp.Transport;
 
 namespace ZTSharp.Internal;
 
+[SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "This service is owned by NodeCore/NodeLifecycleService; the async gate is intentionally not disposed to keep shutdown idempotent and avoid races with in-flight leave operations.")]
 internal sealed class NodeNetworkService
 {
     private readonly IStateStore _store;
@@ -16,6 +21,7 @@ internal sealed class NodeNetworkService
 
     private readonly ConcurrentDictionary<ulong, NetworkInfo> _joinedNetworks = new();
     private readonly ConcurrentDictionary<ulong, Guid> _networkRegistrations = new();
+    private readonly SemaphoreSlim _leaveGate = new(1, 1);
     private readonly NetworkIdReadOnlyCollection _joinedNetworkIds;
 
     public NodeNetworkService(IStateStore store, INodeTransport transport, NodeEventStream events, NodePeerService peerService)
@@ -40,6 +46,12 @@ internal sealed class NodeNetworkService
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> onFrameReceived,
         CancellationToken cancellationToken)
     {
+        // Joining a network is idempotent: avoid leaking registrations/subscribers and keep the transport state consistent.
+        if (_networkRegistrations.ContainsKey(networkId))
+        {
+            return;
+        }
+
         _events.Publish(EventCode.NetworkJoinRequested, DateTimeOffset.UtcNow, networkId);
 
         Guid registration = default;
@@ -59,9 +71,22 @@ internal sealed class NodeNetworkService
                 JsonContext.Default.NetworkState);
 
             await _store.WriteAsync(key, payload, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _peerService.RecoverPeersAsync(networkId, _transport, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+#pragma warning disable CA1031 // Peer recovery is best-effort during join.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+
             _joinedNetworks[networkId] = new NetworkInfo(networkId, now);
             _networkRegistrations[networkId] = registration;
-            await _peerService.RecoverPeersAsync(networkId, _transport, cancellationToken).ConfigureAwait(false);
 
             _events.Publish(EventCode.NetworkJoined, DateTimeOffset.UtcNow, networkId);
         }
@@ -71,7 +96,16 @@ internal sealed class NodeNetworkService
             {
                 try
                 {
-                    await _transport.LeaveNetworkAsync(networkId, registration, CancellationToken.None).ConfigureAwait(false);
+                    await _leaveGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        await _transport.LeaveNetworkAsync(networkId, registration, CancellationToken.None).ConfigureAwait(false);
+                        _networkRegistrations.TryRemove(new KeyValuePair<ulong, Guid>(networkId, registration));
+                    }
+                    finally
+                    {
+                        _leaveGate.Release();
+                    }
                 }
                 catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
                 {
@@ -85,17 +119,25 @@ internal sealed class NodeNetworkService
     public async Task LeaveNetworkAsync(ulong networkId, CancellationToken cancellationToken)
     {
         var key = BuildNetworkFileKey(networkId);
-        if (_networkRegistrations.TryGetValue(networkId, out var registration))
+        await _leaveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await _transport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
-            _networkRegistrations.TryRemove(networkId, out _);
-        }
+            if (_networkRegistrations.TryGetValue(networkId, out var registration))
+            {
+                await _transport.LeaveNetworkAsync(networkId, registration, cancellationToken).ConfigureAwait(false);
+                _networkRegistrations.TryRemove(networkId, out _);
+            }
 
-        var removed = _joinedNetworks.TryRemove(networkId, out _);
-        if (removed)
+            var removed = _joinedNetworks.TryRemove(networkId, out _);
+            if (removed)
+            {
+                await _store.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
+                _events.Publish(EventCode.NetworkLeft, DateTimeOffset.UtcNow, networkId);
+            }
+        }
+        finally
         {
-            await _store.DeleteAsync(key, cancellationToken).ConfigureAwait(false);
-            _events.Publish(EventCode.NetworkLeft, DateTimeOffset.UtcNow, networkId);
+            _leaveGate.Release();
         }
     }
 
@@ -192,14 +234,32 @@ internal sealed class NodeNetworkService
 
         foreach (var network in _joinedNetworks.Keys)
         {
+            if (_networkRegistrations.ContainsKey(network))
+            {
+                continue;
+            }
+
             var registration = await _transport.JoinNetworkAsync(
                 network,
                 localNodeId,
                 onFrameReceived,
                 localEndpoint,
                 cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await _peerService.RecoverPeersAsync(network, _transport, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+#pragma warning disable CA1031 // Peer recovery is best-effort during recovery.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+
             _networkRegistrations[network] = registration;
-            await _peerService.RecoverPeersAsync(network, _transport, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -213,7 +273,19 @@ internal sealed class NodeNetworkService
     {
         foreach (var kv in _networkRegistrations)
         {
-            await _transport.LeaveNetworkAsync(kv.Key, kv.Value, cancellationToken).ConfigureAwait(false);
+            await _leaveGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (_networkRegistrations.TryGetValue(kv.Key, out var registration))
+                {
+                    await _transport.LeaveNetworkAsync(kv.Key, registration, cancellationToken).ConfigureAwait(false);
+                    _networkRegistrations.TryRemove(kv.Key, out _);
+                }
+            }
+            finally
+            {
+                _leaveGate.Release();
+            }
         }
 
         _networkRegistrations.Clear();

@@ -103,7 +103,15 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             while (_acceptQueue.Reader.TryRead(out var accepted))
             {
                 Interlocked.Decrement(ref _pendingAcceptCount);
-                await accepted.Stream.DisposeAsync().ConfigureAwait(false);
+                try
+                {
+                    await accepted.Stream.DisposeAsync().ConfigureAwait(false);
+                }
+#pragma warning disable CA1031 // Dispose is best-effort during shutdown/drain.
+                catch
+#pragma warning restore CA1031
+                {
+                }
             }
 
             using var drainCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -151,12 +159,12 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
         }
         else
         {
-            if (!Ipv6Codec.TryParse(ipPacket.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+            if (!Ipv6Codec.TryParseTransportPayload(ipPacket.Span, out src, out dst, out var protocol, out _, out ipPayload))
             {
                 return Task.CompletedTask;
             }
 
-            if ((!_isWildcardBind && !ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddressMatch)) || nextHeader != TcpCodec.ProtocolNumber)
+            if ((!_isWildcardBind && !ZeroTierIpAddressCanonicalization.EqualsForManagedIpComparison(dst, _localAddressMatch)) || protocol != TcpCodec.ProtocolNumber)
             {
                 return Task.CompletedTask;
             }
@@ -211,8 +219,10 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
             await connection.AcceptAsync(token).ConfigureAwait(false);
             stream = connection.GetStream();
 
+            Interlocked.Increment(ref _pendingAcceptCount);
             if (!_acceptQueue.Writer.TryWrite(new AcceptedTcpConnection(stream, localEndpoint, remoteEndpoint)))
             {
+                Interlocked.Decrement(ref _pendingAcceptCount);
                 Interlocked.Increment(ref _droppedAcceptCount);
                 if (ZeroTierTrace.Enabled)
                 {
@@ -225,7 +235,6 @@ public sealed class ZeroTierTcpListener : IAsyncDisposable
                 return;
             }
 
-            Interlocked.Increment(ref _pendingAcceptCount);
             handedOff = true;
             stream = null;
         }

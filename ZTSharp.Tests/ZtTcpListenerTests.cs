@@ -7,6 +7,14 @@ namespace ZTSharp.Tests;
 public sealed class ZtTcpListenerTests
 {
     [Fact]
+    public async Task DisposeAsync_IsIdempotent()
+    {
+        var listener = new ZtTcpListener(IPAddress.Loopback, 0);
+        await listener.DisposeAsync();
+        await listener.DisposeAsync();
+    }
+
+    [Fact]
     public async Task TcpListener_EchoesPayloadOffline()
     {
         await using var listener = new ZtTcpListener(IPAddress.Loopback, 0);

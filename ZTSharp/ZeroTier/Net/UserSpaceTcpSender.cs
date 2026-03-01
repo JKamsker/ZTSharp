@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 
@@ -12,6 +13,10 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     private readonly UserSpaceTcpRemoteSendWindow _remoteSendWindow = new();
     private readonly UserSpaceTcpRtoEstimator _rtoEstimator = new();
 
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw in concurrent send paths.")]
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     private int _effectiveMss;
@@ -26,7 +31,8 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
     private ushort _lastAdvertisedWindow = ushort.MaxValue;
     private readonly UserSpaceTcpWindowUpdateTrigger _windowUpdateTrigger;
 
-    private bool _disposed;
+    private int _disposeState;
+    private volatile bool _disposed;
 
     public UserSpaceTcpSender(
         IUserSpaceIpLink link,
@@ -113,18 +119,20 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
             return;
         }
 
-        if (_finSeq is not null)
-        {
-            throw new IOException("Local has closed the connection.");
-        }
-
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_finSeq is not null)
+            {
+                throw new IOException("Local has closed the connection.");
+            }
+
             var remaining = buffer;
             while (!remaining.IsEmpty)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                ObjectDisposedException.ThrowIf(_disposed, this);
 
                 await WaitForRemoteSendWindowAsync(cancellationToken).ConfigureAwait(false);
 
@@ -190,6 +198,7 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             if (_finSeq is null)
             {
                 _finSeq = AllocateNextSequence(bytes: 1);
@@ -237,6 +246,12 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
         try
         {
+            if (_disposed)
+            {
+                ackTcs.TrySetException(new ObjectDisposedException(nameof(UserSpaceTcpSender)));
+                return;
+            }
+
             for (var attempt = 0; attempt < retries; attempt++)
             {
                 if (UserSpaceTcpSequenceNumbers.GreaterThanOrEqual(_sendUna, expectedAck))
@@ -318,8 +333,13 @@ internal sealed class UserSpaceTcpSender : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _disposed = true;
-        _sendLock.Dispose();
+        FailPendingOperations(new ObjectDisposedException(nameof(UserSpaceTcpSender)));
         return ValueTask.CompletedTask;
     }
 }

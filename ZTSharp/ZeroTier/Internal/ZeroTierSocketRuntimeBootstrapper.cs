@@ -9,13 +9,40 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal static class ZeroTierSocketRuntimeBootstrapper
 {
-    internal static IZeroTierUdpTransport CreateUdpTransport(ZeroTierMultipathOptions multipath, bool enableIpv6)
+    internal static async ValueTask<IZeroTierUdpTransport> CreateUdpTransportAsync(ZeroTierMultipathOptions multipath, bool enableIpv6)
     {
         ArgumentNullException.ThrowIfNull(multipath);
 
-        if (!multipath.Enabled || multipath.UdpSocketCount == 1)
+        if (!multipath.Enabled)
         {
             return new ZeroTierUdpTransport(localPort: 0, enableIpv6: enableIpv6, localSocketId: 0);
+        }
+
+        if (multipath.UdpSocketCount < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(multipath), multipath.UdpSocketCount, "UdpSocketCount must be at least 1 when multipath is enabled.");
+        }
+
+        if (multipath.UdpSocketCount == 1)
+        {
+            var port = 0;
+            var localPorts = multipath.LocalUdpPorts;
+            if (localPorts is not null)
+            {
+                if (localPorts.Count != 1)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts length must match UdpSocketCount.");
+                }
+
+                port = localPorts[0];
+            }
+
+            if (port < 0 || port > 65535)
+            {
+                throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts entries must be in the range [0, 65535].");
+            }
+
+            return new ZeroTierUdpTransport(localPort: port, enableIpv6: enableIpv6, localSocketId: 0);
         }
 
         var ports = multipath.LocalUdpPorts;
@@ -27,6 +54,21 @@ internal static class ZeroTierSocketRuntimeBootstrapper
         if (ports.Count != multipath.UdpSocketCount)
         {
             throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts length must match UdpSocketCount.");
+        }
+
+        var seenNonZeroPorts = new HashSet<int>();
+        for (var i = 0; i < ports.Count; i++)
+        {
+            var port = ports[i];
+            if (port < 0 || port > 65535)
+            {
+                throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts entries must be in the range [0, 65535].");
+            }
+
+            if (port != 0 && !seenNonZeroPorts.Add(port))
+            {
+                throw new ArgumentOutOfRangeException(nameof(multipath), "LocalUdpPorts must not contain duplicate non-zero ports.");
+            }
         }
 
         var sockets = new List<ZeroTierUdpTransport>(multipath.UdpSocketCount);
@@ -50,7 +92,7 @@ internal static class ZeroTierSocketRuntimeBootstrapper
                 {
                     try
                     {
-                        socket.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        await socket.DisposeAsync().ConfigureAwait(false);
                     }
                     catch (Exception ex) when (ex is ObjectDisposedException or OperationCanceledException or SocketException or InvalidOperationException)
                     {
@@ -80,7 +122,7 @@ internal static class ZeroTierSocketRuntimeBootstrapper
         ArgumentNullException.ThrowIfNull(managedIps);
         ArgumentNullException.ThrowIfNull(inlineCom);
 
-        var udp = CreateUdpTransport(multipath, enableIpv6: true);
+        var udp = await CreateUdpTransportAsync(multipath, enableIpv6: true).ConfigureAwait(false);
         try
         {
             var localManagedIpsV6 = managedIps

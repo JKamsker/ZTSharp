@@ -188,7 +188,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
     }
 
     [Fact]
-    public async Task DispatcherLoopAsync_ForwardsPeerDatagrams_FromAnyEndpoint()
+    public async Task DispatcherLoopAsync_ForwardsPeerDatagrams_FromAnyEndpoint_WhenDirectPeerRxEnabled()
     {
         await using var rxUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var rootSender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
@@ -215,7 +215,8 @@ public sealed class ZeroTierDataplaneRxLoopTests
             rootKey: new byte[48],
             localNodeId,
             rootClient,
-            peerDatagrams: new NoopPeerDatagrams());
+            peerDatagrams: new NoopPeerDatagrams(),
+            acceptDirectPeerDatagrams: true);
 
         var peerChannel = Channel.CreateUnbounded<ZeroTierUdpDatagram>(new UnboundedChannelOptions
         {
@@ -224,7 +225,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         });
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var peerNodeId = new NodeId(0x3333333333);
         var peerPacket = ZeroTierPacketCodec.Encode(
@@ -258,15 +259,83 @@ public sealed class ZeroTierDataplaneRxLoopTests
     }
 
     [Fact]
+    public async Task DispatcherLoopAsync_ForwardsOnlyRootPeerDatagrams_WhenDirectPeerRxDisabled()
+    {
+        await using var rxUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+        await using var rootSender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+        await using var attackerSender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
+
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(rootSender.LocalEndpoint);
+        var rootNodeId = new NodeId(0x1111111111);
+        var localNodeId = new NodeId(0x2222222222);
+
+        var rootClient = new ZeroTierDataplaneRootClient(
+            rxUdp,
+            rootNodeId,
+            rootEndpoint,
+            rootKey: new byte[48],
+            rootProtocolVersion: 12,
+            localNodeId,
+            networkId: 1,
+            inlineCom: Array.Empty<byte>());
+
+        var loops = new ZeroTierDataplaneRxLoops(
+            rxUdp,
+            rootNodeId,
+            rootEndpoint,
+            rootKey: new byte[48],
+            localNodeId,
+            rootClient,
+            peerDatagrams: new NoopPeerDatagrams(),
+            acceptDirectPeerDatagrams: false);
+
+        var peerChannel = Channel.CreateUnbounded<ZeroTierUdpDatagram>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = true
+        });
+
+        using var cts = new CancellationTokenSource();
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
+
+        var peerNodeId = new NodeId(0x3333333333);
+        var peerPacket = ZeroTierPacketCodec.Encode(
+            new ZeroTierPacketHeader(
+                PacketId: 1,
+                Destination: localNodeId,
+                Source: peerNodeId,
+                Flags: 0,
+                Mac: 0,
+                VerbRaw: 0),
+            ReadOnlySpan<byte>.Empty);
+
+        var receiverEndpoint = TestUdpEndpoints.ToLoopback(rxUdp.LocalEndpoint);
+        await attackerSender.SendAsync(receiverEndpoint, peerPacket);
+        await rootSender.SendAsync(receiverEndpoint, peerPacket);
+
+        var forwarded = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromSeconds(2));
+        Assert.Equal(rootEndpoint, forwarded.RemoteEndPoint);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            _ = await ReadAsyncWithTimeout(peerChannel.Reader, TimeSpan.FromMilliseconds(100));
+        });
+
+        cts.Cancel();
+        await dispatcher.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task DispatcherLoopAsync_DropsPeerDatagrams_WhenPeerQueueIsFull_AndCountsDrops()
     {
         await using var rxUdp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var sender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
 
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(sender.LocalEndpoint);
         var rootClient = new ZeroTierDataplaneRootClient(
             rxUdp,
             rootNodeId: new NodeId(0x1111111111),
-            rootEndpoint: new IPEndPoint(IPAddress.Loopback, 9999),
+            rootEndpoint: rootEndpoint,
             rootKey: new byte[48],
             rootProtocolVersion: 12,
             localNodeId: new NodeId(0x2222222222),
@@ -277,7 +346,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         var loops = new ZeroTierDataplaneRxLoops(
             rxUdp,
             rootNodeId: new NodeId(0x1111111111),
-            rootEndpoint: new IPEndPoint(IPAddress.Loopback, 9999),
+            rootEndpoint: rootEndpoint,
             rootKey: new byte[48],
             localNodeId: new NodeId(0x2222222222),
             rootClient: rootClient,
@@ -293,7 +362,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         Assert.True(peerChannel.Writer.TryWrite(new ZeroTierUdpDatagram(LocalSocketId: 0, new IPEndPoint(IPAddress.Loopback, 1), new byte[1])));
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var localNodeId = new NodeId(0x2222222222);
         var peerNodeId = new NodeId(0x3333333333);
@@ -360,7 +429,7 @@ public sealed class ZeroTierDataplaneRxLoopTests
         });
 
         using var dispatcherCts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, dispatcherCts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, dispatcherCts.Token), CancellationToken.None);
 
         var remoteNodeId = new NodeId(0xaaaaaaaaaa);
         var serverTask = RunGatherOkServerOnceAsync(

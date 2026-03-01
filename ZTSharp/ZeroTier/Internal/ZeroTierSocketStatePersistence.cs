@@ -23,22 +23,14 @@ internal static class ZeroTierSocketStatePersistence
 
         try
         {
-            using var stream = new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete,
-                bufferSize: 16 * 1024,
-                options: FileOptions.SequentialScan);
-
-            if (stream.Length <= 0 || stream.Length > MaxManagedIpsFileBytes)
+            if (!BoundedFileIO.TryReadAllText(path, maxBytes: MaxManagedIpsFileBytes, Encoding.UTF8, out var text))
             {
                 return Array.Empty<IPAddress>();
             }
 
-            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, bufferSize: 8 * 1024, leaveOpen: true);
             var ips = new List<IPAddress>();
 
+            using var reader = new StringReader(text);
             while (true)
             {
                 var line = reader.ReadLine();

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
+using System.Diagnostics.CodeAnalysis;
 using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Transport;
@@ -11,18 +12,31 @@ namespace ZTSharp.Transport;
 /// </summary>
 internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 {
+    private static readonly TimeSpan PeerDiscoveryRefreshInterval = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan ShutdownTimeout = TimeSpan.FromSeconds(1);
+
     private sealed record Subscriber(
         ulong NodeId,
         Func<ulong, ulong, ReadOnlyMemory<byte>, CancellationToken, Task> OnFrameReceived);
 
     private readonly UdpClient _udp;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ConcurrentDictionary<ulong, ConcurrentDictionary<Guid, Subscriber>> _networkSubscribers = new();
+    private readonly ConcurrentDictionary<ulong, IPEndPoint> _advertisedEndpoints = new();
     private readonly OsUdpPeerRegistry _peers;
     private readonly OsUdpReceiveLoop _receiver;
     private readonly CancellationTokenSource _receiverCts = new();
     private readonly Task _receiverLoop;
     private readonly bool _enablePeerDiscovery;
+    private readonly CancellationTokenSource _peerRefreshCts = new();
+    private readonly Task? _peerRefreshLoop;
+
+    private int _disposeState;
+    private volatile bool _disposed;
 
     public OsUdpNodeTransport(int localPort = 0, bool enableIpv6 = true, bool enablePeerDiscovery = true)
     {
@@ -38,12 +52,18 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
             SendDiscoveryFrameAsync);
 
         _receiverLoop = Task.Run(() => _receiver.RunAsync(_receiverCts.Token));
+
+        if (enablePeerDiscovery)
+        {
+            _peerRefreshLoop = Task.Run(() => RefreshLocalDiscoveryEntriesAsync(_peerRefreshCts.Token));
+        }
     }
 
     public IPEndPoint LocalEndpoint
     {
         get
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             return UdpEndpointNormalization.Normalize((IPEndPoint)_udp.Client.LocalEndPoint!);
         }
     }
@@ -58,11 +78,13 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
         ArgumentNullException.ThrowIfNull(onFrameReceived);
         cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         var registrationId = Guid.NewGuid();
         var advertisedEndpoint = localEndpoint is null
             ? UdpEndpointNormalization.NormalizeForAdvertisement(LocalEndpoint)
             : UdpEndpointNormalization.NormalizeForAdvertisement(localEndpoint);
+        _advertisedEndpoints[networkId] = advertisedEndpoint;
         var subscribers = _networkSubscribers.GetOrAdd(
             networkId,
             _ => new ConcurrentDictionary<Guid, Subscriber>());
@@ -84,26 +106,30 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     public async Task LeaveNetworkAsync(ulong networkId, Guid registrationId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_networkSubscribers.TryGetValue(networkId, out var subscribers) &&
-            subscribers.TryGetValue(registrationId, out var localSubscriber))
-        {
-            _ = _peers.TryRemoveLocalNodeIdIfMatch(networkId, localSubscriber.NodeId);
-        }
-
-        _peers.RemoveNetworkPeers(networkId);
-        if (!_networkSubscribers.TryGetValue(networkId, out var networkSubscribers))
-        {
-            return;
-        }
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            networkSubscribers.TryRemove(registrationId, out _);
-            if (networkSubscribers.IsEmpty)
+            if (!_networkSubscribers.TryGetValue(networkId, out var networkSubscribers))
             {
-                _networkSubscribers.TryRemove(networkId, out _);
+                return;
             }
+
+            if (!networkSubscribers.TryRemove(registrationId, out var localSubscriber))
+            {
+                return;
+            }
+
+            if (!networkSubscribers.IsEmpty)
+            {
+                return;
+            }
+
+            _networkSubscribers.TryRemove(networkId, out _);
+            _advertisedEndpoints.TryRemove(networkId, out _);
+            _ = _peers.TryRemoveLocalNodeIdIfMatch(networkId, localSubscriber.NodeId);
+            _peers.RemoveNetworkPeers(networkId);
         }
         finally
         {
@@ -118,6 +144,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_peers.TryGetPeers(networkId, out var peers))
         {
             return;
@@ -147,8 +174,9 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
                 try
                 {
                     await _udp
-                        .SendAsync(frame, peer.Value, cancellationToken)
+                        .SendAsync(frame, peer.Value.Endpoint, cancellationToken)
                         .ConfigureAwait(false);
+                    _peers.RefreshPeerLastSeen(networkId, peer.Key);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -169,6 +197,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     public Task FlushAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         return Task.CompletedTask;
     }
 
@@ -176,6 +205,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
     {
         ArgumentOutOfRangeException.ThrowIfZero(nodeId);
         ArgumentNullException.ThrowIfNull(endpoint);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         UdpEndpointNormalization.ValidateRemoteEndpoint(endpoint, nameof(endpoint));
         var remoteEndpoint = UdpEndpointNormalization.Normalize(endpoint);
@@ -208,19 +238,85 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _receiverCts.CancelAsync().ConfigureAwait(false);
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
+        _disposed = true;
         try
         {
-            await _receiverLoop.ConfigureAwait(false);
+            await _receiverCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            await _peerRefreshCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            await _receiverLoop.WaitAsync(ShutdownTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
         }
         catch (OperationCanceledException) when (_receiverCts.IsCancellationRequested)
         {
         }
+        catch (ObjectDisposedException)
+        {
+        }
 
-        _udp.Dispose();
+        if (_peerRefreshLoop is not null)
+        {
+            try
+            {
+                await _peerRefreshLoop.WaitAsync(ShutdownTimeout).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+            }
+            catch (OperationCanceledException) when (_peerRefreshCts.IsCancellationRequested)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        try
+        {
+            _udp.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         _peers.Cleanup();
         _receiverCts.Dispose();
-        _gate.Dispose();
+        _peerRefreshCts.Dispose();
+    }
+
+    private async Task RefreshLocalDiscoveryEntriesAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(PeerDiscoveryRefreshInterval);
+        while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+        {
+            foreach (var entry in _advertisedEndpoints)
+            {
+                if (_peers.TryGetLocalNodeId(entry.Key, out var localNodeId) && localNodeId != 0)
+                {
+                    _peers.RefreshLocalRegistration(entry.Key, localNodeId, entry.Value);
+                }
+            }
+        }
     }
 
     private async Task DispatchFrameAsync(ulong sourceNodeId, ulong networkId, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
@@ -278,5 +374,7 @@ internal sealed class OsUdpNodeTransport : INodeTransport, IAsyncDisposable
         }
     }
 
+    internal void SetDatagramObserverForTests(Action<IPEndPoint>? observer)
+        => _receiver.DatagramReceivedForTests = observer;
 
 }

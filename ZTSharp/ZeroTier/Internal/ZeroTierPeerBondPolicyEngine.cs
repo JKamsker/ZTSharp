@@ -9,6 +9,9 @@ internal sealed class ZeroTierPeerBondPolicyEngine
 {
     private const long AwareFlowTtlMs = 120_000;
     private const int AwareLatencySlackMs = 25;
+    private const long ActiveBackupMinHoldMs = 10_000;
+    private const int ActiveBackupLatencySlackMs = 25;
+    private const long PeerStateTtlMs = 600_000;
 
     private readonly Func<NodeId, int, IPEndPoint, int?> _getLatencyMs;
     private readonly Func<NodeId, int, IPEndPoint, short> _getRemoteUtility;
@@ -54,6 +57,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
             case ZeroTierBondPolicy.BalanceRoundRobin:
                 StableSort(observedPaths);
                 var state = _peerStates.GetOrAdd(peerNodeId, static _ => new PeerState());
+                Volatile.Write(ref state.LastUsedMs, _nowMs());
                 var rr = Interlocked.Increment(ref state.RoundRobinCounter);
                 return SelectByIndex(observedPaths, index: (int)((uint)rr % (uint)observedPaths.Length), out selected);
 
@@ -62,6 +66,9 @@ internal sealed class ZeroTierPeerBondPolicyEngine
                 return SelectBalanceAware(peerNodeId, observedPaths, flowId, out selected);
 
             case ZeroTierBondPolicy.ActiveBackup:
+                StableSort(observedPaths);
+                return SelectActiveBackup(peerNodeId, observedPaths, out selected);
+
             case ZeroTierBondPolicy.Off:
             default:
                 return SelectBest(peerNodeId, observedPaths, out selected);
@@ -71,9 +78,18 @@ internal sealed class ZeroTierPeerBondPolicyEngine
     public void MaintenanceTick()
     {
         var now = _nowMs();
-        foreach (var state in _peerStates.Values)
+        foreach (var pair in _peerStates)
         {
+            var state = pair.Value;
             CleanupFlowsIfNeeded(state, now);
+
+            var lastUsed = Volatile.Read(ref state.LastUsedMs);
+            if (lastUsed != 0 &&
+                unchecked(now - lastUsed) > PeerStateTtlMs &&
+                state.Flows.IsEmpty)
+            {
+                _peerStates.TryRemove(pair.Key, out _);
+            }
         }
     }
 
@@ -115,7 +131,6 @@ internal sealed class ZeroTierPeerBondPolicyEngine
         var bestHasLatency = false;
         var bestLatency = int.MaxValue;
         var bestUtility = short.MinValue;
-        var bestLastSeen = long.MinValue;
 
         for (var i = 0; i < observedPaths.Length; i++)
         {
@@ -129,7 +144,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
                     (!bestHasLatency) ||
                     (latencyMs < bestLatency) ||
                     (latencyMs == bestLatency && remoteUtility > bestUtility) ||
-                    (latencyMs == bestLatency && remoteUtility == bestUtility && path.LastSeenUnixMs > bestLastSeen);
+                    (latencyMs == bestLatency && remoteUtility == bestUtility && (bestIndex < 0 || StableComparer.Instance.Compare(path, observedPaths[bestIndex]) < 0));
 
                 if (better)
                 {
@@ -137,7 +152,6 @@ internal sealed class ZeroTierPeerBondPolicyEngine
                     bestHasLatency = true;
                     bestLatency = latencyMs;
                     bestUtility = remoteUtility;
-                    bestLastSeen = path.LastSeenUnixMs;
                 }
             }
             else if (!bestHasLatency)
@@ -145,13 +159,12 @@ internal sealed class ZeroTierPeerBondPolicyEngine
                 var better =
                     (bestIndex < 0) ||
                     (remoteUtility > bestUtility) ||
-                    (remoteUtility == bestUtility && path.LastSeenUnixMs > bestLastSeen);
+                    (remoteUtility == bestUtility && (bestIndex < 0 || StableComparer.Instance.Compare(path, observedPaths[bestIndex]) < 0));
 
                 if (better)
                 {
                     bestIndex = i;
                     bestUtility = remoteUtility;
-                    bestLastSeen = path.LastSeenUnixMs;
                 }
             }
         }
@@ -166,6 +179,92 @@ internal sealed class ZeroTierPeerBondPolicyEngine
         return true;
     }
 
+    private bool SelectActiveBackup(NodeId peerNodeId, ZeroTierPeerPhysicalPath[] observedPaths, out ZeroTierSelectedPeerPath selected)
+    {
+        var now = _nowMs();
+        var state = _peerStates.GetOrAdd(peerNodeId, static _ => new PeerState());
+        Volatile.Write(ref state.LastUsedMs, now);
+
+        lock (state.Gate)
+        {
+            if (state.ActiveBackupPath is { } existing && TryFindPath(observedPaths, existing, out var existingPath))
+            {
+                selected = new ZeroTierSelectedPeerPath(existingPath.LocalSocketId, existingPath.RemoteEndPoint);
+
+                if (state.ActiveBackupSelectedAtMs != 0 && unchecked(now - state.ActiveBackupSelectedAtMs) < ActiveBackupMinHoldMs)
+                {
+                    return true;
+                }
+
+                if (!SelectBest(peerNodeId, observedPaths, out var best) || best == selected)
+                {
+                    return true;
+                }
+
+                if (!ShouldSwitchActiveBackup(peerNodeId, existingPath, best))
+                {
+                    return true;
+                }
+
+                state.ActiveBackupPath = new ZeroTierPeerPhysicalPathKey(best.LocalSocketId, best.RemoteEndPoint);
+                state.ActiveBackupSelectedAtMs = now;
+                selected = best;
+                return true;
+            }
+
+            if (!SelectBest(peerNodeId, observedPaths, out selected))
+            {
+                return false;
+            }
+
+            state.ActiveBackupPath = new ZeroTierPeerPhysicalPathKey(selected.LocalSocketId, selected.RemoteEndPoint);
+            state.ActiveBackupSelectedAtMs = now;
+            return true;
+        }
+    }
+
+    private bool ShouldSwitchActiveBackup(NodeId peerNodeId, ZeroTierPeerPhysicalPath current, ZeroTierSelectedPeerPath best)
+    {
+        var bestLatency = _getLatencyMs(peerNodeId, best.LocalSocketId, best.RemoteEndPoint);
+        var currentLatency = _getLatencyMs(peerNodeId, current.LocalSocketId, current.RemoteEndPoint);
+
+        if (bestLatency is int bestLatencyMs)
+        {
+            if (currentLatency is not int currentLatencyMs)
+            {
+                return true;
+            }
+
+            if (bestLatencyMs + ActiveBackupLatencySlackMs < currentLatencyMs)
+            {
+                return true;
+            }
+        }
+        else if (currentLatency is int)
+        {
+            return false;
+        }
+
+        var bestUtility = _getRemoteUtility(peerNodeId, best.LocalSocketId, best.RemoteEndPoint);
+        var currentUtility = _getRemoteUtility(peerNodeId, current.LocalSocketId, current.RemoteEndPoint);
+        return bestUtility > currentUtility;
+    }
+
+    private static bool TryFindPath(ZeroTierPeerPhysicalPath[] observedPaths, ZeroTierPeerPhysicalPathKey key, out ZeroTierPeerPhysicalPath path)
+    {
+        for (var i = 0; i < observedPaths.Length; i++)
+        {
+            if (observedPaths[i].LocalSocketId == key.LocalSocketId && observedPaths[i].RemoteEndPoint.Equals(key.RemoteEndPoint))
+            {
+                path = observedPaths[i];
+                return true;
+            }
+        }
+
+        path = default;
+        return false;
+    }
+
     private bool SelectBalanceAware(
         NodeId peerNodeId,
         ZeroTierPeerPhysicalPath[] observedPaths,
@@ -174,6 +273,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
     {
         var now = _nowMs();
         var state = _peerStates.GetOrAdd(peerNodeId, static _ => new PeerState());
+        Volatile.Write(ref state.LastUsedMs, now);
 
         CleanupFlowsIfNeeded(state, now);
 
@@ -264,9 +364,13 @@ internal sealed class ZeroTierPeerBondPolicyEngine
 
     private sealed class PeerState
     {
+        public object Gate { get; } = new();
         public int RoundRobinCounter;
         public ConcurrentDictionary<uint, FlowAssignment> Flows { get; } = new();
         public long LastFlowCleanupMs;
+        public ZeroTierPeerPhysicalPathKey? ActiveBackupPath;
+        public long ActiveBackupSelectedAtMs;
+        public long LastUsedMs;
     }
 
     private readonly record struct FlowAssignment(ZeroTierPeerPhysicalPathKey Path, long LastUsedMs);
@@ -289,7 +393,7 @@ internal sealed class ZeroTierPeerBondPolicyEngine
                 return c;
             }
 
-            return x.LastSeenUnixMs.CompareTo(y.LastSeenUnixMs);
+            return 0;
         }
 
         private static int CompareEndpoints(IPEndPoint x, IPEndPoint y)
@@ -315,6 +419,15 @@ internal sealed class ZeroTierPeerBondPolicyEngine
             if (xb.Length != yb.Length)
             {
                 return xb.Length.CompareTo(yb.Length);
+            }
+
+            if (x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            {
+                var scopeCompare = x.Address.ScopeId.CompareTo(y.Address.ScopeId);
+                if (scopeCompare != 0)
+                {
+                    return scopeCompare;
+                }
             }
 
             return x.Port.CompareTo(y.Port);

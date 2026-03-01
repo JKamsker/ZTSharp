@@ -44,11 +44,23 @@ internal static class ZeroTierSocketFactory
                 throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts length must match UdpSocketCount.");
             }
 
+            HashSet<int>? seenNonZeroPorts = null;
+            if (options.Multipath.Enabled)
+            {
+                seenNonZeroPorts = new HashSet<int>();
+            }
+
             for (var i = 0; i < ports.Count; i++)
             {
                 if (ports[i] < 0 || ports[i] > 65535)
                 {
                     throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts entries must be in the range [0, 65535].");
+                }
+
+                var port = ports[i];
+                if (seenNonZeroPorts is not null && port != 0 && !seenNonZeroPorts.Add(port))
+                {
+                    throw new ArgumentOutOfRangeException(nameof(options), "Multipath LocalUdpPorts must not contain duplicate non-zero ports.");
                 }
             }
         }

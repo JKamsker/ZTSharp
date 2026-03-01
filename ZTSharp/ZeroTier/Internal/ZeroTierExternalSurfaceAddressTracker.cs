@@ -18,7 +18,7 @@ internal sealed class ZeroTierExternalSurfaceAddressTracker
         }
 
         _ttl = ttl;
-        _nowUnixMs = nowUnixMs ?? (() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        _nowUnixMs = nowUnixMs ?? (() => Environment.TickCount64);
     }
 
     public void Observe(NodeId reportingPeerNodeId, int localSocketId, IPEndPoint surfaceAddress)
@@ -27,7 +27,8 @@ internal sealed class ZeroTierExternalSurfaceAddressTracker
 
         var now = _nowUnixMs();
         var key = new ZeroTierExternalSurfaceKey(localSocketId, reportingPeerNodeId);
-        _entries[key] = new Entry(surfaceAddress, now);
+        var stored = new IPEndPoint(surfaceAddress.Address, surfaceAddress.Port);
+        _entries[key] = new Entry(stored, now);
         CleanupIfNeeded(now);
     }
 
@@ -41,7 +42,7 @@ internal sealed class ZeroTierExternalSurfaceAddressTracker
         {
             if (key.LocalSocketId == localSocketId)
             {
-                list.Add(entry.SurfaceAddress);
+                list.Add(new IPEndPoint(entry.SurfaceAddress.Address, entry.SurfaceAddress.Port));
             }
         }
 

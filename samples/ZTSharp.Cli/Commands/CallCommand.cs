@@ -147,11 +147,17 @@ internal static class CallCommand
 
         if (string.Equals(stack, "managed", StringComparison.OrdinalIgnoreCase))
         {
+            var resolvedUdpSocketCount = mpUdpSockets ?? mpUdpPorts?.Count ?? 1;
+            if (mpUdpPorts is not null && mpUdpPorts.Count != resolvedUdpSocketCount)
+            {
+                throw new InvalidOperationException("Invalid multipath config: --mp-udp-ports count must match --mp-udp-sockets.");
+            }
+
             var multipath = new ZeroTierMultipathOptions
             {
                 Enabled = mpEnabled,
                 BondPolicy = mpBondPolicy,
-                UdpSocketCount = mpUdpSockets ?? 1,
+                UdpSocketCount = resolvedUdpSocketCount,
                 LocalUdpPorts = mpUdpPorts,
                 WarmupDuplicateToRoot = mpWarmupRoot
             };

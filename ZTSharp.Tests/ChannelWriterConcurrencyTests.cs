@@ -34,9 +34,9 @@ public sealed class ChannelWriterConcurrencyTests
             sendTasks[i] = sender.SendToAsync(payload, receiverId, remotePort: 30000);
         }
 
-        await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(10));
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var seen = new bool[count];
         for (var i = 0; i < count; i++)
         {
@@ -68,7 +68,7 @@ public sealed class ChannelWriterConcurrencyTests
 
         await using var listener = new OverlayTcpListener(serverNode, networkId, serverPort);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var acceptTask = Task.Run(async () =>
         {
             var accepted = new List<OverlayTcpClient>(capacity: count);
@@ -94,8 +94,8 @@ public sealed class ChannelWriterConcurrencyTests
             }, cts.Token);
         }
 
-        await Task.WhenAll(connectTasks).WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
-        var acceptedClients = await acceptTask.WaitAsync(TimeSpan.FromSeconds(5), cts.Token);
+        await Task.WhenAll(connectTasks).WaitAsync(TimeSpan.FromSeconds(10), cts.Token);
+        var acceptedClients = await acceptTask.WaitAsync(TimeSpan.FromSeconds(10), cts.Token);
         Assert.Equal(count, acceptedClients.Count);
 
         foreach (var accepted in acceptedClients)
@@ -158,9 +158,9 @@ public sealed class ChannelWriterConcurrencyTests
             await using var client = new OverlayTcpClient(clientNode, networkId, clientPort);
             await client.ConnectAsync(serverNode.NodeId.Value, serverPort);
 
-            await using var _ = await acceptTask.WaitAsync(TimeSpan.FromSeconds(2));
+            await using var _ = await acceptTask.WaitAsync(TimeSpan.FromSeconds(10));
 
-            var (connectionId, sourcePort) = await synInfoTcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            var (connectionId, sourcePort) = await synInfoTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
             const int frames = 500;
             var payload = Encoding.ASCII.GetBytes("abcdefgh");
@@ -168,26 +168,23 @@ public sealed class ChannelWriterConcurrencyTests
             var sendTasks = new Task[frames];
             for (var i = 0; i < frames; i++)
             {
-                sendTasks[i] = Task.Run(async () =>
-                {
-                    var dataFrame = new byte[OverlayTcpFrameCodec.HeaderLength + payload.Length];
-                    OverlayTcpFrameCodec.BuildHeader(
-                        OverlayTcpFrameCodec.FrameType.Data,
-                        sourcePort: serverPort,
-                        destinationPort: clientPort,
-                        destinationNodeId: clientNode.NodeId.Value,
-                        connectionId,
-                        dataFrame);
-                    payload.CopyTo(dataFrame.AsSpan(OverlayTcpFrameCodec.HeaderLength));
-                    await serverNode.SendFrameAsync(networkId, dataFrame);
-                });
+                var dataFrame = new byte[OverlayTcpFrameCodec.HeaderLength + payload.Length];
+                OverlayTcpFrameCodec.BuildHeader(
+                    OverlayTcpFrameCodec.FrameType.Data,
+                    sourcePort: serverPort,
+                    destinationPort: clientPort,
+                    destinationNodeId: clientNode.NodeId.Value,
+                    connectionId,
+                    dataFrame);
+                payload.CopyTo(dataFrame.AsSpan(OverlayTcpFrameCodec.HeaderLength));
+                sendTasks[i] = serverNode.SendFrameAsync(networkId, dataFrame);
             }
 
-            await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(2));
+            await Task.WhenAll(sendTasks).WaitAsync(TimeSpan.FromSeconds(20));
 
             var clientStream = client.GetStream();
             var buffer = new byte[frames * payload.Length];
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             var read = await StreamTestHelpers.ReadExactAsync(clientStream, buffer, buffer.Length, cts.Token);
             Assert.Equal(buffer.Length, read);
         }

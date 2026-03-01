@@ -4,12 +4,12 @@ namespace ZTSharp.Tests;
 
 public sealed class SecretFilePermissionTests
 {
-    [Fact]
+    [UnixFact]
     public void ZeroTierIdentityStore_Save_SetsUnixMode600_OnUnix()
     {
         if (OperatingSystem.IsWindows())
         {
-            return;
+            throw new InvalidOperationException("UnixFact should have skipped this test on Windows.");
         }
 
         var root = TestTempPaths.CreateGuidSuffixed("zt-secret-perms-");

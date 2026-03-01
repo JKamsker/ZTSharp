@@ -1,17 +1,15 @@
 using System.Net.Sockets;
+using System.Reflection;
 using ZTSharp.Transport.Internal;
 
 namespace ZTSharp.Tests;
 
 public sealed class OsUdpSocketFactoryTests
 {
-    [Fact]
+    [SkippableFact]
     public void WindowsSioUdpConnResetInput_IsDword()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
+        Skip.IfNot(OperatingSystem.IsWindows(), "Windows-only IOControl buffer test.");
 
         var buffer = OsUdpSocketFactory.CreateWindowsSioUdpConnResetInputBuffer(disableConnReset: true);
         Assert.Equal(4, buffer.Length);
@@ -19,7 +17,7 @@ public sealed class OsUdpSocketFactoryTests
     }
 
     [Fact]
-    public void CreateSocketCore_WhenDualModeFails_TriesIpv6OnlyBeforeIpv4()
+    public void CreateSocketCore_WhenDualModeFails_TriesIpv4BeforeIpv6Only()
     {
         var calls = new List<string>();
 
@@ -36,12 +34,42 @@ public sealed class OsUdpSocketFactoryTests
 
         try
         {
-            Assert.Equal(new[] { "dual", "v6only" }, calls);
-            Assert.Equal(AddressFamily.InterNetworkV6, socket.Client.AddressFamily);
+            Assert.Equal(new[] { "dual", "v4" }, calls);
+            Assert.Equal(AddressFamily.InterNetwork, socket.Client.AddressFamily);
         }
         finally
         {
             socket.Dispose();
+        }
+    }
+
+    [SkippableFact]
+    public void CreateUdp6OnlyBound_SetsDualModeFalse()
+    {
+        Skip.IfNot(Socket.OSSupportsIPv6, "IPv6 not supported on this platform.");
+
+        var method = typeof(OsUdpSocketFactory).GetMethod("CreateUdp6OnlyBound", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+
+        UdpClient? udp;
+        try
+        {
+            udp = (UdpClient?)method!.Invoke(null, new object[] { 0 });
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is SocketException or PlatformNotSupportedException or NotSupportedException)
+        {
+            Skip.If(true, $"IPv6 appears supported, but binding an IPv6 UDP socket failed: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}");
+            return;
+        }
+        Assert.NotNull(udp);
+
+        try
+        {
+            Assert.False(udp!.Client.DualMode);
+        }
+        finally
+        {
+            udp!.Dispose();
         }
     }
 }

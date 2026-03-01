@@ -80,6 +80,7 @@ public sealed class OsUdpReceiveLoopSocketExceptionTests
 
         var peers = new OsUdpPeerRegistry(enablePeerDiscovery: true, UdpEndpointNormalization.Normalize);
         peers.SetLocalNodeId(networkId, localNodeId);
+        peers.AddOrUpdatePeer(networkId, remoteNodeId, remoteEndpoint);
 
         var sendStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var allowSend = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

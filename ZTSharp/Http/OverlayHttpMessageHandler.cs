@@ -36,6 +36,11 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
                 "LocalPortEnd must be in the range 1..65535 and greater than or equal to LocalPortStart.");
         }
 
+        if (_options.LocalPortAllocationTimeout != Timeout.InfiniteTimeSpan && _options.LocalPortAllocationTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), "LocalPortAllocationTimeout must be positive or Timeout.InfiniteTimeSpan.");
+        }
+
         var sockets = new SocketsHttpHandler
         {
             UseProxy = false
@@ -68,14 +73,43 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await client.DisposeAsync().ConfigureAwait(false);
-            ReleaseLocalPort(localPort);
+            try
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose is best-effort; preserve cancellation semantics and always release the reserved port.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+            finally
+            {
+                ReleaseLocalPort(localPort);
+            }
+
             throw;
         }
-        catch (Exception ex) when (ex is not HttpRequestException)
+        catch (Exception ex)
         {
-            await client.DisposeAsync().ConfigureAwait(false);
-            ReleaseLocalPort(localPort);
+            try
+            {
+                await client.DisposeAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose is best-effort; preserve original exception and always release the reserved port.
+            catch
+#pragma warning restore CA1031
+            {
+            }
+            finally
+            {
+                ReleaseLocalPort(localPort);
+            }
+
+            if (ex is HttpRequestException)
+            {
+                throw;
+            }
+
             throw new HttpRequestException(
                 $"Overlay connect to '{host}:{endpoint.Port}' failed.",
                 ex);
@@ -87,11 +121,22 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
         var start = _options.LocalPortStart;
         var end = _options.LocalPortEnd;
         var range = end - start + 1;
+        var allocationTimeout = _options.LocalPortAllocationTimeout;
+        var timeoutMs = allocationTimeout == Timeout.InfiniteTimeSpan
+            ? long.MaxValue
+            : (long)Math.Min(long.MaxValue, Math.Ceiling(allocationTimeout.TotalMilliseconds));
+        var startedMs = Environment.TickCount64;
         var backoffMs = 1;
 
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (timeoutMs != long.MaxValue && unchecked(Environment.TickCount64 - startedMs) > timeoutMs)
+            {
+                throw new HttpRequestException(
+                    $"Overlay TCP local port allocation exhausted (range {start}..{end}) after {allocationTimeout}.");
+            }
 
             for (var i = 0; i < range; i++)
             {
@@ -100,6 +145,18 @@ public sealed class OverlayHttpMessageHandler : DelegatingHandler
                 {
                     return candidate;
                 }
+            }
+
+            if (timeoutMs != long.MaxValue)
+            {
+                var elapsed = unchecked(Environment.TickCount64 - startedMs);
+                var remaining = timeoutMs - elapsed;
+                if (remaining <= 0)
+                {
+                    continue;
+                }
+
+                backoffMs = (int)Math.Min(backoffMs, remaining);
             }
 
             await Task.Delay(backoffMs, cancellationToken).ConfigureAwait(false);

@@ -10,8 +10,15 @@ namespace ZTSharp.ZeroTier;
 
 public sealed class ZeroTierUdpSocket : IAsyncDisposable
 {
+    private const int MaxQueuedDatagrams = 1024;
+
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
-    private readonly Channel<ZeroTierRoutedIpPacket> _incoming = Channel.CreateUnbounded<ZeroTierRoutedIpPacket>();
+    private readonly Channel<ZeroTierRoutedIpPacket> _incoming = Channel.CreateBounded<ZeroTierRoutedIpPacket>(new BoundedChannelOptions(MaxQueuedDatagrams)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleWriter = false,
+        SingleReader = true
+    });
     private readonly ZeroTierDataplaneRuntime _runtime;
     private readonly IPAddress _localAddress;
     private readonly ushort _localPort;
@@ -133,22 +140,29 @@ public sealed class ZeroTierUdpSocket : IAsyncDisposable
                     continue;
                 }
 
-                if (!dst.Equals(_localAddress) || protocol != UdpCodec.ProtocolNumber)
+                if (protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
             }
             else
             {
-                if (!Ipv6Codec.TryParse(routed.Packet.Span, out src, out dst, out var nextHeader, out _, out ipPayload))
+                if (!Ipv6Codec.TryParseTransportPayload(routed.Packet.Span, out src, out dst, out var protocol, out _, out ipPayload))
                 {
                     continue;
                 }
 
-                if (!dst.Equals(_localAddress) || nextHeader != UdpCodec.ProtocolNumber)
+                if (protocol != UdpCodec.ProtocolNumber)
                 {
                     continue;
                 }
+            }
+
+            if (!_localAddress.Equals(IPAddress.Any) &&
+                !_localAddress.Equals(IPAddress.IPv6Any) &&
+                !dst.Equals(_localAddress))
+            {
+                continue;
             }
 
             if (!UdpCodec.TryParse(ipPayload, out srcPort, out dstPort, out udpPayload))

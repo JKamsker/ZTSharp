@@ -187,17 +187,45 @@ internal static class CliParsing
             throw new InvalidOperationException("Invalid bond policy.");
         }
 
-        value = value.Trim();
-        return value switch
+        var normalized = value.Trim();
+        if (normalized.Equals("off", StringComparison.OrdinalIgnoreCase))
         {
-            "off" => ZeroTierBondPolicy.Off,
-            "active-backup" or "activebackup" => ZeroTierBondPolicy.ActiveBackup,
-            "broadcast" => ZeroTierBondPolicy.Broadcast,
-            "balance-rr" or "balance-roundrobin" or "balance-round-robin" or "roundrobin" or "rr" => ZeroTierBondPolicy.BalanceRoundRobin,
-            "balance-xor" or "xor" => ZeroTierBondPolicy.BalanceXor,
-            "balance-aware" or "aware" => ZeroTierBondPolicy.BalanceAware,
-            _ => throw new InvalidOperationException("Invalid bond policy (expected off|active-backup|broadcast|balance-rr|balance-xor|balance-aware).")
-        };
+            return ZeroTierBondPolicy.Off;
+        }
+
+        if (normalized.Equals("active-backup", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("activebackup", StringComparison.OrdinalIgnoreCase))
+        {
+            return ZeroTierBondPolicy.ActiveBackup;
+        }
+
+        if (normalized.Equals("broadcast", StringComparison.OrdinalIgnoreCase))
+        {
+            return ZeroTierBondPolicy.Broadcast;
+        }
+
+        if (normalized.Equals("balance-rr", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("balance-roundrobin", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("balance-round-robin", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("roundrobin", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("rr", StringComparison.OrdinalIgnoreCase))
+        {
+            return ZeroTierBondPolicy.BalanceRoundRobin;
+        }
+
+        if (normalized.Equals("balance-xor", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("xor", StringComparison.OrdinalIgnoreCase))
+        {
+            return ZeroTierBondPolicy.BalanceXor;
+        }
+
+        if (normalized.Equals("balance-aware", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Equals("aware", StringComparison.OrdinalIgnoreCase))
+        {
+            return ZeroTierBondPolicy.BalanceAware;
+        }
+
+        throw new InvalidOperationException("Invalid bond policy (expected off|active-backup|broadcast|balance-rr|balance-xor|balance-aware).");
     }
 
     public static IReadOnlyList<int> ParsePortList(string value, string name)

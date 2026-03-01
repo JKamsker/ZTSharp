@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Threading.Channels;
 using ZTSharp.ZeroTier.Internal;
 
@@ -10,7 +11,7 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
     private readonly Channel<ZeroTierUdpDatagram> _incoming;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task[] _forwarders;
-    private bool _disposed;
+    private int _disposed;
 
     public ZeroTierUdpMultiTransport(IReadOnlyList<ZeroTierUdpTransport> sockets)
     {
@@ -37,57 +38,104 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
     }
 
     public IReadOnlyList<ZeroTierUdpLocalSocket> LocalSockets
-        => _sockets.Select(socket => new ZeroTierUdpLocalSocket(socket.LocalSocketId, socket.LocalEndpoint)).ToArray();
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            return _sockets.Select(socket => new ZeroTierUdpLocalSocket(socket.LocalSocketId, socket.LocalEndpoint)).ToArray();
+        }
+    }
 
     public ValueTask<ZeroTierUdpDatagram> ReceiveAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         return _incoming.Reader.ReadAsync(cancellationToken);
     }
 
     public async ValueTask<ZeroTierUdpDatagram> ReceiveAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         return await ZeroTierTimeouts
             .RunWithTimeoutAsync(timeout, operation: "UDP receive", _incoming.Reader.ReadAsync, cancellationToken)
             .ConfigureAwait(false);
     }
 
     public Task SendAsync(IPEndPoint remoteEndpoint, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
-        => _sockets[0].SendAsync(remoteEndpoint, payload, cancellationToken);
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        return _sockets[0].SendAsync(remoteEndpoint, payload, cancellationToken);
+    }
 
     public Task SendAsync(int localSocketId, IPEndPoint remoteEndpoint, ReadOnlyMemory<byte> payload, CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         var socket = GetSocket(localSocketId);
         return socket.SendAsync(remoteEndpoint, payload, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
 
-        _disposed = true;
         _incoming.Writer.TryComplete();
-        await _cts.CancelAsync().ConfigureAwait(false);
 
+        var forwarderCompletion = Task.WhenAll(_forwarders);
         try
         {
-            await Task.WhenAll(_forwarders).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is OperationCanceledException or ChannelClosedException)
-        {
+            try
+            {
+                await _cts.CancelAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+#if DEBUG
+                Debug.WriteLine($"[{nameof(ZeroTierUdpMultiTransport)}] CancelAsync failed: {ex}");
+#else
+                _ = ex;
+#endif
+            }
+
+            foreach (var socket in _sockets)
+            {
+                try
+                {
+                    await socket.DisposeAsync().ConfigureAwait(false);
+                }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+                catch (Exception ex)
+#pragma warning restore CA1031
+                {
+#if DEBUG
+                    Debug.WriteLine($"[{nameof(ZeroTierUdpMultiTransport)}] Socket dispose failed: {ex}");
+#else
+                    _ = ex;
+#endif
+                }
+            }
         }
         finally
         {
-            _cts.Dispose();
-        }
+            try
+            {
+                await forwarderCompletion.ConfigureAwait(false);
+            }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+            catch (Exception ex)
+#pragma warning restore CA1031
+            {
+#if DEBUG
+                Debug.WriteLine($"[{nameof(ZeroTierUdpMultiTransport)}] Forwarder completion failed: {ex}");
+#else
+                _ = ex;
+#endif
+            }
 
-        foreach (var socket in _sockets)
-        {
-            await socket.DisposeAsync().ConfigureAwait(false);
+            _cts.Dispose();
         }
     }
 
@@ -136,6 +184,10 @@ internal sealed class ZeroTierUdpMultiTransport : IZeroTierUdpTransport
                 return;
             }
             catch (ChannelClosedException)
+            {
+                return;
+            }
+            catch (ObjectDisposedException)
             {
                 return;
             }

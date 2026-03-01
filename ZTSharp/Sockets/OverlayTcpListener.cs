@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Sockets;
 using System.Threading.Channels;
 
@@ -12,6 +13,10 @@ public sealed class OverlayTcpListener : IAsyncDisposable
     private const int HeaderLength = OverlayTcpFrameCodec.HeaderLength;
 
     private readonly Channel<OverlayTcpClient> _acceptQueue;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
     private readonly Node _node;
     private readonly ulong _networkId;
@@ -32,9 +37,10 @@ public sealed class OverlayTcpListener : IAsyncDisposable
         _localPort = localPort;
         _acceptQueue = Channel.CreateBounded<OverlayTcpClient>(new BoundedChannelOptions(capacity: 128)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleWriter = false,
-            SingleReader = true
+            // DisposeAsync drains queued connections for best-effort cleanup, so we must allow an additional reader.
+            SingleReader = false
         });
 
         _node.RawFrameReceived += OnFrameReceived;
@@ -56,11 +62,14 @@ public sealed class OverlayTcpListener : IAsyncDisposable
             _disposed = true;
             _node.RawFrameReceived -= OnFrameReceived;
             _acceptQueue.Writer.TryComplete();
+            while (_acceptQueue.Reader.TryRead(out var queued))
+            {
+                ObserveBestEffortAsync(queued.DisposeAsync().AsTask());
+            }
         }
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
         }
     }
 

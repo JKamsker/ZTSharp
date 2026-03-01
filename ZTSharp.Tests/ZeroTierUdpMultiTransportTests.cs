@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using ZTSharp.ZeroTier.Transport;
 
 namespace ZTSharp.Tests;
@@ -49,6 +50,87 @@ public sealed class ZeroTierUdpMultiTransportTests
         await multi.SendAsync(localSocketId: 2, receiverEndpoint, new byte[] { 0x22 });
         var datagram2 = await receiver.ReceiveAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(socket2.LocalEndpoint.Port, datagram2.RemoteEndPoint.Port);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DisposesUnderlyingSockets_AndMarksTransportDisposed()
+    {
+        var socket1 = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false, localSocketId: 1);
+        var socket2 = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false, localSocketId: 2);
+        var multi = new ZeroTierUdpMultiTransport(new[] { socket1, socket2 });
+
+        try
+        {
+            await multi.DisposeAsync();
+
+            Assert.Throws<ObjectDisposedException>(() => _ = multi.LocalSockets);
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                multi.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x00 }));
+
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                socket1.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x01 }));
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                socket2.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x02 }));
+        }
+        finally
+        {
+            await multi.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task DisposeAsync_RemainsBestEffort_WhenForwarderFaults()
+    {
+        var socket1 = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false, localSocketId: 1);
+        var socket2 = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false, localSocketId: 2);
+        var multi = new ZeroTierUdpMultiTransport(new[] { socket1, socket2 });
+
+        try
+        {
+            var forwardersField = typeof(ZeroTierUdpMultiTransport).GetField("_forwarders", BindingFlags.NonPublic | BindingFlags.Instance);
+            Assert.NotNull(forwardersField);
+
+            var forwarders = (Task[]?)forwardersField!.GetValue(multi);
+            Assert.NotNull(forwarders);
+            Assert.NotEmpty(forwarders!);
+
+            forwarders![0] = Task.WhenAll(forwarders[0], Task.FromException(new InvalidOperationException("boom")));
+
+            await multi.DisposeAsync();
+
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                socket1.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x01 }));
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                socket2.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x02 }));
+        }
+        finally
+        {
+            await multi.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task DisposeAsync_CanBeCalledConcurrently_WithoutThrowing()
+    {
+        var socket1 = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false, localSocketId: 1);
+        var socket2 = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false, localSocketId: 2);
+        var multi = new ZeroTierUdpMultiTransport(new[] { socket1, socket2 });
+
+        try
+        {
+            var tasks = Enumerable.Range(0, 20)
+                .Select(_ => multi.DisposeAsync().AsTask())
+                .ToArray();
+
+            await Task.WhenAll(tasks);
+
+            await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                socket1.SendAsync(new IPEndPoint(IPAddress.Loopback, 1), new byte[] { 0x01 }));
+        }
+        finally
+        {
+            await multi.DisposeAsync();
+        }
     }
 }
 

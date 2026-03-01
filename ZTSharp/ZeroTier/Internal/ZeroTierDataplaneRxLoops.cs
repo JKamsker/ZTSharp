@@ -16,6 +16,7 @@ internal sealed class ZeroTierDataplaneRxLoops
     private readonly IZeroTierDataplanePeerDatagramProcessor _peerDatagrams;
     private readonly Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? _handleRootControlAsync;
     private readonly Action? _onPeerQueueDrop;
+    private readonly bool _acceptDirectPeerDatagrams;
 
     private int _traceRxRemaining = 200;
 
@@ -27,6 +28,7 @@ internal sealed class ZeroTierDataplaneRxLoops
         NodeId localNodeId,
         ZeroTierDataplaneRootClient rootClient,
         IZeroTierDataplanePeerDatagramProcessor peerDatagrams,
+        bool acceptDirectPeerDatagrams = false,
         Func<ZeroTierVerb, ReadOnlyMemory<byte>, IPEndPoint, CancellationToken, ValueTask>? handleRootControlAsync = null,
         Action? onPeerQueueDrop = null)
     {
@@ -43,12 +45,15 @@ internal sealed class ZeroTierDataplaneRxLoops
         _localNodeId = localNodeId;
         _rootClient = rootClient;
         _peerDatagrams = peerDatagrams;
+        _acceptDirectPeerDatagrams = acceptDirectPeerDatagrams;
         _handleRootControlAsync = handleRootControlAsync;
         _onPeerQueueDrop = onPeerQueueDrop;
     }
 
-    public async Task DispatcherLoopAsync(ChannelWriter<ZeroTierUdpDatagram> peerWriter, CancellationToken cancellationToken)
+    public async Task DispatcherLoopAsync(Channel<ZeroTierUdpDatagram> peerQueue, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(peerQueue);
+        var peerWriter = peerQueue.Writer;
         while (!cancellationToken.IsCancellationRequested)
         {
             ZeroTierUdpDatagram datagram;
@@ -67,6 +72,23 @@ internal sealed class ZeroTierDataplaneRxLoops
             catch (ObjectDisposedException)
             {
                 return;
+            }
+
+            if (!_acceptDirectPeerDatagrams && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
+                var peek = datagram.Payload.AsSpan();
+                if (peek.Length < ZeroTierPacketHeader.Length)
+                {
+                    continue;
+                }
+
+                var source = new NodeId(
+                    ZeroTierBinaryPrimitives.ReadUInt40BigEndian(
+                        peek.Slice(ZeroTierPacketHeader.IndexSource, 5)));
+                if (source != _rootNodeId)
+                {
+                    continue;
+                }
             }
 
             var packetBytes = datagram.Payload;
@@ -132,6 +154,11 @@ internal sealed class ZeroTierDataplaneRxLoops
                 continue;
             }
 
+            if (!_acceptDirectPeerDatagrams && !datagram.RemoteEndPoint.Equals(_rootEndpoint))
+            {
+                continue;
+            }
+
             if (!peerWriter.TryWrite(datagram))
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -139,7 +166,20 @@ internal sealed class ZeroTierDataplaneRxLoops
                     return;
                 }
 
+                if (peerWriter.TryWrite(datagram))
+                {
+                    continue;
+                }
+
                 _onPeerQueueDrop?.Invoke();
+                if (peerQueue.Reader.TryRead(out _))
+                {
+                    if (peerWriter.TryWrite(datagram))
+                    {
+                        continue;
+                    }
+                }
+
                 continue;
             }
         }

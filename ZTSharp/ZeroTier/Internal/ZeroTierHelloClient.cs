@@ -44,7 +44,7 @@ internal static class ZeroTierHelloClient
 
         var rootKeys = ZeroTierRootKeyDerivation.BuildRootKeys(localIdentity, planet);
 
-        var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var helloTimestamp = (ulong)Environment.TickCount64;
         var pending = new Dictionary<ulong, NodeId>(capacity: planet.Roots.Count);
 
         foreach (var root in planet.Roots)
@@ -162,7 +162,7 @@ internal static class ZeroTierHelloClient
             throw new InvalidOperationException("Local identity must contain a private key.");
         }
 
-        var helloTimestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var helloTimestamp = (ulong)Environment.TickCount64;
 
         var packet = ZeroTierHelloPacketBuilder.BuildPacket(
             localIdentity,

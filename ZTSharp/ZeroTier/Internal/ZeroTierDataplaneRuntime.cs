@@ -13,6 +13,8 @@ namespace ZTSharp.ZeroTier.Internal;
 
 internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 {
+    private const long DirectEndpointManagerTtlMs = 600_000;
+
     private readonly IZeroTierUdpTransport _udp;
     private readonly NodeId _rootNodeId;
     private readonly IPEndPoint _rootEndpoint;
@@ -26,6 +28,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly IPAddress[] _localManagedIpsV6;
     private readonly ZeroTierMac _localMac;
     private readonly ConcurrentDictionary<NodeId, ZeroTierDirectEndpointManager> _directEndpoints = new();
+    private readonly ConcurrentDictionary<NodeId, long> _directEndpointLastUsedMs = new();
+    private long _lastDirectEndpointCleanupMs;
     private readonly ZeroTierPeerPhysicalPathTracker _peerPaths;
     private readonly ZeroTierPeerEchoManager _peerEcho;
     private readonly ZeroTierExternalSurfaceAddressTracker _surfaceAddresses;
@@ -37,7 +41,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     private readonly Channel<ZeroTierUdpDatagram> _peerQueue = Channel.CreateBounded<ZeroTierUdpDatagram>(new BoundedChannelOptions(capacity: 2048)
     {
         FullMode = BoundedChannelFullMode.Wait,
-        SingleReader = true,
+        SingleReader = false,
         SingleWriter = true
     });
     private long _peerQueueDropCount;
@@ -192,6 +196,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             _localIdentity.NodeId,
             _rootClient,
             _peerDatagrams,
+            acceptDirectPeerDatagrams: multipath.Enabled,
             handleRootControlAsync: HandleRootControlPacketAsync,
             onPeerQueueDrop: () =>
             {
@@ -202,7 +207,7 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
                 }
             });
 
-        _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue.Writer, _cts.Token), CancellationToken.None);
+        _dispatcherLoop = Task.Run(() => _rxLoops.DispatcherLoopAsync(_peerQueue, _cts.Token), CancellationToken.None);
         _peerLoop = Task.Run(() => _rxLoops.PeerLoopAsync(_peerQueue.Reader, _cts.Token), CancellationToken.None);
         _multipathMaintenanceLoop = multipath.Enabled
             ? Task.Run(() => MultipathMaintenanceLoopAsync(_cts.Token), CancellationToken.None)
@@ -335,36 +340,50 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
+        var parsedOk = TryGetPacketIdAndVerb(packet, out var parsed);
+        var shouldRecord = parsedOk && parsed.Verb != ZeroTierVerb.QosMeasurement;
+
         var confirmed = _peerEcho.TryGetLastRttMs(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, out _);
         if (_multipath.WarmupDuplicateToRoot && !confirmed)
         {
-            var (packetId, verb) = TryGetPacketIdAndVerb(packet, out var parsed) ? parsed : default;
-            if (verb != ZeroTierVerb.QosMeasurement)
+            if (shouldRecord)
             {
-                _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId);
+                _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
             }
 
+            Task directSend = Task.CompletedTask;
+            Task rootSend = Task.CompletedTask;
             try
             {
-                await Task
-                    .WhenAll(
-                        _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken),
-                        _udp.SendAsync(_rootEndpoint, packet, cancellationToken))
-                    .ConfigureAwait(false);
+                directSend = _udp.SendAsync(direct.LocalSocketId, direct.RemoteEndPoint, packet, cancellationToken);
+                rootSend = _udp.SendAsync(_rootEndpoint, packet, cancellationToken);
+                await Task.WhenAll(directSend, rootSend).ConfigureAwait(false);
             }
-            catch (SocketException)
+            catch (Exception ex) when (ex is SocketException || (ex is AggregateException ae && ae.InnerExceptions.All(static inner => inner is SocketException)))
             {
-                _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId);
-                await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+                // Warm-up duplicates to root. If the direct send fails, forget any QoS state for it and
+                // ensure a root send happens (if it hasn't already).
+                // If only the root send fails, keep QoS state intact since the direct send may still succeed.
+                var directOk = directSend.IsCompletedSuccessfully;
+                var rootOk = rootSend.IsCompletedSuccessfully;
+
+                if (!directOk && shouldRecord)
+                {
+                    _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
+                }
+
+                if (!directOk && !rootOk)
+                {
+                    await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
+                }
             }
 
             return;
         }
 
-        var (packetId2, verb2) = TryGetPacketIdAndVerb(packet, out var parsed2) ? parsed2 : default;
-        if (verb2 != ZeroTierVerb.QosMeasurement)
+        if (shouldRecord)
         {
-            _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId2);
+            _peerQos.RecordOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
         }
 
         try
@@ -373,7 +392,11 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         }
         catch (SocketException)
         {
-            _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, packetId2);
+            if (shouldRecord)
+            {
+                _peerQos.ForgetOutgoingPacket(peerNodeId, direct.LocalSocketId, direct.RemoteEndPoint, parsed.PacketId);
+            }
+
             await _udp.SendAsync(_rootEndpoint, packet, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -391,8 +414,8 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
             return;
         }
 
-        var parsed = TryGetPacketIdAndVerb(packet, out var pv) ? pv : default;
-        var shouldRecord = parsed.Verb != ZeroTierVerb.QosMeasurement;
+        var parsedOk = TryGetPacketIdAndVerb(packet, out var parsed);
+        var shouldRecord = parsedOk && parsed.Verb != ZeroTierVerb.QosMeasurement;
 
         var anyConfirmed = false;
         var directSuccess = 0;
@@ -429,15 +452,26 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         }
         else
         {
+            var localSockets = _udp.LocalSockets;
             for (var i = 0; i < hinted.Length; i++)
             {
+                var localSocketId = localSockets.Count == 0 ? 0 : localSockets[i % localSockets.Count].Id;
+                if (shouldRecord)
+                {
+                    _peerQos.RecordOutgoingPacket(peerNodeId, localSocketId, hinted[i], parsed.PacketId);
+                }
+
                 try
                 {
-                    await _udp.SendAsync(localSocketId: 0, hinted[i], packet, cancellationToken).ConfigureAwait(false);
+                    await _udp.SendAsync(localSocketId, hinted[i], packet, cancellationToken).ConfigureAwait(false);
                     directSuccess++;
                 }
                 catch (SocketException)
                 {
+                    if (shouldRecord)
+                    {
+                        _peerQos.ForgetOutgoingPacket(peerNodeId, localSocketId, hinted[i], parsed.PacketId);
+                    }
                 }
             }
         }
@@ -465,8 +499,13 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
         var hinted = GetOrCreateDirectEndpointManager(peerNodeId).Endpoints;
         if (hinted.Length > 0)
         {
-            var index = hinted.Length == 1 ? 0 : (int)(flowId % (uint)hinted.Length);
-            selected = new ZeroTierSelectedPeerPath(LocalSocketId: 0, hinted[index]);
+            var localSockets = _udp.LocalSockets;
+            var endpointIndex = hinted.Length == 1 ? 0 : (int)(flowId % (uint)hinted.Length);
+            var socketIndex = localSockets.Count <= 1
+                ? 0
+                : (int)((flowId / (uint)hinted.Length) % (uint)localSockets.Count);
+            var localSocketId = localSockets.Count == 0 ? 0 : localSockets[socketIndex].Id;
+            selected = new ZeroTierSelectedPeerPath(localSocketId, hinted[endpointIndex]);
             return true;
         }
 
@@ -516,7 +555,9 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
 
     private async Task RunMultipathMaintenanceOnceAsync(CancellationToken cancellationToken)
     {
+        var nowMs = Environment.TickCount64;
         _bondEngine.MaintenanceTick();
+        CleanupDirectEndpointManagers(nowMs);
 
         var peers = _peerPaths.GetPeersSnapshot();
         if (peers.Length == 0)
@@ -765,6 +806,32 @@ internal sealed class ZeroTierDataplaneRuntime : IAsyncDisposable
     }
 
     private ZeroTierDirectEndpointManager GetOrCreateDirectEndpointManager(NodeId peerNodeId)
-        => _directEndpoints.GetOrAdd(peerNodeId, id => new ZeroTierDirectEndpointManager(_udp, _rootEndpoint, id));
+    {
+        _directEndpointLastUsedMs[peerNodeId] = Environment.TickCount64;
+        return _directEndpoints.GetOrAdd(peerNodeId, id => new ZeroTierDirectEndpointManager(_udp, _rootEndpoint, id));
+    }
+
+    private void CleanupDirectEndpointManagers(long nowMs)
+    {
+        var last = Volatile.Read(ref _lastDirectEndpointCleanupMs);
+        if (last != 0 && unchecked(nowMs - last) < 10_000)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastDirectEndpointCleanupMs, nowMs, last) != last)
+        {
+            return;
+        }
+
+        foreach (var pair in _directEndpointLastUsedMs)
+        {
+            if (unchecked(nowMs - pair.Value) > DirectEndpointManagerTtlMs)
+            {
+                _directEndpointLastUsedMs.TryRemove(pair.Key, out _);
+                _directEndpoints.TryRemove(pair.Key, out _);
+            }
+        }
+    }
 
 }

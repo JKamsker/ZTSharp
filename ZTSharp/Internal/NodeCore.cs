@@ -66,6 +66,8 @@ internal sealed class NodeCore : IAsyncDisposable
 
     public IPEndPoint? LocalTransportEndpoint => _transportService.GetLocalTransportEndpoint();
 
+    internal INodeTransport TransportForTests => _transport;
+
     public NodeId NodeId => _runtime.NodeId;
 
     public bool IsRunning => _runtime.State == NodeState.Running;

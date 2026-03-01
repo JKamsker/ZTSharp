@@ -1,11 +1,16 @@
 using Microsoft.Extensions.Logging;
 using ZTSharp.Transport;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ZTSharp.Internal;
 
 internal sealed class NodeLifecycleService : IAsyncDisposable
 {
     private readonly NodeRuntimeState _runtime;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be safe during concurrent lifecycle operations; disposing this lock can throw on in-flight Release calls.")]
     private readonly SemaphoreSlim _stateLock;
     private readonly CancellationTokenSource _nodeCts;
     private readonly INodeTransport _transport;
@@ -16,6 +21,8 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
     private readonly NodeNetworkService _networkService;
     private readonly NodeTransportService _transportService;
     private readonly bool _ownsTransport;
+
+    private int _disposeState;
 
     public NodeLifecycleService(
         NodeRuntimeState runtime,
@@ -197,20 +204,83 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_runtime.Disposed)
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
         {
             return;
         }
 
-        await _nodeCts.CancelAsync().ConfigureAwait(false);
-
         using var shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+
         try
         {
-            await StopAsync(shutdownCts.Token).ConfigureAwait(false);
+            // Best-effort: block new operations promptly, but don't wedge forever if some operation is stuck.
+            await _stateLock.WaitAsync(shutdownCts.Token).ConfigureAwait(false);
+            try
+            {
+                if (_runtime.Disposed)
+                {
+                    return;
+                }
+
+                _runtime.Disposed = true;
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
         }
         catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
         {
+            // Worst case: a concurrent lifecycle operation is wedged under the state lock. Mark the node as disposed
+            // anyway so future operations fail fast.
+            _runtime.Disposed = true;
+        }
+
+        try
+        {
+            await _nodeCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            await _stateLock.WaitAsync(shutdownCts.Token).ConfigureAwait(false);
+            try
+            {
+                if (_runtime.State is not NodeState.Stopped and not NodeState.Faulted)
+                {
+                    _runtime.State = NodeState.Stopping;
+                    _events.Publish(EventCode.NodeStopping, DateTimeOffset.UtcNow);
+
+                    await _networkService.UnregisterAllNetworksAsync(shutdownCts.Token).ConfigureAwait(false);
+                    await _transport.FlushAsync(shutdownCts.Token).ConfigureAwait(false);
+                    await _store.FlushAsync(shutdownCts.Token).ConfigureAwait(false);
+                    _runtime.State = NodeState.Stopped;
+                    _events.Publish(EventCode.NodeStopped, DateTimeOffset.UtcNow);
+                }
+            }
+            finally
+            {
+                _stateLock.Release();
+            }
+        }
+        catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+#pragma warning disable CA1031 // Dispose must be best-effort.
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            _runtime.State = NodeState.Faulted;
+#pragma warning disable CA1848
+            _logger.LogError(ex, "Failed to stop node during disposal");
+#pragma warning restore CA1848
+            _events.Publish(EventCode.NodeFaulted, DateTimeOffset.UtcNow, message: ex.Message, error: ex);
         }
 
         try
@@ -220,21 +290,43 @@ internal sealed class NodeLifecycleService : IAsyncDisposable
         catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
         {
         }
-
-        _runtime.Disposed = true;
-
-        if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
+        catch (ObjectDisposedException)
         {
-            await asyncTransport.DisposeAsync().ConfigureAwait(false);
         }
 
-        _stateLock.Dispose();
-        _events.Complete();
-        _nodeCts.Dispose();
+        try
+        {
+            if (_ownsTransport && _transport is IAsyncDisposable asyncTransport)
+            {
+                using var transportDisposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                try
+                {
+                    await asyncTransport
+                        .DisposeAsync()
+                        .AsTask()
+                        .WaitAsync(transportDisposeCts.Token)
+                        .ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (OperationCanceledException) when (shutdownCts.IsCancellationRequested)
+                {
+                }
+                catch (OperationCanceledException) when (transportDisposeCts.IsCancellationRequested)
+                {
+                }
+            }
+        }
+        finally
+        {
+            _events.Complete();
+            _nodeCts.Dispose();
+        }
     }
 
     private void EnsureNotDisposed()
     {
-        ObjectDisposedException.ThrowIf(_runtime.Disposed, nameof(Node));
+        ObjectDisposedException.ThrowIf(_runtime.Disposed || Volatile.Read(ref _disposeState) != 0, nameof(Node));
     }
 }

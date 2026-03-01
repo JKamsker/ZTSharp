@@ -64,6 +64,7 @@ Managed stack CLI commands: `call`, `listen`, `udp-listen`, `udp-send`.
 
 To enable experimental multipath/bonding for the managed stack, use the CLI flags:
 `--multipath`, `--mp-bond`, `--mp-udp-sockets`, `--mp-udp-ports`, `--mp-warmup-root`.
+Constraints: `--mp-udp-sockets` must be in `1..8`. If `--mp-udp-ports` is set, it must include exactly that many entries, each in `0..65535` (`0` = ephemeral).
 
 ---
 

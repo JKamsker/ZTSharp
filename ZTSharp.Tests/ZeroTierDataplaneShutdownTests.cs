@@ -14,10 +14,11 @@ public sealed class ZeroTierDataplaneShutdownTests
         await using var udp = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
         await using var sender = new ZeroTierUdpTransport(localPort: 0, enableIpv6: false);
 
+        var rootEndpoint = TestUdpEndpoints.ToLoopback(sender.LocalEndpoint);
         var rootClient = new ZeroTierDataplaneRootClient(
             udp,
             rootNodeId: new NodeId(0x1111111111),
-            rootEndpoint: new IPEndPoint(IPAddress.Loopback, 9999),
+            rootEndpoint: rootEndpoint,
             rootKey: new byte[48],
             rootProtocolVersion: 12,
             localNodeId: new NodeId(0x2222222222),
@@ -27,7 +28,7 @@ public sealed class ZeroTierDataplaneShutdownTests
         var loops = new ZeroTierDataplaneRxLoops(
             udp,
             rootNodeId: new NodeId(0x1111111111),
-            rootEndpoint: new IPEndPoint(IPAddress.Loopback, 9999),
+            rootEndpoint: rootEndpoint,
             rootKey: new byte[48],
             localNodeId: new NodeId(0x2222222222),
             rootClient: rootClient,
@@ -40,7 +41,7 @@ public sealed class ZeroTierDataplaneShutdownTests
         });
 
         using var cts = new CancellationTokenSource();
-        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel.Writer, cts.Token), CancellationToken.None);
+        var dispatcher = Task.Run(() => loops.DispatcherLoopAsync(peerChannel, cts.Token), CancellationToken.None);
 
         var peerPacket = ZeroTierPacketCodec.Encode(
             new ZeroTierPacketHeader(

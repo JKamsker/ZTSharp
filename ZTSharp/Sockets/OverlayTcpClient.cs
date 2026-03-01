@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net.Sockets;
 
@@ -13,7 +14,16 @@ public sealed class OverlayTcpClient : IAsyncDisposable
     private const int MaxDataPerFrame = 1024;
 
     private readonly OverlayTcpIncomingBuffer _incoming;
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _disposeLock = new(1, 1);
+
+    [SuppressMessage(
+        "Reliability",
+        "CA2213:Disposable fields should be disposed",
+        Justification = "DisposeAsync must be idempotent; disposing this lock can throw on subsequent/overlapping DisposeAsync calls.")]
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Node _node;
     private readonly ulong _networkId;
@@ -125,13 +135,25 @@ public sealed class OverlayTcpClient : IAsyncDisposable
             throw new IOException("Remote has closed the connection.");
         }
 
+        if (_incoming.RemoteFinReceived)
+        {
+            throw new IOException("Remote has closed the connection.");
+        }
+
         await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_incoming.RemoteClosed || _incoming.RemoteFinReceived)
+            {
+                throw new IOException("Remote has closed the connection.");
+            }
+
             var remaining = buffer;
             while (!remaining.IsEmpty)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                ObjectDisposedException.ThrowIf(_disposed, this);
                 var chunk = remaining.Slice(0, Math.Min(remaining.Length, MaxDataPerFrame));
                 remaining = remaining.Slice(chunk.Length);
 
@@ -174,8 +196,6 @@ public sealed class OverlayTcpClient : IAsyncDisposable
         finally
         {
             _disposeLock.Release();
-            _disposeLock.Dispose();
-            _sendLock.Dispose();
         }
     }
 
@@ -213,7 +233,7 @@ public sealed class OverlayTcpClient : IAsyncDisposable
 
         if (type == OverlayTcpFrameCodec.FrameType.Fin)
         {
-            _incoming.MarkRemoteClosed();
+            _incoming.MarkRemoteFinReceived();
             return;
         }
 

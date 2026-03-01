@@ -2,12 +2,12 @@ namespace ZTSharp.ZeroTier.Net;
 
 internal sealed class UserSpaceTcpRemoteSendWindow
 {
-    private ushort _window = ushort.MaxValue;
+    private int _window = ushort.MaxValue;
     private TaskCompletionSource<bool>? _windowTcs;
     private Exception? _terminalException;
     private readonly object _lock = new();
 
-    public ushort Window => _window;
+    public ushort Window => (ushort)Volatile.Read(ref _window);
 
     public void Update(ushort windowSize)
     {
@@ -28,9 +28,11 @@ internal sealed class UserSpaceTcpRemoteSendWindow
     public void SignalWaiters(Exception exception)
     {
         TaskCompletionSource<bool>? toRelease = null;
+        Exception terminal;
         lock (_lock)
         {
             _terminalException ??= exception;
+            terminal = _terminalException;
             if (_windowTcs is not null)
             {
                 toRelease = _windowTcs;
@@ -38,7 +40,7 @@ internal sealed class UserSpaceTcpRemoteSendWindow
             }
         }
 
-        toRelease?.TrySetException(exception);
+        toRelease?.TrySetException(terminal);
     }
 
     public async Task WaitForNonZeroAsync(CancellationToken cancellationToken)
@@ -47,12 +49,13 @@ internal sealed class UserSpaceTcpRemoteSendWindow
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_terminalException is not null)
+            var terminal = Volatile.Read(ref _terminalException);
+            if (terminal is not null)
             {
-                throw _terminalException;
+                throw terminal;
             }
 
-            if (_window != 0)
+            if (Volatile.Read(ref _window) != 0)
             {
                 return;
             }
@@ -73,7 +76,14 @@ internal sealed class UserSpaceTcpRemoteSendWindow
                 tcs = _windowTcs ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
-            await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (Volatile.Read(ref _terminalException) is not null && ex is not OperationCanceledException)
+            {
+                throw Volatile.Read(ref _terminalException)!;
+            }
         }
     }
 }

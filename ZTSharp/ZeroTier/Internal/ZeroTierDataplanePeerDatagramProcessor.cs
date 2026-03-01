@@ -107,7 +107,7 @@ internal sealed class ZeroTierDataplanePeerDatagramProcessor
             var payload = packetBytes.AsMemory(ZeroTierPacketHeader.IndexPayload);
             var payloadSpan = payload.Span;
 
-            if (decoded.Header.HopCount == 0 && verb != ZeroTierVerb.QosMeasurement)
+            if (decoded.Header.HopCount == 0 && verb is not (ZeroTierVerb.QosMeasurement or ZeroTierVerb.Ack))
             {
                 _peerQos.RecordIncomingPacket(peerNodeId, datagram.LocalSocketId, datagram.RemoteEndPoint, decoded.Header.PacketId);
             }

@@ -306,7 +306,7 @@ public sealed class TunnelAndHttpTests
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
             var releaseTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var connectionTasks = new List<Task>(capacity: 3);
+            var connectionTasks = new Task?[3];
 
             static async Task HandleConnectionAsync(
                 TcpClient tcp,
@@ -349,7 +349,7 @@ public sealed class TunnelAndHttpTests
                 for (var i = 0; i < 3; i++)
                 {
                     var tcp = await httpListener.AcceptTcpClientAsync(cts.Token).ConfigureAwait(false);
-                    connectionTasks.Add(HandleConnectionAsync(tcp, releaseTcs.Task, cts.Token));
+                    connectionTasks[i] = HandleConnectionAsync(tcp, releaseTcs.Task, cts.Token);
                 }
             }, cts.Token);
 
@@ -402,7 +402,28 @@ public sealed class TunnelAndHttpTests
 
             try
             {
-                await Task.WhenAll(connectionTasks.Concat(new[] { acceptTask, forwarderTask })).WaitAsync(TimeSpan.FromSeconds(2));
+                var deadlineMs = Environment.TickCount64 + 2000;
+                static TimeSpan Remaining(long deadlineMs)
+                {
+                    var remainingMs = deadlineMs - Environment.TickCount64;
+                    return remainingMs <= 0 ? TimeSpan.Zero : TimeSpan.FromMilliseconds(remainingMs);
+                }
+
+                try
+                {
+                    await acceptTask.WaitAsync(Remaining(deadlineMs));
+                }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
+                }
+
+                var snapshot = connectionTasks
+                    .Where(t => t is not null)
+                    .Select(t => t!)
+                    .ToArray();
+                await Task
+                    .WhenAll(snapshot.Concat(new[] { forwarderTask }))
+                    .WaitAsync(Remaining(deadlineMs));
             }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)
             {

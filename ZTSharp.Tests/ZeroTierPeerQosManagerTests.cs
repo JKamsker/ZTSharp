@@ -71,4 +71,25 @@ public sealed class ZeroTierPeerQosManagerTests
 
         Assert.False(mgr.TryBuildOutboundPayload(peerNodeId, localSocketId: 1, endpoint, out _));
     }
+
+    [Fact]
+    public void TryGetLastLatencyAverageMs_ReturnsFalse_WhenAverageIsStale()
+    {
+        var now = 1_000L;
+        var mgr = new ZeroTierPeerQosManager(nowMs: () => now);
+
+        var peerNodeId = new NodeId(0x1111111111);
+        var endpoint = new IPEndPoint(IPAddress.Parse("203.0.113.9"), 9999);
+
+        mgr.RecordOutgoingPacket(peerNodeId, localSocketId: 1, endpoint, packetId: 3);
+
+        now = 1_500;
+        Span<byte> payload = stackalloc byte[8 + 2];
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(0, 8), 3UL);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.Slice(8, 2), 200);
+        mgr.HandleInboundMeasurement(peerNodeId, localSocketId: 1, endpoint, payload);
+
+        now = 1_500 + 120_000 + 1;
+        Assert.False(mgr.TryGetLastLatencyAverageMs(peerNodeId, localSocketId: 1, endpoint, out _));
+    }
 }

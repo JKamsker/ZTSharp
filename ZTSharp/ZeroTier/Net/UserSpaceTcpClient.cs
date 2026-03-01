@@ -26,6 +26,7 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
 
     private Task? _receiveLoopTask;
     private bool _disposed;
+    private int _disposeState;
 
     public UserSpaceTcpClient(
         IUserSpaceIpLink link,
@@ -181,7 +182,7 @@ internal sealed class UserSpaceTcpClient : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
         {
             return;
         }

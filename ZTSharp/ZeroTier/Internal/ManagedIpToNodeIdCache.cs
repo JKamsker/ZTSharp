@@ -77,7 +77,6 @@ internal sealed class ManagedIpToNodeIdCache
             {
                 if (IsExpired(existing))
                 {
-                    EnqueueForEviction(managedIp);
                     return new Entry(nodeId, expiresAt, isAuthoritative);
                 }
 
@@ -86,7 +85,6 @@ internal sealed class ManagedIpToNodeIdCache
                     return existing;
                 }
 
-                EnqueueForEviction(managedIp);
                 return new Entry(nodeId, expiresAt, isAuthoritative);
             });
 

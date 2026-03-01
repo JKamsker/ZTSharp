@@ -5,7 +5,7 @@ public sealed class VirtualNetworkInterfaceTests
     [Fact]
     public async Task InMemoryVirtualInterface_DeliversPacket()
     {
-        var networkId = 0xCAFE0002UL;
+        var networkId = 0xCAFE0004UL;
 
         await using var node1 = new Node(new NodeOptions
         {

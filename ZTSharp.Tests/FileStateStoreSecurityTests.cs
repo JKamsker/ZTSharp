@@ -1,17 +1,13 @@
 using System.Diagnostics;
-using System.Net;
 
 namespace ZTSharp.Tests;
 
 public sealed class FileStateStoreSecurityTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task ReadAsync_Throws_WhenPathTraversesJunction()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
+        Skip.IfNot(OperatingSystem.IsWindows(), "Junction traversal tests require Windows.");
 
         var root = TestTempPaths.CreateGuidSuffixed("zt-state-root-");
         Directory.CreateDirectory(root);
@@ -23,10 +19,7 @@ public sealed class FileStateStoreSecurityTests
         await File.WriteAllBytesAsync(secretPath, new byte[] { 1, 2, 3 });
 
         var junction = Path.Combine(root, "escape");
-        if (!TryCreateJunction(junction, outside))
-        {
-            return;
-        }
+        Skip.IfNot(TryCreateJunction(junction, outside), "Failed to create junction (insufficient privileges or mklink unavailable).");
 
         var store = new FileStateStore(root);
         _ = await Assert.ThrowsAsync<InvalidOperationException>(async () => await store.ReadAsync("escape/secret.bin"));
@@ -76,7 +69,19 @@ public sealed class FileStateStoreSecurityTests
                 return false;
             }
 
-            process.WaitForExit(milliseconds: 5000);
+            if (!process.WaitForExit(milliseconds: 5000))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                return false;
+            }
+
             return process.ExitCode == 0 && Directory.Exists(junctionPath);
         }
         catch

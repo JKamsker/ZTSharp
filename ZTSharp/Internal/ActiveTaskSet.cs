@@ -30,10 +30,10 @@ internal sealed class ActiveTaskSet
                 return;
             }
 
-            var snapshot = new List<Task>(_tasks.Count);
-            foreach (var task in _tasks.Values)
+            var snapshot = new List<KeyValuePair<int, Task>>(_tasks.Count);
+            foreach (var pair in _tasks)
             {
-                snapshot.Add(task);
+                snapshot.Add(pair);
             }
 
             if (snapshot.Count == 0)
@@ -44,12 +44,27 @@ internal sealed class ActiveTaskSet
 
             try
             {
-                await Task.WhenAll(snapshot).WaitAsync(cancellationToken).ConfigureAwait(false);
+                var tasks = new Task[snapshot.Count];
+                for (var i = 0; i < snapshot.Count; i++)
+                {
+                    tasks[i] = snapshot[i].Value;
+                }
+
+                await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 #pragma warning disable CA1031 // ActiveTaskSet is primarily used for shutdown coordination; faults are observed but not surfaced here.
             catch
 #pragma warning restore CA1031
             {
+                foreach (var pair in snapshot)
+                {
+                    if (pair.Value.IsCompleted)
+                    {
+                        _tasks.TryRemove(pair.Key, out _);
+                    }
+                }
+
+                await Task.Yield();
             }
         }
     }

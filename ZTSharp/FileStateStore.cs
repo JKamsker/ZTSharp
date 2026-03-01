@@ -6,6 +6,8 @@ namespace ZTSharp;
 /// </summary>
 public sealed class FileStateStore : IStateStore
 {
+    private const long MaxReadBytes = 64L * 1024 * 1024;
+
     private readonly string _rootPath;
     private readonly StringComparison _pathComparison;
     private readonly string _rootPathPrefix;
@@ -13,17 +15,18 @@ public sealed class FileStateStore : IStateStore
 
     public FileStateStore(string rootPath)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+        if (string.IsNullOrEmpty(rootPath))
+        {
+            throw new ArgumentException("Root path must not be null or empty.", nameof(rootPath));
+        }
+
         _rootPath = Path.GetFullPath(rootPath);
         _rootPathTrimmed = Path.TrimEndingDirectorySeparator(_rootPath);
         _rootPathPrefix = _rootPathTrimmed + Path.DirectorySeparatorChar;
         _pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        ThrowIfRootPathIsReparsePoint();
         Directory.CreateDirectory(_rootPath);
-
-        if (IsReparsePoint(_rootPathTrimmed))
-        {
-            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
-        }
+        ThrowIfRootPathIsReparsePoint();
     }
 
     public Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
@@ -70,12 +73,14 @@ public sealed class FileStateStore : IStateStore
         }
 
         var path = GetPhysicalPathForNormalizedKey(normalized, key);
-        await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
-
+        EnsureParentDirectoryExistsNoReparse(path);
         if (string.Equals(normalized, Internal.NodeStoreKeys.IdentitySecretKey, StringComparison.OrdinalIgnoreCase))
         {
-            Internal.SecretFilePermissions.TryHardenSecretFile(path);
+            await Internal.AtomicFile.WriteSecretBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        await Internal.AtomicFile.WriteAllBytesAsync(path, value, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default)
@@ -127,8 +132,8 @@ public sealed class FileStateStore : IStateStore
         if (virtualPrefix.Length != 0 &&
             StateStorePlanetAliases.TryGetCanonicalAliasKey(virtualPrefix, out var canonicalAliasPrefix))
         {
-            var planetPath = Path.Combine(_rootPath, StateStorePlanetAliases.PlanetKey);
-            var rootsPath = Path.Combine(_rootPath, StateStorePlanetAliases.RootsKey);
+            var planetPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.PlanetKey, StateStorePlanetAliases.PlanetKey);
+            var rootsPath = GetPhysicalPathForNormalizedKey(StateStorePlanetAliases.RootsKey, StateStorePlanetAliases.RootsKey);
             if (File.Exists(planetPath) || File.Exists(rootsPath))
             {
                 return Task.FromResult<IReadOnlyList<string>>([canonicalAliasPrefix]);
@@ -248,8 +253,41 @@ public sealed class FileStateStore : IStateStore
             bufferSize: 16 * 1024,
             options: FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-        using var memory = stream.Length <= int.MaxValue ? new MemoryStream((int)stream.Length) : new MemoryStream();
-        await stream.CopyToAsync(memory, cancellationToken).ConfigureAwait(false);
+        if (stream.Length > MaxReadBytes)
+        {
+            throw new IOException($"State file exceeds maximum supported size of {MaxReadBytes} bytes.");
+        }
+
+        var initialCapacity = stream.Length <= int.MaxValue
+            ? (int)Math.Min(stream.Length, MaxReadBytes)
+            : 0;
+
+        using var memory = initialCapacity > 0 ? new MemoryStream(initialCapacity) : new MemoryStream();
+        var buffer = new byte[16 * 1024];
+        long totalRead = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read <= 0)
+            {
+                break;
+            }
+
+            var remaining = MaxReadBytes - totalRead;
+            if (read > remaining)
+            {
+                if (remaining > 0)
+                {
+                    await memory.WriteAsync(buffer.AsMemory(0, (int)remaining), cancellationToken).ConfigureAwait(false);
+                }
+
+                throw new IOException($"State file exceeds maximum supported size of {MaxReadBytes} bytes.");
+            }
+
+            await memory.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            totalRead += read;
+        }
+
         return memory.ToArray();
     }
 
@@ -297,6 +335,8 @@ public sealed class FileStateStore : IStateStore
 
     private void ThrowIfPathTraversesReparsePoint(string fullPath)
     {
+        ThrowIfRootPathIsReparsePoint();
+
         if (string.Equals(fullPath, _rootPathTrimmed, _pathComparison))
         {
             return;
@@ -318,11 +358,81 @@ public sealed class FileStateStore : IStateStore
         for (var i = 0; i < parts.Length; i++)
         {
             current = Path.Combine(current, parts[i]);
-            if (!File.Exists(current) && !Directory.Exists(current))
+            if (!TryGetAttributes(current, out var attributes))
             {
                 return;
             }
 
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
+            }
+        }
+    }
+
+    private void ThrowIfRootPathIsReparsePoint()
+    {
+        if (IsReparsePoint(_rootPathTrimmed))
+        {
+            throw new InvalidOperationException("State root path must not be a symlink/junction/reparse point.");
+        }
+
+        var current = Path.GetDirectoryName(_rootPathTrimmed);
+        while (!string.IsNullOrEmpty(current))
+        {
+            if (IsReparsePoint(current))
+            {
+                throw new InvalidOperationException("State root path must not be under a symlink/junction/reparse point.");
+            }
+
+            var parent = Path.GetDirectoryName(current);
+            if (parent is null || string.Equals(parent, current, _pathComparison))
+            {
+                break;
+            }
+
+            current = parent;
+        }
+    }
+
+    private void EnsureParentDirectoryExistsNoReparse(string fullPath)
+    {
+        ThrowIfRootPathIsReparsePoint();
+
+        var directory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(directory) || string.Equals(directory, _rootPathTrimmed, _pathComparison))
+        {
+            return;
+        }
+
+        directory = Path.GetFullPath(directory);
+        if (!IsUnderRoot(directory))
+        {
+            throw new ArgumentException("Path is not under state root.", nameof(fullPath));
+        }
+
+        var relative = Path.GetRelativePath(_rootPathTrimmed, directory);
+        if (relative == "." || relative.Length == 0)
+        {
+            return;
+        }
+
+        var current = _rootPathTrimmed;
+        var parts = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            current = Path.Combine(current, parts[i]);
+            if (Directory.Exists(current))
+            {
+                if (IsReparsePoint(current))
+                {
+                    throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
+                }
+
+                continue;
+            }
+
+            Directory.CreateDirectory(current);
             if (IsReparsePoint(current))
             {
                 throw new InvalidOperationException("State path traversal via symlink/junction/reparse point is not allowed.");
@@ -344,6 +454,24 @@ public sealed class FileStateStore : IStateStore
         {
             return false;
         }
+    }
+
+    private static bool TryGetAttributes(string path, out FileAttributes attributes)
+    {
+        try
+        {
+            attributes = File.GetAttributes(path);
+            return true;
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+
+        attributes = default;
+        return false;
     }
 
 }

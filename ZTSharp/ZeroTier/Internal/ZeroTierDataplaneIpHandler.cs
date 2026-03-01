@@ -58,18 +58,20 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (!Ipv6Codec.TryParse(ipv6Packet.Span, out var src, out var dst, out var nextHeader, out var hopLimit, out var ipPayload))
+        if (!Ipv6Codec.TryParseTransportPayload(
+                ipv6Packet.Span,
+                out var src,
+                out var dst,
+                out var protocol,
+                out var hopLimit,
+                out var ipPayload,
+                out var transportPayloadOffset))
         {
             return;
         }
 
-        if (Ipv6Codec.IsExtensionHeader(nextHeader) || nextHeader == 59)
+        if (protocol == 59)
         {
-            if (ZeroTierTrace.Enabled)
-            {
-                ZeroTierTrace.WriteLine($"[zerotier] Drop: IPv6 extension header nextHeader={nextHeader} from {src} to {dst}.");
-            }
-
             return;
         }
 
@@ -81,14 +83,14 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (nextHeader == Icmpv6Codec.ProtocolNumber)
+        if (protocol == Icmpv6Codec.ProtocolNumber)
         {
-            var icmpMessage = ipv6Packet.Slice(Ipv6Codec.HeaderLength, ipPayload.Length);
+            var icmpMessage = ipv6Packet.Slice(transportPayloadOffset, ipPayload.Length);
             await _icmpv6.HandleAsync(peerNodeId, src, dst, hopLimit, icmpMessage, cancellationToken).ConfigureAwait(false);
             return;
         }
 
-        if (nextHeader == UdpCodec.ProtocolNumber && isUnicastToUs)
+        if (protocol == UdpCodec.ProtocolNumber && isUnicastToUs)
         {
             if (!UdpCodec.TryParseWithChecksum(src, dst, ipPayload, out _, out var dstPort, out _))
             {
@@ -103,7 +105,7 @@ internal sealed class ZeroTierDataplaneIpHandler
             return;
         }
 
-        if (nextHeader == TcpCodec.ProtocolNumber && isUnicastToUs)
+        if (protocol == TcpCodec.ProtocolNumber && isUnicastToUs)
         {
             if (!TcpCodec.TryParseWithChecksum(src, dst, ipPayload, out var srcPort, out var dstPort, out var seq, out _, out var flags, out _, out var tcpPayload))
             {
